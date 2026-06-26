@@ -92,15 +92,19 @@ function TokenSection() {
       <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
         Use a{' '}
         <Link
-          href="https://github.com/settings/personal-access-tokens"
+          href="https://github.com/settings/tokens/new?scopes=repo&description=Job%20Monitor"
           target="_blank"
           rel="noreferrer"
         >
-          fine-grained PAT
+          classic token
         </Link>{' '}
-        with <strong>read-only</strong> access: Pull requests (Read), Actions (Read), Checks
-        &amp; Commit statuses (Read). The token is encrypted with your passphrase (AES-GCM) and
-        stored only in this browser; the plaintext is never persisted or logged.
+        with the <strong>repo</strong> scope (for a public-only repo, <strong>public_repo</strong>
+        {' '}is enough). That covers reading PRs, checks, commit statuses, Actions runs, jobs, and{' '}
+        <strong>logs</strong>. A read-only fine-grained PAT also works for most data but{' '}
+        <strong>can’t download Actions logs</strong> (GitHub returns 404), so a classic{' '}
+        <code>repo</code> token is recommended. The app only makes read (GET) requests; the token is
+        encrypted with your passphrase (AES-GCM), stored only in this browser, and never logged or
+        sent anywhere except api.github.com.
       </Text>
 
       {isMockMode() ? (
@@ -119,7 +123,7 @@ function TokenSection() {
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="github_pat_…"
+                placeholder="ghp_… (classic token)"
                 block
                 autoComplete="off"
               />
@@ -258,14 +262,14 @@ function FlowEditor({
           <TextInput value={flow.name} onChange={(e) => set('name', e.target.value)} block />
         </FormControl>
         <FormControl sx={{ width: 130 }}>
-          <FormControl.Label>Max runs</FormControl.Label>
+          <FormControl.Label>Max runs / event</FormControl.Label>
           <TextInput
             type="number"
             value={String(flow.maxRuns)}
             onChange={(e) => set('maxRuns', Math.max(1, Number(e.target.value) || 1))}
+            title="Kept per branch × event"
             block
           />
-          <FormControl.Caption>per event/branch</FormControl.Caption>
         </FormControl>
         <IconButton
           aria-label="Remove flow"
@@ -308,7 +312,7 @@ function FlowEditor({
             block
           />
         </FormControl>
-        <FormControl>
+        <FormControl sx={{ gridColumn: ['auto', '1 / -1'] }}>
           <FormControl.Label>Branches</FormControl.Label>
           <TextInput
             value={csv(flow.branches)}
@@ -318,7 +322,9 @@ function FlowEditor({
           />
           <FormControl.Caption>Comma-separated</FormControl.Caption>
         </FormControl>
-        <EventsField events={flow.events} onChange={(next) => set('events', next)} />
+        <Box sx={{ gridColumn: ['auto', '1 / -1'] }}>
+          <EventsField events={flow.events} onChange={(next) => set('events', next)} />
+        </Box>
       </Box>
 
       {/* Per-flow empty filter */}

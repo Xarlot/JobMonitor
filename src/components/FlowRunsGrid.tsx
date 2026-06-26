@@ -13,7 +13,6 @@ import {
   Heading,
   IconButton,
   Label,
-  Link,
   Octicon,
   Spinner,
   Text,
@@ -210,15 +209,16 @@ export function FlowRunsGrid({
                   meta.onTimeline(r);
                 }}
               />
-              <Link
-                href={r.html_url}
-                target="_blank"
-                rel="noreferrer"
-                muted
-                onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              >
-                <Octicon icon={LinkExternalIcon} size={14} />
-              </Link>
+              <IconButton
+                size="small"
+                variant="invisible"
+                icon={LinkExternalIcon}
+                aria-label="Open run on GitHub"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  window.open(r.html_url, '_blank', 'noopener');
+                }}
+              />
             </Box>
           );
         },

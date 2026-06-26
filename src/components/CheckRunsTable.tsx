@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, IconButton, Link, Octicon, Text } from '@primer/react';
+import { Box, IconButton, Text } from '@primer/react';
 import { InfoIcon, LinkExternalIcon, TerminalIcon } from '@primer/octicons-react';
 import type { CheckRun, CombinedStatus, OverallStatus } from '../api/types';
 import { statusToOverall } from '../lib/status';
@@ -136,9 +136,13 @@ export function CheckRunsTable({
                   </>
                 )}
                 {r.url && (
-                  <Link href={r.url} target="_blank" rel="noreferrer" muted>
-                    <Octicon icon={LinkExternalIcon} size={14} />
-                  </Link>
+                  <IconButton
+                    size="small"
+                    variant="invisible"
+                    icon={LinkExternalIcon}
+                    aria-label="Open on GitHub"
+                    onClick={() => window.open(r.url as string, '_blank', 'noopener')}
+                  />
                 )}
               </Box>
             </Box>

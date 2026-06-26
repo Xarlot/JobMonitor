@@ -100,32 +100,39 @@ function PrRow({ entry }: { entry: PrEntry }) {
             <Text sx={{ fontSize: 0 }}>updated {formatRelative(pr.updated_at)}</Text>
           </Box>
         </Box>
-        {pr.user && (
-          <Avatar src={pr.user.avatar_url} size={20} alt={pr.user.login} />
-        )}
-        <IconButton
-          size="small"
-          variant="invisible"
-          icon={ChecklistIcon}
-          aria-label="PR checks summary"
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            setSummaryOpen(true);
-          }}
-        />
-        <IconButton
-          size="small"
-          variant="invisible"
-          icon={GraphIcon}
-          aria-label="PR check timeline"
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            setTimelineOpen(true);
-          }}
-        />
-        <Link href={pr.html_url} target="_blank" rel="noreferrer" muted onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-          <Octicon icon={LinkExternalIcon} size={14} />
-        </Link>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          {pr.user && <Avatar src={pr.user.avatar_url} size={20} alt={pr.user.login} />}
+          <IconButton
+            size="small"
+            variant="invisible"
+            icon={ChecklistIcon}
+            aria-label="PR checks summary"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              setSummaryOpen(true);
+            }}
+          />
+          <IconButton
+            size="small"
+            variant="invisible"
+            icon={GraphIcon}
+            aria-label="PR check timeline"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              setTimelineOpen(true);
+            }}
+          />
+          <IconButton
+            size="small"
+            variant="invisible"
+            icon={LinkExternalIcon}
+            aria-label="Open PR on GitHub"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              window.open(pr.html_url, '_blank', 'noopener');
+            }}
+          />
+        </Box>
       </Box>
       {timelineOpen && (
         <TimelineDialog

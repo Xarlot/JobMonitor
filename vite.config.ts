@@ -47,6 +47,9 @@ function cspPlugin(isDev: boolean): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
+  // Relative base for production so the build works under a GitHub Pages subpath
+  // (https://<user>.github.io/<repo>/); '/' in dev for clean HMR URLs.
+  base: command === 'serve' ? '/' : './',
   plugins: [react(), cspPlugin(command === 'serve')],
   test: {
     globals: true,

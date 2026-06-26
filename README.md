@@ -77,6 +77,18 @@ VITE_MOCK=1 npm run dev  # offline UI with fixtures, no token / no rate-limit co
 
 > This repo pins **Node 20**. If `node` isn't on your PATH, install it (e.g. via nvm) before `npm install`.
 
+### Publish via GitHub Pages
+
+A workflow (`.github/workflows/deploy-pages.yml`) builds the app and deploys it to GitHub Pages
+on every push to `master` (or via **Run workflow**). One-time setup:
+
+1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Push to `master` — the site publishes to `https://<owner>.github.io/<repo>/`.
+
+The production build uses a **relative base** (`./`), so it works under the `/<repo>/` subpath.
+It's a static, backend-less site: each visitor enters their own PAT, encrypted in their browser;
+nothing is sent anywhere except `api.github.com`.
+
 ### First run
 
 1. Open **Settings**.
@@ -85,17 +97,19 @@ VITE_MOCK=1 npm run dev  # offline UI with fixtures, no token / no rate-limit co
 4. Add one or more **Flows** (workflow file + branches + optional events), or paste a JSON config.
 5. On reload you'll be asked for the passphrase to decrypt the token for the session.
 
-## Token (read-only)
+## Token
 
-Create a **fine-grained personal access token** scoped to the upstream repo with **read-only**:
+Use a **classic personal access token** with the **`repo`** scope (or **`public_repo`** if the
+repo is public). That grants read access to PRs, checks, commit statuses, Actions runs, jobs, and
+**logs**. The app only makes read (GET) requests.
 
-- Pull requests: **Read**
-- Actions: **Read**
-- Checks: **Read**
-- Commit statuses: **Read**
+> A read-only **fine-grained** PAT works for most data, but **can't download Actions logs**
+> (GitHub returns 404 for the logs endpoint), so the per-step logs feature needs a classic
+> `repo` token. Annotations, statuses, timelines and summaries work with either.
 
-The token is sent only to `api.github.com`, is never written to localStorage/sessionStorage,
-and is never logged.
+The token is encrypted (AES-GCM, key derived from your passphrase) and stored only in this
+browser's IndexedDB; the plaintext is only in memory, never logged, and sent only to
+`api.github.com`.
 
 ## Configuration (JSON)
 
