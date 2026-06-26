@@ -8,6 +8,16 @@ import { isMockMode } from './mocks/mockMode';
 import { setFetchImpl } from './api/githubClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+// Clickjacking guard: GitHub Pages can't send frame-ancestors/X-Frame-Options,
+// and a <meta> CSP frame-ancestors is ignored. Bust out of any framing.
+if (window.self !== window.top) {
+  try {
+    window.top!.location.href = window.self.location.href;
+  } catch {
+    document.documentElement.style.display = 'none';
+  }
+}
+
 async function bootstrap() {
   // In mock mode, route the GitHub client through fixtures instead of the network.
   if (isMockMode()) {

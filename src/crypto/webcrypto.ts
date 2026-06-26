@@ -7,8 +7,10 @@
  * only the {salt, iv, ciphertext} envelope is persisted (see secureTokenStore).
  */
 
-/** PBKDF2 work factor. OWASP-recommended floor for PBKDF2-HMAC-SHA256. */
-export const PBKDF2_ITERATIONS = 310_000;
+/** PBKDF2 work factor. Current OWASP recommendation for PBKDF2-HMAC-SHA256.
+ *  Existing envelopes decrypt with their stored `iterations`, so raising this is
+ *  backward-compatible (only new envelopes use the higher count). */
+export const PBKDF2_ITERATIONS = 600_000;
 const SALT_BYTES = 16;
 const IV_BYTES = 12;
 const KEY_LENGTH_BITS = 256;

@@ -60,8 +60,14 @@ function TokenSection() {
       setLocalError('That does not look like a valid token.');
       return;
     }
-    if (passphrase.length < 8) {
-      setLocalError('Use a passphrase of at least 8 characters.');
+    if (
+      passphrase.length < 8 ||
+      !/[A-Z]/.test(passphrase) ||
+      !/[^A-Za-z0-9]/.test(passphrase)
+    ) {
+      setLocalError(
+        'Use a passphrase of at least 8 characters, including an uppercase letter and a special character.',
+      );
       return;
     }
     if (passphrase !== confirm) {
