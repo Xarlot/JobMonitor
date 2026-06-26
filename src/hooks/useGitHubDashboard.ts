@@ -6,7 +6,7 @@
  * Both cadences slow to `hiddenSeconds` when the tab is hidden.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ghGet } from '../api/githubClient';
 import {
   checkRunsPath,
@@ -27,6 +27,8 @@ import {
   type MonitorConfig,
 } from '../storage/configStore';
 import { combineChecksAndStatus } from '../lib/status';
+import { detectNewlyCompleted, prPhase } from '../lib/completion';
+import { sendNotification } from '../lib/notifications';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import { useVisibility } from './useVisibility';
@@ -178,6 +180,28 @@ export function useGitHubDashboard(): DashboardState {
     // checks.refresh is stable (usePolling returns the memoized runner).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetSig, enabled]);
+
+  // Desktop notification when a PR's checks finish (opt-in via config).
+  const prPhaseRef = useRef<Map<number, boolean>>(new Map());
+  const notifyPr = config.notifications.pr;
+  useEffect(() => {
+    const { completed, next } = detectNewlyCompleted(
+      prPhaseRef.current,
+      prs,
+      (e) => e.pr.number,
+      (e) => prPhase(e.overall, e.checksUpdatedAt !== null),
+    );
+    prPhaseRef.current = next;
+    if (!enabled || !notifyPr) return;
+    for (const e of completed) {
+      sendNotification({
+        title: e.overall === 'success' ? 'PR checks passed' : 'PR checks failed',
+        body: `#${e.pr.number} ${e.pr.title}`,
+        tag: `pr-${e.pr.number}-${e.pr.head.sha}`,
+        url: e.pr.html_url,
+      });
+    }
+  }, [prs, enabled, notifyPr]);
 
   const refreshAll = useCallback(() => {
     void list.refresh();

@@ -26,6 +26,7 @@ export const MOCK_CONFIG: MonitorConfig = {
   fork: { owner: 'octodev', branch: null },
   prAuthor: 'octodev',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
+  notifications: { pr: false, flow: false },
   rateLimitWarnAt: 50,
   flows: [
     {

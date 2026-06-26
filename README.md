@@ -22,7 +22,7 @@ no webhooks. Data is read directly from `api.github.com` with a read-only PAT th
   step status breakdown), **Logs** (a dialog where each step expands to show its log lines,
   fetched once per job and split by step timestamps), and **Open on GitHub**. The job-logs
   endpoint is CORS-enabled, so logs render in-app — but it requires a token that can download
-  logs: a **classic PAT with `repo` + `workflow`** (a read-only fine-grained PAT returns 404,
+  logs: a **classic PAT with the `repo` scope** (a read-only fine-grained PAT returns 404,
   and the Logs dialog then links out to GitHub).
 - **Timeline (Gantt)** — a button on each PR and flow run opens a Gantt-style timeline: bars
   positioned by start offset and sized by duration. For flow-run jobs, each bar is split into
@@ -64,6 +64,10 @@ no webhooks. Data is read directly from `api.github.com` with a read-only PAT th
   throttled (with backoff on 403/429).
 - **Polling, not realtime** — PR list & flow runs poll slowly (~3 min), active checks/jobs every
   ~60 s, completed items aren't polled, and everything slows down when the tab is hidden.
+- **Desktop notifications** — opt-in (Settings), separately for **PRs** and **Flows**. A system
+  notification fires when a tracked PR's checks finish or a flow run completes — only on an observed
+  *in-progress → finished* transition, so reloads and already-done items never spam you. Uses the
+  browser's Web Notification permission; nothing leaves the browser.
 
 ## Getting started
 
@@ -123,6 +127,7 @@ exported as JSON:
   "fork": { "owner": "octodev", "branch": null },
   "prAuthor": "octodev",
   "polling": { "prListSeconds": 180, "checksSeconds": 60, "flowRunsSeconds": 180, "hiddenSeconds": 240 },
+  "notifications": { "pr": false, "flow": false },
   "rateLimitWarnAt": 50,
   "flows": [
     {

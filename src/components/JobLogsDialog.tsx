@@ -93,7 +93,7 @@ export function JobLogsDialog({
       {error && (
         <Flash variant="warning" sx={{ mb: 3, fontSize: 0 }}>
           Couldn’t load logs: {error}. A read-only fine-grained token can’t download Actions logs
-          (GitHub returns 404); a classic token with <strong>repo + workflow</strong> scopes can.{' '}
+          (GitHub returns 404); a classic token with the <strong>repo</strong> scope can.{' '}
           {job.html_url && (
             <Link href={job.html_url} target="_blank" rel="noreferrer">
               Open on GitHub

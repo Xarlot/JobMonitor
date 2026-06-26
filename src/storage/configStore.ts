@@ -85,6 +85,16 @@ export const pollingSchema = z.object({
   hiddenSeconds: z.number().int().min(60).max(3600).default(240),
 });
 
+/** Desktop (Web Notification) preferences — opt-in per category. */
+export const notificationsSchema = z
+  .object({
+    /** Notify when a tracked PR's checks finish (success/failure). */
+    pr: z.boolean().default(false),
+    /** Notify when a tracked flow run completes. */
+    flow: z.boolean().default(false),
+  })
+  .default({});
+
 export const monitorConfigSchema = z.object({
   version: z.literal(1).default(1),
   upstream: ownerRepoSchema,
@@ -95,12 +105,14 @@ export const monitorConfigSchema = z.object({
   /** GitHub login whose open PRs are tracked. Defaults to fork.owner if blank. */
   prAuthor: z.string().trim().default(''),
   polling: pollingSchema.default({}),
+  notifications: notificationsSchema,
   rateLimitWarnAt: z.number().int().min(0).max(5000).default(50),
   flows: z.array(flowSchema).default([]),
 });
 
 export type Flow = z.infer<typeof flowSchema>;
 export type PollingConfig = z.infer<typeof pollingSchema>;
+export type NotificationPrefs = z.infer<typeof notificationsSchema>;
 export type EmptyFlowFilter = z.infer<typeof emptyFlowFilterSchema>;
 export type MonitorConfig = z.infer<typeof monitorConfigSchema>;
 
@@ -117,6 +129,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   fork: { owner: '', branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
+  notifications: { pr: false, flow: false },
   rateLimitWarnAt: 50,
   flows: [],
 };

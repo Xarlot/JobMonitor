@@ -25,7 +25,13 @@ import {
   type EmptyFlowFilter,
   type Flow,
   type MonitorConfig,
+  type NotificationPrefs,
 } from '../storage/configStore';
+import {
+  ensureNotificationPermission,
+  notificationPermission,
+  notificationsSupported,
+} from '../lib/notifications';
 import { isMockMode } from '../mocks/mockMode';
 
 const sectionSx = {
@@ -105,10 +111,11 @@ function TokenSection() {
           classic token
         </Link>{' '}
         with the <strong>repo</strong> scope (for a public-only repo, <strong>public_repo</strong>
-        {' '}is enough). That covers reading PRs, checks, commit statuses, Actions runs, jobs, and{' '}
-        <strong>logs</strong>. A read-only fine-grained PAT also works for most data but{' '}
-        <strong>can’t download Actions logs</strong> (GitHub returns 404), so a classic{' '}
-        <code>repo</code> token is recommended. The app only makes read (GET) requests; the token is
+        {' '}is enough). That single scope covers everything the app reads: PRs, checks, commit
+        statuses, Actions runs, jobs, and <strong>logs</strong> — no <code>workflow</code> scope is
+        needed (that one only grants editing workflow files). A read-only fine-grained PAT also works
+        for most data but <strong>can’t download Actions logs</strong> (GitHub returns 404), so a
+        classic <code>repo</code> token is recommended. The app only makes read (GET) requests; the token is
         encrypted with your passphrase (AES-GCM), stored only in this browser, and never logged or
         sent anywhere except api.github.com.
       </Text>
@@ -413,6 +420,52 @@ function FlowEditor({
   );
 }
 
+/** Opt-in desktop notifications for finished PRs / flow runs. */
+function NotificationsSection({
+  prefs,
+  onChange,
+}: {
+  prefs: NotificationPrefs;
+  onChange: (patch: Partial<NotificationPrefs>) => void;
+}) {
+  const supported = notificationsSupported();
+  const [perm, setPerm] = useState<NotificationPermission>(() => notificationPermission());
+
+  const toggle = async (key: keyof NotificationPrefs, on: boolean) => {
+    onChange({ [key]: on });
+    // Ask for OS permission the moment the user opts in.
+    if (on && supported) setPerm(await ensureNotificationPermission());
+  };
+
+  const anyOn = prefs.pr || prefs.flow;
+
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Notifications</Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        Show a desktop notification when a tracked item finishes. Uses your browser's notification
+        permission; nothing leaves this browser.
+      </Text>
+      {!supported && (
+        <Flash variant="warning" sx={{ mb: 3 }}>This browser doesn’t support notifications.</Flash>
+      )}
+      {supported && anyOn && perm === 'denied' && (
+        <Flash variant="warning" sx={{ mb: 3 }}>
+          Notifications are blocked for this site — enable them in your browser’s site settings.
+        </Flash>
+      )}
+      <FormControl sx={{ mb: 2 }} disabled={!supported}>
+        <Checkbox checked={prefs.pr} onChange={(e) => void toggle('pr', e.target.checked)} />
+        <FormControl.Label>Notify when a PR’s checks finish</FormControl.Label>
+      </FormControl>
+      <FormControl disabled={!supported}>
+        <Checkbox checked={prefs.flow} onChange={(e) => void toggle('flow', e.target.checked)} />
+        <FormControl.Label>Notify when a flow run finishes</FormControl.Label>
+      </FormControl>
+    </Box>
+  );
+}
+
 export function SettingsPage() {
   const { config, setConfig } = useConfig();
   const [draft, setDraft] = useState<MonitorConfig>(() => clone(config));
@@ -603,6 +656,11 @@ export function SettingsPage() {
           ))
         )}
       </Box>
+
+      <NotificationsSection
+        prefs={draft.notifications}
+        onChange={(patch) => updateNested('notifications', patch)}
+      />
 
       <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
         <Button variant="primary" onClick={onSave}>Save changes</Button>

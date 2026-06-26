@@ -18,6 +18,8 @@ import type {
   WorkflowsResponse,
 } from '../api/types';
 import { emptyFilterNeedsArtifacts, emptyFilterNeedsLatestJobs } from '../lib/flowEmptiness';
+import { detectNewlyCompleted, runConclusionLabel, runPhase } from '../lib/completion';
+import { sendNotification } from '../lib/notifications';
 import { aggregateStatuses, isActiveStatus, statusToOverall } from '../lib/status';
 import { hasYamlExt, isNumericId, matchWorkflow, workflowBasename } from '../lib/workflow';
 import { isConfigComplete, type Flow } from '../storage/configStore';
@@ -259,6 +261,28 @@ export function useFlow(flow: Flow): FlowState {
     () => aggregateStatuses(runs.map((r) => statusToOverall(r.status, r.conclusion))),
     [runs],
   );
+
+  // Desktop notification when a run in this flow finishes (opt-in via config).
+  const runPhaseRef = useRef<Map<number, boolean>>(new Map());
+  const notifyFlow = config.notifications.flow;
+  useEffect(() => {
+    const { completed, next } = detectNewlyCompleted(
+      runPhaseRef.current,
+      runs,
+      (r) => r.id,
+      (r) => runPhase(r.status),
+    );
+    runPhaseRef.current = next;
+    if (!enabled || !notifyFlow) return;
+    for (const run of completed) {
+      sendNotification({
+        title: `${flow.name}: run ${runConclusionLabel(run.conclusion)}`,
+        body: run.display_title || run.name || `Run #${run.run_number}`,
+        tag: `flow-${flow.id}-run-${run.id}-${run.run_attempt}`,
+        url: run.html_url,
+      });
+    }
+  }, [runs, enabled, notifyFlow, flow.name, flow.id]);
 
   // Fetch the latest completed run's total artifact size, but only when the
   // empty-flow filter is set to evaluate by artifacts (one cached request/flow).
