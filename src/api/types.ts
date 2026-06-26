@@ -148,10 +148,24 @@ export interface Job {
   name: string;
   status: RunStatus;
   conclusion: RunConclusion;
+  /** When the job was queued (before a runner was allocated). */
+  created_at?: string | null;
   started_at: string | null;
   completed_at: string | null;
   html_url: string | null;
+  /** API URL of the job's check-run; the trailing id is used to fetch annotations. */
+  check_run_url?: string;
   steps: JobStep[];
+}
+
+export interface Annotation {
+  path: string;
+  start_line: number | null;
+  end_line: number | null;
+  annotation_level: 'notice' | 'warning' | 'failure' | null;
+  message: string | null;
+  title: string | null;
+  raw_details: string | null;
 }
 
 export interface JobsResponse {

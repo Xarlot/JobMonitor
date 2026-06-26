@@ -40,12 +40,38 @@ export function workflowRunsPath(
   return `/repos/${enc(owner)}/${enc(repo)}/actions/workflows/${enc(workflowFile)}/runs?${params.toString()}`;
 }
 
-export function runJobsPath(owner: string, repo: string, runId: number): string {
-  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/jobs?per_page=100`;
+export function runJobsPath(owner: string, repo: string, runId: number, page = 1): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/jobs?per_page=100&page=${page}`;
 }
 
 export function runArtifactsPath(owner: string, repo: string, runId: number): string {
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/artifacts?per_page=100`;
+}
+
+export function jobLogsPath(owner: string, repo: string, jobId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/jobs/${jobId}/logs`;
+}
+
+export function singleJobPath(owner: string, repo: string, jobId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/jobs/${jobId}`;
+}
+
+/** Extract the Actions job id from a check-run's details_url/html_url (.../job/{id}). */
+export function jobIdFromUrl(url: string | null | undefined): number | null {
+  if (!url) return null;
+  const m = url.match(/\/job\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+export function checkRunAnnotationsPath(owner: string, repo: string, checkRunId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/check-runs/${checkRunId}/annotations?per_page=50`;
+}
+
+/** Extract the trailing check-run id from a job's `check_run_url`, if present. */
+export function checkRunIdFromUrl(url: string | undefined): number | null {
+  if (!url) return null;
+  const m = url.match(/\/check-runs\/(\d+)/);
+  return m ? Number(m[1]) : null;
 }
 
 /** The fork-branch `head` filter value: `forkOwner:branch`. */

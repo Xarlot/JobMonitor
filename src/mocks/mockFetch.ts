@@ -7,10 +7,13 @@
 
 import {
   MOCK_PULLS,
+  mockAnnotations,
   mockArtifacts,
   mockCheckRuns,
   mockCombinedStatus,
+  mockJobLog,
   mockJobs,
+  mockSingleJob,
   mockWorkflowRuns,
   mockWorkflows,
 } from './fixtures';
@@ -58,11 +61,25 @@ export async function mockFetch(
   // Simulate a little latency so the UI's loading states are observable.
   await new Promise((r) => setTimeout(r, 120));
 
+  const jobLogsMatch = path.match(/\/actions\/jobs\/(\d+)\/logs$/);
+  if (jobLogsMatch) {
+    return new Response(mockJobLog(Number(jobLogsMatch[1])), {
+      status: 200,
+      headers: { ...rateLimitHeaders(), 'content-type': 'text/plain' },
+    });
+  }
+
+  const singleJobMatch = path.match(/\/actions\/jobs\/(\d+)$/);
+  if (singleJobMatch) return json(mockSingleJob(Number(singleJobMatch[1])), inm);
+
   const jobsMatch = path.match(/\/actions\/runs\/(\d+)\/jobs$/);
   if (jobsMatch) return json(mockJobs(Number(jobsMatch[1])), inm);
 
   const artifactsMatch = path.match(/\/actions\/runs\/(\d+)\/artifacts$/);
   if (artifactsMatch) return json(mockArtifacts(Number(artifactsMatch[1])), inm);
+
+  const annotationsMatch = path.match(/\/check-runs\/(\d+)\/annotations$/);
+  if (annotationsMatch) return json(mockAnnotations(Number(annotationsMatch[1])), inm);
 
   const runsMatch = path.match(/\/actions\/workflows\/([^/]+)\/runs$/);
   if (runsMatch) {

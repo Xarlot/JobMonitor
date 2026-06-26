@@ -1,19 +1,26 @@
-import { useMemo } from 'react';
-import { Box, BranchName, Heading, Label, Octicon, Text } from '@primer/react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Box, BranchName, Button, Heading, IconButton, Label, Octicon, Spinner, Text } from '@primer/react';
 import {
+  ChecklistIcon,
   CheckCircleFillIcon,
   ChevronRightIcon,
   GitPullRequestIcon,
+  GraphIcon,
+  LinkExternalIcon,
+  SyncIcon,
   WorkflowIcon,
 } from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
 import { useDashboard } from '../context/DashboardContext';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import type { OverallStatus, WorkflowRun } from '../api/types';
+import type { PrEntry } from '../hooks/useGitHubDashboard';
 import { statusToOverall } from '../lib/status';
 import { isFlowEmpty, latestRunJobs } from '../lib/flowEmptiness';
 import { StatusBadge } from './StatusBadge';
 import { formatRelative } from '../lib/format';
+import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryDialog';
+import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
 
 const STATUS_BORDER: Record<OverallStatus, string> = {
   success: 'success.emphasis',
@@ -33,25 +40,24 @@ const titleSx = {
   whiteSpace: 'nowrap',
 } as const;
 
+function open(url: string | null | undefined) {
+  if (url) window.open(url, '_blank', 'noopener');
+}
+
 function Tile({
   status,
-  onClick,
+  onOpen,
+  actions,
   children,
 }: {
   status: OverallStatus;
-  onClick: () => void;
-  children: React.ReactNode;
+  onOpen: () => void;
+  actions?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Box
-      as="button"
-      type="button"
-      onClick={onClick}
       sx={{
-        appearance: 'none',
-        font: 'inherit',
-        textAlign: 'left',
-        cursor: 'pointer',
         bg: 'canvas.default',
         color: 'fg.default',
         border: '1px solid',
@@ -60,22 +66,46 @@ function Tile({
         borderLeftColor: STATUS_BORDER[status],
         borderRadius: 2,
         p: 3,
-        minHeight: 92,
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
-        ':hover': { bg: 'canvas.subtle', borderColor: 'border.muted' },
+        ':hover': { borderColor: 'border.muted' },
       }}
     >
-      {children}
+      <Box
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && onOpen()}
+        sx={{ display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', flex: 1 }}
+      >
+        {children}
+      </Box>
+      {actions && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 1,
+            pt: 2,
+            borderTop: '1px solid',
+            borderColor: 'border.muted',
+          }}
+        >
+          {actions}
+        </Box>
+      )}
     </Box>
   );
 }
 
-/** The most recent run of a flow (runs are sorted newest-first). */
 function latestRun(runs: WorkflowRun[]): WorkflowRun | undefined {
   return runs[0];
 }
+
+type Dlg =
+  | { kind: 'flowSummary' | 'flowTimeline'; owner: string; repo: string; run: WorkflowRun }
+  | { kind: 'prSummary' | 'prTimeline'; entry: PrEntry };
 
 export function Overview({
   onOpenFlow,
@@ -85,10 +115,16 @@ export function Overview({
   onOpenPrs: () => void;
 }) {
   const { config } = useConfig();
-  const { prs } = useDashboard();
+  const { owner: upOwner, repo: upRepo } = config.upstream;
+  const { prs, refreshAll, isFetchingList, isFetchingChecks } = useDashboard();
   const flowStates = useFlowStates();
+  const [dlg, setDlg] = useState<Dlg | null>(null);
 
-  // Hide flows the configured empty-flow filter considers empty.
+  const refreshEverything = () => {
+    refreshAll();
+    for (const s of flowStates.values()) s.refresh();
+  };
+
   const visibleFlows = useMemo(
     () =>
       config.flows.filter((f) => {
@@ -112,6 +148,25 @@ export function Overview({
   }).length;
   const totalFailing = failingPrs + failingFlows;
 
+  const checkItems = (entry: PrEntry): GanttItem[] =>
+    entry.checkRuns.map((c) => ({
+      id: c.id,
+      label: c.name,
+      status: statusToOverall(c.status, c.conclusion),
+      started_at: c.started_at,
+      completed_at: c.completed_at,
+    }));
+
+  const iconBtn = (icon: typeof GraphIcon, label: string, onClick: () => void) => (
+    <IconButton
+      size="small"
+      variant="invisible"
+      icon={icon}
+      aria-label={label}
+      onClick={onClick}
+    />
+  );
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
@@ -126,6 +181,11 @@ export function Overview({
         <Text sx={{ color: 'fg.muted' }}>
           across {prs.length} PRs and {visibleFlows.length} flows
         </Text>
+        <Box sx={{ flex: 1 }} />
+        {(isFetchingList || isFetchingChecks) && <Spinner size="small" />}
+        <Button leadingVisual={SyncIcon} size="small" onClick={refreshEverything}>
+          Refresh
+        </Button>
       </Box>
 
       <Heading as="h3" sx={{ fontSize: 1, color: 'fg.muted', mb: 2 }}>
@@ -135,16 +195,20 @@ export function Overview({
       {prs.length === 0 ? (
         <Text sx={{ color: 'fg.muted' }}>No open pull requests.</Text>
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 3,
-            mb: 5,
-          }}
-        >
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 3, mb: 5 }}>
           {prs.map((entry) => (
-            <Tile key={entry.pr.number} status={entry.overall} onClick={onOpenPrs}>
+            <Tile
+              key={entry.pr.number}
+              status={entry.overall}
+              onOpen={onOpenPrs}
+              actions={
+                <>
+                  {iconBtn(ChecklistIcon, 'Checks summary', () => setDlg({ kind: 'prSummary', entry }))}
+                  {iconBtn(GraphIcon, 'Check timeline', () => setDlg({ kind: 'prTimeline', entry }))}
+                  {iconBtn(LinkExternalIcon, 'Open PR on GitHub', () => open(entry.pr.html_url))}
+                </>
+              }
+            >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <StatusBadge status={entry.overall} withText={false} size={18} />
                 <Text sx={titleSx}>{entry.pr.title}</Text>
@@ -170,19 +234,32 @@ export function Overview({
             : 'All flows are hidden by the empty-flow filter.'}
         </Text>
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 3,
-          }}
-        >
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 3 }}>
           {visibleFlows.map((flow) => {
             const state = flowStates.get(flow.id);
             const run = latestRun(state?.runs ?? []);
             const status = run ? statusToOverall(run.status, run.conclusion) : 'unknown';
+            const fOwner = state?.owner ?? flow.owner ?? upOwner;
+            const fRepo = state?.repo ?? flow.repo ?? upRepo;
             return (
-              <Tile key={flow.id} status={status} onClick={() => onOpenFlow(flow.id)}>
+              <Tile
+                key={flow.id}
+                status={status}
+                onOpen={() => onOpenFlow(flow.id)}
+                actions={
+                  run ? (
+                    <>
+                      {iconBtn(ChecklistIcon, 'Run summary', () =>
+                        setDlg({ kind: 'flowSummary', owner: fOwner, repo: fRepo, run }),
+                      )}
+                      {iconBtn(GraphIcon, 'Run timeline', () =>
+                        setDlg({ kind: 'flowTimeline', owner: fOwner, repo: fRepo, run }),
+                      )}
+                      {iconBtn(LinkExternalIcon, 'Open run on GitHub', () => open(run.html_url))}
+                    </>
+                  ) : undefined
+                }
+              >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <StatusBadge status={status} withText={false} size={18} />
                   <Text sx={titleSx}>{flow.name}</Text>
@@ -196,20 +273,47 @@ export function Overview({
                     </Text>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
                       <Label variant="secondary">{run.event}</Label>
-                      <Text sx={{ fontSize: 0 }}>
-                        {formatRelative(run.run_started_at ?? run.created_at)}
-                      </Text>
+                      <Text sx={{ fontSize: 0 }}>{formatRelative(run.run_started_at ?? run.created_at)}</Text>
                     </Box>
                   </>
                 ) : (
-                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
-                    {state ? 'no runs yet' : 'loading…'}
-                  </Text>
+                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>{state ? 'no runs yet' : 'loading…'}</Text>
                 )}
               </Tile>
             );
           })}
         </Box>
+      )}
+
+      {dlg?.kind === 'flowSummary' && (
+        <RunOverallSummaryDialog owner={dlg.owner} repo={dlg.repo} run={dlg.run} onClose={() => setDlg(null)} />
+      )}
+      {dlg?.kind === 'flowTimeline' && (
+        <FlowRunTimelineDialog owner={dlg.owner} repo={dlg.repo} run={dlg.run} onClose={() => setDlg(null)} />
+      )}
+      {dlg?.kind === 'prSummary' && (
+        <OverallSummaryDialog
+          title={dlg.entry.pr.title}
+          subtitle={`#${dlg.entry.pr.number} · checks summary`}
+          owner={upOwner}
+          repo={upRepo}
+          items={dlg.entry.checkRuns.map((c) => ({
+            id: c.id,
+            label: c.name,
+            status: statusToOverall(c.status, c.conclusion),
+            checkRunId: c.id,
+          }))}
+          htmlUrl={dlg.entry.pr.html_url}
+          onClose={() => setDlg(null)}
+        />
+      )}
+      {dlg?.kind === 'prTimeline' && (
+        <TimelineDialog
+          title={dlg.entry.pr.title}
+          subtitle={`#${dlg.entry.pr.number} · check timeline`}
+          items={checkItems(dlg.entry)}
+          onClose={() => setDlg(null)}
+        />
       )}
     </Box>
   );

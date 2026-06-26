@@ -15,6 +15,7 @@ import {
   recordRateLimitHit,
   updateRateLimitFromHeaders,
 } from './rateLimit';
+import { recordRequest } from './requestStats';
 
 const API_BASE = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -40,16 +41,20 @@ export class GitHubApiError extends Error {
 interface CacheEntry {
   etag: string;
   data: unknown;
+  /** Last write time (ms) — used to evict stale persisted entries by TTL. */
+  ts?: number;
 }
 
 const etagCache = new Map<string, CacheEntry>();
 
 // ---- Persistent ETag cache (localStorage) --------------------------------
-// Persisting {etag, data} per request lets a reload serve data immediately and
-// turn the next fetch into a 304 (which doesn't cost rate limit). Bodies are
-// repo metadata, never secrets. Oversized entries are kept in memory only.
+// Persisting {etag, data, ts} per request lets a reload serve data immediately
+// and turn the next fetch into a 304 (which doesn't cost rate limit). Bodies are
+// repo metadata, never secrets. Oversized entries are kept in memory only, and
+// entries older than the TTL are dropped on load.
 const ETAG_PREFIX = 'job-monitor.etag.';
 const MAX_PERSIST_BYTES = 250_000;
+const ETAG_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 let persistedLoaded = false;
 
 function hasLocalStorage(): boolean {
@@ -64,6 +69,8 @@ function loadPersistedCache(): void {
   if (persistedLoaded) return;
   persistedLoaded = true;
   if (!hasLocalStorage()) return;
+  const now = Date.now();
+  const expiredKeys: string[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -72,11 +79,16 @@ function loadPersistedCache(): void {
       if (!raw) continue;
       try {
         const parsed = JSON.parse(raw) as CacheEntry;
+        if (parsed?.ts && now - parsed.ts > ETAG_TTL_MS) {
+          expiredKeys.push(key); // stale -> clean up
+          continue;
+        }
         if (parsed?.etag) etagCache.set(key.slice(ETAG_PREFIX.length), parsed);
       } catch {
         /* skip corrupt entry */
       }
     }
+    for (const k of expiredKeys) localStorage.removeItem(k);
   } catch {
     /* ignore */
   }
@@ -166,6 +178,7 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
       referrerPolicy: 'no-referrer',
     });
   } catch (err) {
+    recordRequest('error');
     if (controller.signal.aborted) throw new GitHubApiError('Request timed out.', 0);
     // Network error: do not include any request detail that might carry the token.
     throw new GitHubApiError('Network request to GitHub failed.', 0);
@@ -175,6 +188,7 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
 
   if (res.status === 304) {
     updateRateLimitFromHeaders(res.headers);
+    recordRequest('cached');
     if (!cached) {
       // Should not happen (we only send If-None-Match with a cache), but be safe.
       throw new GitHubApiError('Received 304 without a cached response.', 304);
@@ -183,6 +197,7 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   }
 
   if (res.status === 403 || res.status === 429) {
+    recordRequest('error');
     const remaining = res.headers.get('x-ratelimit-remaining');
     const isSecondary =
       res.status === 429 ||
@@ -197,18 +212,57 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   }
 
   if (!res.ok) {
+    recordRequest('error');
     updateRateLimitFromHeaders(res.headers);
     throw new GitHubApiError(`GitHub API error (HTTP ${res.status}).`, res.status);
   }
 
   updateRateLimitFromHeaders(res.headers);
+  recordRequest('fresh');
   const data = (await res.json()) as T;
   const etag = res.headers.get('etag');
   if (etag) {
-    const entry = { etag, data };
+    const entry = { etag, data, ts: Date.now() };
     etagCache.set(path, entry);
     persistEntry(path, entry);
   }
 
   return { data, status: res.status, notModified: false };
+}
+
+/**
+ * Fetch a text resource (e.g. Actions job logs). The endpoint 302-redirects to a
+ * CORS-enabled signed blob URL; the browser follows it and drops Authorization on
+ * the cross-origin hop (the blob uses a signed query). Only `Authorization` is
+ * sent so the redirected GET stays a simple, preflight-free request.
+ */
+export async function ghGetText(path: string): Promise<string> {
+  loadPersistedCache();
+  const token = tokenProvider();
+  if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: 'follow',
+      signal: controller.signal,
+      referrerPolicy: 'no-referrer',
+    });
+  } catch {
+    recordRequest('error');
+    if (controller.signal.aborted) throw new GitHubApiError('Request timed out.', 0);
+    throw new GitHubApiError('Network request failed (logs may be CORS-restricted).', 0);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    recordRequest('error');
+    throw new GitHubApiError(`Failed to load logs (HTTP ${res.status}).`, res.status);
+  }
+  recordRequest('fresh');
+  return res.text();
 }

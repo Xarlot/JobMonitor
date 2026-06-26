@@ -5,6 +5,7 @@ import {
   BranchName,
   Button,
   Flash,
+  IconButton,
   Link,
   Octicon,
   SegmentedControl,
@@ -13,16 +14,23 @@ import {
   Text,
 } from '@primer/react';
 import {
+  ChecklistIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GraphIcon,
   LinkExternalIcon,
   SyncIcon,
 } from '@primer/octicons-react';
 import { useDashboard } from '../context/DashboardContext';
+import { useViewMode } from '../context/ViewModeContext';
+import { useConfig } from '../context/ConfigContext';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
 import type { OverallStatus } from '../api/types';
+import { statusToOverall } from '../lib/status';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
+import { TimelineDialog, type GanttItem } from './TimelineDialog';
+import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { formatRelative } from '../lib/format';
 
 export type PrFilter = 'all' | 'active' | 'failed' | 'success';
@@ -43,7 +51,18 @@ function inFilter(status: OverallStatus, filter: Filter): boolean {
 
 function PrRow({ entry }: { entry: PrEntry }) {
   const [open, setOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const { config } = useConfig();
+  const { owner, repo } = config.upstream;
   const { pr, overall } = entry;
+  const timelineItems: GanttItem[] = entry.checkRuns.map((c) => ({
+    id: c.id,
+    label: c.name,
+    status: statusToOverall(c.status, c.conclusion),
+    started_at: c.started_at,
+    completed_at: c.completed_at,
+  }));
   return (
     <Box sx={{ borderBottom: '1px solid', borderColor: 'border.default' }}>
       <Box
@@ -84,10 +103,54 @@ function PrRow({ entry }: { entry: PrEntry }) {
         {pr.user && (
           <Avatar src={pr.user.avatar_url} size={20} alt={pr.user.login} />
         )}
+        <IconButton
+          size="small"
+          variant="invisible"
+          icon={ChecklistIcon}
+          aria-label="PR checks summary"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            setSummaryOpen(true);
+          }}
+        />
+        <IconButton
+          size="small"
+          variant="invisible"
+          icon={GraphIcon}
+          aria-label="PR check timeline"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            setTimelineOpen(true);
+          }}
+        />
         <Link href={pr.html_url} target="_blank" rel="noreferrer" muted onClick={(e: React.MouseEvent) => e.stopPropagation()}>
           <Octicon icon={LinkExternalIcon} size={14} />
         </Link>
       </Box>
+      {timelineOpen && (
+        <TimelineDialog
+          title={pr.title}
+          subtitle={`#${pr.number} · check timeline`}
+          items={timelineItems}
+          onClose={() => setTimelineOpen(false)}
+        />
+      )}
+      {summaryOpen && (
+        <OverallSummaryDialog
+          title={pr.title}
+          subtitle={`#${pr.number} · checks summary`}
+          owner={owner}
+          repo={repo}
+          items={entry.checkRuns.map((c) => ({
+            id: c.id,
+            label: c.name,
+            status: statusToOverall(c.status, c.conclusion),
+            checkRunId: c.id,
+          }))}
+          htmlUrl={pr.html_url}
+          onClose={() => setSummaryOpen(false)}
+        />
+      )}
       {open && (
         <Box sx={{ px: 4, pb: 3, pt: 1, bg: 'canvas.subtle' }}>
           {entry.checksError && (
@@ -98,7 +161,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
               <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading checks…</Text>
             </Box>
           ) : (
-            <CheckRunsTable checkRuns={entry.checkRuns} combined={entry.combined} />
+            <CheckRunsTable checkRuns={entry.checkRuns} combined={entry.combined} owner={owner} repo={repo} />
           )}
         </Box>
       )}
@@ -109,6 +172,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
 export function PrList({ initialFilter }: { initialFilter?: PrFilter } = {}) {
   const { prs, listError, listUpdatedAt, isFetchingList, isFetchingChecks, refreshAll } =
     useDashboard();
+  const { compact, setCompact } = useViewMode();
   const [filter, setFilter] = useState<Filter>(initialFilter ?? 'all');
 
   // Apply a filter requested via Overview navigation.
@@ -147,17 +211,27 @@ export function PrList({ initialFilter }: { initialFilter?: PrFilter } = {}) {
           gap: 2,
         }}
       >
-        <SegmentedControl aria-label="Filter pull requests">
-          {filters.map((f) => (
-            <SegmentedControl.Button
-              key={f}
-              selected={filter === f}
-              onClick={() => setFilter(f)}
-            >
-              {`${label[f]} (${counts[f]})`}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+          <SegmentedControl aria-label="Filter pull requests">
+            {filters.map((f) => (
+              <SegmentedControl.Button
+                key={f}
+                selected={filter === f}
+                onClick={() => setFilter(f)}
+              >
+                {`${label[f]} (${counts[f]})`}
+              </SegmentedControl.Button>
+            ))}
+          </SegmentedControl>
+          <SegmentedControl aria-label="Check view density">
+            <SegmentedControl.Button selected={!compact} onClick={() => setCompact(false)}>
+              All checks
             </SegmentedControl.Button>
-          ))}
-        </SegmentedControl>
+            <SegmentedControl.Button selected={compact} onClick={() => setCompact(true)}>
+              Compact
+            </SegmentedControl.Button>
+          </SegmentedControl>
+        </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {listUpdatedAt && (
             <Text sx={{ fontSize: 0, color: 'fg.muted' }}>

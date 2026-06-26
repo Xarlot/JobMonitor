@@ -8,10 +8,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ghGet, evictFromCache } from '../api/githubClient';
 import { runArtifactsPath, runJobsPath, workflowRunsPath, workflowsPath } from '../api/endpoints';
+import { fetchAllRunJobs } from '../api/jobs';
 import type {
   ArtifactsResponse,
   Job,
-  JobsResponse,
   OverallStatus,
   WorkflowRun,
   WorkflowRunsResponse,
@@ -38,6 +38,9 @@ export interface JobsCacheEntry {
 }
 
 export interface FlowState {
+  /** Effective owner/repo (flow override or upstream default). */
+  owner: string;
+  repo: string;
   runs: WorkflowRun[];
   overall: OverallStatus;
   jobsByRun: Record<number, JobsCacheEntry>;
@@ -178,10 +181,10 @@ export function useFlow(flow: Flow): FlowState {
         },
       }));
       try {
-        const { data } = await ghGet<JobsResponse>(runJobsPath(owner, repo, run.id));
+        const jobs = await fetchAllRunJobs(owner, repo, run.id);
         setJobsByRun((prev) => ({
           ...prev,
-          [run.id]: { jobs: data.jobs, fetchedFp: jobFingerprint(run), loading: false, error: null },
+          [run.id]: { jobs, fetchedFp: jobFingerprint(run), loading: false, error: null },
         }));
       } catch (e) {
         setJobsByRun((prev) => ({
@@ -287,6 +290,8 @@ export function useFlow(flow: Flow): FlowState {
   }, [enabled, artifactRunId, owner, repo]);
 
   return {
+    owner,
+    repo,
     runs,
     overall,
     jobsByRun,

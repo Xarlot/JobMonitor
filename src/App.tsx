@@ -12,7 +12,8 @@ import { useConfig } from './context/ConfigContext';
 import { DashboardProvider } from './context/DashboardContext';
 import { FlowsRuntimeProvider } from './context/FlowsRuntimeContext';
 import { FlowsFilterProvider } from './context/FlowsFilterContext';
-import { RateLimitBadge } from './components/RateLimitBadge';
+import { ViewModeProvider } from './context/ViewModeContext';
+import { StatsBadge } from './components/StatsBadge';
 import { UnlockDialog } from './components/UnlockDialog';
 import { Overview } from './components/Overview';
 import { PrList } from './components/PrList';
@@ -39,7 +40,7 @@ function Header() {
       <Heading as="h1" sx={{ fontSize: 2 }}>Job Monitor</Heading>
       <Text sx={{ fontSize: 0, color: 'fg.muted' }}>GitHub Actions dashboard</Text>
       <Box sx={{ flex: 1 }} />
-      <RateLimitBadge />
+      <StatsBadge />
     </Box>
   );
 }
@@ -81,6 +82,7 @@ export function App() {
       {status === 'locked' ? (
         <UnlockDialog />
       ) : (
+        <ViewModeProvider>
         <FlowsFilterProvider>
           <DashboardProvider>
             <FlowsRuntimeProvider>
@@ -118,6 +120,7 @@ export function App() {
             </FlowsRuntimeProvider>
           </DashboardProvider>
         </FlowsFilterProvider>
+        </ViewModeProvider>
       )}
     </Box>
   );

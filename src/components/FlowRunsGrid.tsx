@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   createColumnHelper,
   flexRender,
@@ -11,6 +11,7 @@ import {
   Button,
   Flash,
   Heading,
+  IconButton,
   Label,
   Link,
   Octicon,
@@ -18,11 +19,15 @@ import {
   Text,
 } from '@primer/react';
 import {
+  ChecklistIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GraphIcon,
   LinkExternalIcon,
   SyncIcon,
 } from '@primer/octicons-react';
+import { FlowRunTimelineDialog } from './TimelineDialog';
+import { RunOverallSummaryDialog } from './OverallSummaryDialog';
 import type { WorkflowRun } from '../api/types';
 import type { Flow } from '../storage/configStore';
 import type { FlowState } from '../hooks/useFlows';
@@ -35,6 +40,8 @@ import { formatDuration, formatRelative } from '../lib/format';
 
 interface TableMeta {
   isExpanded: (runId: number) => boolean;
+  onTimeline: (run: WorkflowRun) => void;
+  onSummary: (run: WorkflowRun) => void;
 }
 
 const columnHelper = createColumnHelper<WorkflowRun>();
@@ -78,12 +85,17 @@ export function FlowRunsGrid({
   const runs = state?.runs ?? [];
   const overall = state?.overall ?? 'unknown';
   const jobsByRun = state?.jobsByRun ?? {};
+  const owner = state?.owner ?? flow.owner ?? '';
+  const repo = state?.repo ?? flow.repo ?? '';
   const isExpanded = state?.isExpanded ?? (() => false);
   const onToggleRun = state?.onToggleRun ?? (() => {});
   const isFetchingRuns = state?.isFetchingRuns ?? false;
   const runsError = state?.runsError ?? null;
   const runsUpdatedAt = state?.runsUpdatedAt ?? null;
   const refresh = state?.refresh ?? (() => {});
+
+  const [timelineRun, setTimelineRun] = useState<WorkflowRun | null>(null);
+  const [summaryRun, setSummaryRun] = useState<WorkflowRun | null>(null);
 
   const visibleRuns = useMemo(
     () =>
@@ -173,17 +185,43 @@ export function FlowRunsGrid({
       columnHelper.display({
         id: 'link',
         header: '',
-        cell: (info) => (
-          <Link
-            href={info.row.original.html_url}
-            target="_blank"
-            rel="noreferrer"
-            muted
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          >
-            <Octicon icon={LinkExternalIcon} size={14} />
-          </Link>
-        ),
+        cell: (info) => {
+          const r = info.row.original;
+          const meta = info.table.options.meta as TableMeta;
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+              <IconButton
+                size="small"
+                variant="invisible"
+                icon={ChecklistIcon}
+                aria-label="Run summary"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  meta.onSummary(r);
+                }}
+              />
+              <IconButton
+                size="small"
+                variant="invisible"
+                icon={GraphIcon}
+                aria-label="Run timeline"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  meta.onTimeline(r);
+                }}
+              />
+              <Link
+                href={r.html_url}
+                target="_blank"
+                rel="noreferrer"
+                muted
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              >
+                <Octicon icon={LinkExternalIcon} size={14} />
+              </Link>
+            </Box>
+          );
+        },
       }),
     ],
     [],
@@ -194,7 +232,11 @@ export function FlowRunsGrid({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => String(row.id),
-    meta: { isExpanded } satisfies TableMeta,
+    meta: {
+      isExpanded,
+      onTimeline: setTimelineRun,
+      onSummary: setSummaryRun,
+    } satisfies TableMeta,
   });
 
   const colSpan = table.getAllLeafColumns().length;
@@ -307,7 +349,7 @@ export function FlowRunsGrid({
                       <Box as="tr">
                         <Box as="td" colSpan={colSpan} sx={{ p: 0, bg: 'canvas.inset' }}>
                           <Box sx={{ px: 4, py: 2 }}>
-                            <JobsTable entry={jobsByRun[row.original.id]} />
+                            <JobsTable entry={jobsByRun[row.original.id]} owner={owner} repo={repo} />
                           </Box>
                         </Box>
                       </Box>
@@ -319,6 +361,23 @@ export function FlowRunsGrid({
           </Box>
         </Box>
       </Box>
+
+      {timelineRun && (
+        <FlowRunTimelineDialog
+          owner={owner}
+          repo={repo}
+          run={timelineRun}
+          onClose={() => setTimelineRun(null)}
+        />
+      )}
+      {summaryRun && (
+        <RunOverallSummaryDialog
+          owner={owner}
+          repo={repo}
+          run={summaryRun}
+          onClose={() => setSummaryRun(null)}
+        />
+      )}
     </Box>
   );
 }

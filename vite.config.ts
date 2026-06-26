@@ -13,9 +13,12 @@ import react from '@vitejs/plugin-react';
  * relax script-src and connect-src for `vite serve` only.
  */
 function buildCsp(isDev: boolean): string {
+  // api.github.com for the API; *.blob.core.windows.net + *.actions.githubusercontent.com
+  // are where Actions job logs are redirected (CORS-enabled signed URLs).
+  const logHosts = 'https://*.blob.core.windows.net https://*.actions.githubusercontent.com';
   const connectSrc = isDev
-    ? "'self' https://api.github.com ws://localhost:* http://localhost:*"
-    : "'self' https://api.github.com";
+    ? `'self' https://api.github.com ${logHosts} ws://localhost:* http://localhost:*`
+    : `'self' https://api.github.com ${logHosts}`;
   const scriptSrc = isDev ? "'self' 'unsafe-inline' 'unsafe-eval'" : "'self'";
   return [
     "default-src 'self'",

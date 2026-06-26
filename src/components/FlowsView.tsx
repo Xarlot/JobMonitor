@@ -20,6 +20,7 @@ import {
   type JobStateFilter,
   type RunStatusFilter,
 } from '../context/FlowsFilterContext';
+import { useViewMode } from '../context/ViewModeContext';
 import { FlowRunsGrid } from './FlowRunsGrid';
 
 const RUN_FILTERS: { value: RunStatusFilter; label: string }[] = [
@@ -39,6 +40,7 @@ const JOB_STATES: { value: JobStateFilter; label: string }[] = [
 
 function FlowsToolbar() {
   const { filter, setFilter } = useFlowsFilter();
+  const { compact, setCompact } = useViewMode();
   const jobActive = isJobFilterActive(filter);
   return (
     <Box
@@ -60,6 +62,15 @@ function FlowsToolbar() {
             {f.label}
           </SegmentedControl.Button>
         ))}
+      </SegmentedControl>
+
+      <SegmentedControl aria-label="Job view density">
+        <SegmentedControl.Button selected={!compact} onClick={() => setCompact(false)}>
+          All jobs
+        </SegmentedControl.Button>
+        <SegmentedControl.Button selected={compact} onClick={() => setCompact(true)}>
+          Compact
+        </SegmentedControl.Button>
       </SegmentedControl>
 
       <FormControl sx={{ width: 200 }}>

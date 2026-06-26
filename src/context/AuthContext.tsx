@@ -27,6 +27,7 @@ import {
   unlockToken,
 } from '../storage/secureTokenStore';
 import { clearEtagCache } from '../api/githubClient';
+import { clearLogCache } from '../api/logCache';
 import { isMockMode } from '../mocks/mockMode';
 
 export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
@@ -92,12 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     await forgetToken();
     clearEtagCache();
+    clearLogCache();
     setStatus('needs-setup');
   }, []);
 
   const lock = useCallback(() => {
     lockToken();
     clearEtagCache();
+    clearLogCache();
     setStatus('locked');
   }, []);
 
