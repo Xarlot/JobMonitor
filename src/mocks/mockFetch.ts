@@ -1,0 +1,91 @@
+/**
+ * A `fetch` stand-in for mock mode. Routes api.github.com paths to fixtures,
+ * emits realistic ETag + rate-limit headers, and returns 304 when If-None-Match
+ * matches the (content-derived) ETag — exercising the same code paths as the
+ * real client without network or rate-limit cost.
+ */
+
+import {
+  MOCK_PULLS,
+  mockArtifacts,
+  mockCheckRuns,
+  mockCombinedStatus,
+  mockJobs,
+  mockWorkflowRuns,
+  mockWorkflows,
+} from './fixtures';
+
+let callCount = 0;
+
+function weakHash(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16);
+}
+
+function rateLimitHeaders(): Record<string, string> {
+  callCount += 1;
+  const remaining = Math.max(0, 5000 - callCount);
+  return {
+    'x-ratelimit-limit': '5000',
+    'x-ratelimit-remaining': String(remaining),
+    'x-ratelimit-used': String(callCount),
+    'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 3600),
+  };
+}
+
+function json(body: unknown, ifNoneMatch: string | null): Response {
+  const text = JSON.stringify(body);
+  const etag = `W/"${weakHash(text)}"`;
+  const headers = { ...rateLimitHeaders(), etag, 'content-type': 'application/json' };
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(text, { status: 200, headers });
+}
+
+export async function mockFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const url = new URL(typeof input === 'string' ? input : input.toString());
+  const path = url.pathname;
+  const inm = new Headers(init?.headers).get('if-none-match');
+
+  // Simulate a little latency so the UI's loading states are observable.
+  await new Promise((r) => setTimeout(r, 120));
+
+  const jobsMatch = path.match(/\/actions\/runs\/(\d+)\/jobs$/);
+  if (jobsMatch) return json(mockJobs(Number(jobsMatch[1])), inm);
+
+  const artifactsMatch = path.match(/\/actions\/runs\/(\d+)\/artifacts$/);
+  if (artifactsMatch) return json(mockArtifacts(Number(artifactsMatch[1])), inm);
+
+  const runsMatch = path.match(/\/actions\/workflows\/([^/]+)\/runs$/);
+  if (runsMatch) {
+    // Only the "ci" workflow has runs; others are empty (demos the empty-flow filter).
+    const wf = decodeURIComponent(runsMatch[1]);
+    const hasRuns = wf === '42' || /ci/i.test(wf);
+    return json(hasRuns ? mockWorkflowRuns() : { total_count: 0, workflow_runs: [] }, inm);
+  }
+
+  if (/\/actions\/workflows$/.test(path)) {
+    return json(mockWorkflows(), inm);
+  }
+
+  const checkMatch = path.match(/\/commits\/([^/]+)\/check-runs$/);
+  if (checkMatch) return json(mockCheckRuns(checkMatch[1]), inm);
+
+  const statusMatch = path.match(/\/commits\/([^/]+)\/status$/);
+  if (statusMatch) return json(mockCombinedStatus(statusMatch[1]), inm);
+
+  if (/\/pulls$/.test(path)) return json(MOCK_PULLS, inm);
+
+  return new Response(JSON.stringify({ message: 'Not Found (mock)' }), {
+    status: 404,
+    headers: { 'content-type': 'application/json' },
+  });
+}
