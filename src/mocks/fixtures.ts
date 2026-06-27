@@ -27,6 +27,7 @@ export const MOCK_CONFIG: MonitorConfig = {
   prAuthor: 'octodev',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
   notifications: { pr: false, flow: false },
+  autoUpdate: true,
   rateLimitWarnAt: 50,
   flows: [
     {

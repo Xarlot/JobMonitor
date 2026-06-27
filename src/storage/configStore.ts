@@ -74,7 +74,7 @@ export const flowSchema = z.preprocess(
     events: z.array(z.string().trim().min(1)).default([]),
     maxRuns: z.number().int().min(1).max(50).default(5),
     /** Per-flow "hide when empty" filter. */
-    emptyFilter: emptyFlowFilterSchema.default({}),
+    emptyFilter: emptyFlowFilterSchema.prefault({}),
   }),
 );
 
@@ -93,7 +93,7 @@ export const notificationsSchema = z
     /** Notify when a tracked flow run completes. */
     flow: z.boolean().default(false),
   })
-  .default({});
+  .prefault({});
 
 export const monitorConfigSchema = z.object({
   version: z.literal(1).default(1),
@@ -104,8 +104,10 @@ export const monitorConfigSchema = z.object({
   }),
   /** GitHub login whose open PRs are tracked. Defaults to fork.owner if blank. */
   prAuthor: z.string().trim().default(''),
-  polling: pollingSchema.default({}),
+  polling: pollingSchema.prefault({}),
   notifications: notificationsSchema,
+  /** Desktop app: auto-download & install updates. Ignored where unsupported. */
+  autoUpdate: z.boolean().default(true),
   rateLimitWarnAt: z.number().int().min(0).max(5000).default(50),
   flows: z.array(flowSchema).default([]),
 });
@@ -130,6 +132,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
   notifications: { pr: false, flow: false },
+  autoUpdate: true,
   rateLimitWarnAt: 50,
   flows: [],
 };

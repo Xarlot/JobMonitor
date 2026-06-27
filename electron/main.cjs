@@ -18,6 +18,7 @@ const {
   Menu,
   dialog,
   ipcMain,
+  Notification,
   protocol,
   nativeImage,
   safeStorage,
@@ -37,6 +38,11 @@ const isDev = !app.isPackaged;
 // unset the app loads the bundled build over app://.
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const REPO_URL = 'https://github.com/DevExpress/JavaJobMonitor';
+// Auto-update is only possible in a packaged build whose format supports self-
+// update: NSIS (Windows), dmg/zip (macOS), AppImage (Linux). A .deb install is
+// managed by apt and a dev run isn't packaged — so those can't auto-update.
+const CAN_AUTO_UPDATE =
+  app.isPackaged && (process.platform !== 'linux' || Boolean(process.env.APPIMAGE));
 
 let mainWindow = null;
 let tray = null;
@@ -62,6 +68,7 @@ if (!gotLock) {
     Menu.setApplicationMenu(null); // remove the default shell menu bar (File/Edit/View…)
     registerAppProtocol();
     registerSecretIpc();
+    registerUpdateIpc();
     createWindow();
     createTray();
     setupAutoUpdate();
@@ -243,7 +250,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Job Monitor', click: showWindow },
-      { label: 'Check for updates…', click: () => autoUpdater.checkForUpdates().catch(() => {}) },
+      { label: 'Check for updates…', click: checkForUpdatesManual },
       { label: 'About', click: showAbout },
       { type: 'separator' },
       {
@@ -304,12 +311,110 @@ function registerSecretIpc() {
   });
 }
 
+// True while a *user-initiated* check is in flight, so we only pop "no update"/
+// "error" dialogs for manual checks (background checks stay quiet).
+let manualUpdateCheck = false;
+// Background auto-update on/off, driven by the renderer's config setting.
+let autoUpdateEnabled = false;
+let autoUpdateTimer = null;
+
+function info(title, message, detail) {
+  return dialog.showMessageBox(mainWindow ?? undefined, { type: 'info', title, message, detail });
+}
+
+function notify(title, body) {
+  try {
+    new Notification({ title, body, icon: TRAY_ICON }).show();
+  } catch {
+    /* notifications unavailable; ignore */
+  }
+}
+
 function setupAutoUpdate() {
-  if (isDev) return; // updater needs a packaged app + published GitHub releases
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  // Downloads in the background and shows a native notification when ready;
-  // installs on the next quit.
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  setInterval(() => autoUpdater.checkForUpdatesAndNotify().catch(() => {}), 6 * 60 * 60 * 1000);
+  autoUpdater.autoInstallOnAppQuit = true; // fallback if we quit before install
+
+  // Fully automatic: no "update available" prompt — download, then install &
+  // restart on completion. A user-initiated check gets a brief heads-up.
+  autoUpdater.on('update-available', (i) => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      notify('Updating Job Monitor', `Downloading version ${i.version}…`);
+    }
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      info('No updates', 'You’re on the latest version.', `Version ${app.getVersion()}.`);
+    }
+  });
+  autoUpdater.on('error', (err) => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow ?? undefined, {
+        type: 'error',
+        title: 'Update check failed',
+        message: 'Could not check for updates.',
+        detail: String((err && err.message) || err),
+      });
+    }
+  });
+  autoUpdater.on('update-downloaded', (i) => {
+    notify('Updating Job Monitor', `Installing version ${i.version} and restarting…`);
+    app.isQuitting = true;
+    // Let the notification surface, then quit & install (relaunches the app).
+    setTimeout(() => autoUpdater.quitAndInstall(), 1500);
+  });
+}
+
+/** Start/stop background update checks based on env support + the user setting. */
+function applyAutoUpdatePolicy() {
+  const active = CAN_AUTO_UPDATE && autoUpdateEnabled;
+  if (active && !autoUpdateTimer) {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    autoUpdateTimer = setInterval(
+      () => autoUpdater.checkForUpdatesAndNotify().catch(() => {}),
+      6 * 60 * 60 * 1000,
+    );
+  } else if (!active && autoUpdateTimer) {
+    clearInterval(autoUpdateTimer);
+    autoUpdateTimer = null;
+  }
+}
+
+function registerUpdateIpc() {
+  // Renderer asks whether auto-update is even possible in this environment.
+  ipcMain.handle('updates:supported', () => CAN_AUTO_UPDATE);
+  // Renderer pushes the config setting on load and whenever it changes.
+  ipcMain.handle('updates:setEnabled', (_e, enabled) => {
+    autoUpdateEnabled = Boolean(enabled);
+    applyAutoUpdatePolicy();
+    return CAN_AUTO_UPDATE;
+  });
+}
+
+/** Tray "Check for updates…" — always runs and reports the result or the error. */
+function checkForUpdatesManual() {
+  manualUpdateCheck = true;
+  if (isDev) {
+    // Run against the real GitHub releases even unpackaged, so the button is
+    // testable and surfaces the real error (e.g. no release yet / private repo).
+    autoUpdater.forceDevUpdateConfig = true;
+    try {
+      autoUpdater.setFeedURL({ provider: 'github', owner: 'DevExpress', repo: 'JavaJobMonitor' });
+    } catch {
+      /* ignore */
+    }
+  }
+  autoUpdater.checkForUpdates().catch((err) => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow ?? undefined, {
+        type: 'error',
+        title: 'Update check failed',
+        message: 'Could not check for updates.',
+        detail: String((err && err.message) || err),
+      });
+    }
+  });
 }

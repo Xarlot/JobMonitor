@@ -18,4 +18,9 @@ contextBridge.exposeInMainWorld('desktop', {
     set: (value) => ipcRenderer.invoke('secret:set', value),
     clear: () => ipcRenderer.invoke('secret:clear'),
   },
+  // Auto-update control (see main.cjs registerUpdateIpc).
+  updates: {
+    supported: () => ipcRenderer.invoke('updates:supported'),
+    setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
+  },
 });

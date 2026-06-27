@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Flash, Heading, Octicon, Spinner, Text, UnderlineNav } from '@primer/react';
 import {
   AppsIcon,
@@ -19,6 +19,7 @@ import { Overview } from './components/Overview';
 import { PrList } from './components/PrList';
 import { FlowsView } from './components/FlowsView';
 import { SettingsPage } from './components/SettingsPage';
+import { setAutoUpdateEnabled } from './storage/desktopUpdates';
 
 type View = 'overview' | 'prs' | 'flows' | 'settings';
 
@@ -47,9 +48,14 @@ function Header() {
 
 export function App() {
   const { status } = useAuth();
-  const { complete } = useConfig();
+  const { config, complete } = useConfig();
   const [view, setView] = useState<View>('overview');
   const [focusFlowId, setFocusFlowId] = useState<string | null>(null);
+
+  // Keep the desktop shell's auto-updater in sync with the user's setting.
+  useEffect(() => {
+    void setAutoUpdateEnabled(config.autoUpdate);
+  }, [config.autoUpdate]);
 
   if (status === 'loading') {
     return (

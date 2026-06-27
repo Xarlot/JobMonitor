@@ -79,7 +79,7 @@ npm run test           # vitest
 VITE_MOCK=1 npm run dev  # offline UI with fixtures, no token / no rate-limit cost
 ```
 
-> This repo pins **Node 20**. If `node` isn't on your PATH, install it (e.g. via nvm) before `npm install`.
+> This repo targets **Node 24** (see `.nvmrc`). If `node` isn't on your PATH, install it (e.g. via nvm: `nvm install`) before `npm install`.
 
 ### Publish via GitHub Pages
 

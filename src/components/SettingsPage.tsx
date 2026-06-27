@@ -14,8 +14,9 @@ import {
   Text,
   TextInput,
   Textarea,
+  UnderlineNav,
 } from '@primer/react';
-import { PlusIcon, ShieldLockIcon, TrashIcon } from '@primer/octicons-react';
+import { BellIcon, GearIcon, PlusIcon, ShieldLockIcon, TrashIcon } from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -32,7 +33,8 @@ import {
   notificationPermission,
   notificationsSupported,
 } from '../lib/notifications';
-import { canRememberSecret } from '../storage/desktopSecret';
+import { canRememberSecret, isDesktop } from '../storage/desktopSecret';
+import { autoUpdateSupported } from '../storage/desktopUpdates';
 import { isMockMode } from '../mocks/mockMode';
 
 const sectionSx = {
@@ -482,6 +484,47 @@ function NotificationsSection({
   );
 }
 
+/** Desktop auto-update toggle. Hidden in the browser; disabled where unsupported. */
+function UpdatesSection({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const [supported, setSupported] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    autoUpdateSupported().then((ok) => active && setSupported(ok));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!isDesktop()) return null; // auto-update is a desktop-app feature only
+
+  const canUpdate = supported === true;
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Updates</Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        Automatically download and install new versions from GitHub releases.
+      </Text>
+      {!canUpdate && (
+        <Flash variant="warning" sx={{ mb: 3 }}>
+          Auto-update isn’t available in this environment (a dev run or a <code>.deb</code> install).
+          Use the AppImage / installer build to enable it.
+        </Flash>
+      )}
+      <FormControl disabled={!canUpdate}>
+        <Checkbox checked={canUpdate && enabled} onChange={(e) => onChange(e.target.checked)} />
+        <FormControl.Label>Automatically install updates</FormControl.Label>
+        <FormControl.Caption>Downloads in the background and restarts to apply.</FormControl.Caption>
+      </FormControl>
+    </Box>
+  );
+}
+
 export function SettingsPage() {
   const { config, setConfig } = useConfig();
   const [draft, setDraft] = useState<MonitorConfig>(() => clone(config));
@@ -489,6 +532,7 @@ export function SettingsPage() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
+  const [tab, setTab] = useState<'polling' | 'token' | 'notifications'>('token');
 
   const exportJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
 
@@ -547,23 +591,57 @@ export function SettingsPage() {
   const removeFlow = (index: number) =>
     update({ flows: draft.flows.filter((_, i) => i !== index) });
 
+  const draftFooter = (
+    <>
+      {errors.length > 0 && (
+        <Flash variant="danger" sx={{ mb: 3 }}>
+          <Box as="ul" sx={{ m: 0, pl: 3 }}>
+            {errors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </Box>
+        </Flash>
+      )}
+      {savedMsg && <Flash variant="success" sx={{ mb: 3 }}>Settings saved.</Flash>}
+      <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
+        <Button variant="primary" onClick={onSave}>Save changes</Button>
+        <Button onClick={() => setDraft(clone(config))}>Reset</Button>
+      </Box>
+    </>
+  );
+
+  const TABS = [
+    ['token', 'Token & login', ShieldLockIcon],
+    ['polling', 'Polling', GearIcon],
+    ['notifications', 'Notifications', BellIcon],
+  ] as const;
+
   return (
     <Box sx={{ maxWidth: 860 }}>
-      <TokenSection />
+      <Box sx={{ mb: 4 }}>
+        <UnderlineNav aria-label="Settings sections">
+          {TABS.map(([key, label, icon]) => (
+            <UnderlineNav.Item
+              key={key}
+              icon={icon}
+              aria-current={tab === key ? 'page' : undefined}
+              onSelect={(e) => {
+                e.preventDefault();
+                setTab(key);
+              }}
+            >
+              {label}
+            </UnderlineNav.Item>
+          ))}
+        </UnderlineNav>
+      </Box>
 
+      {tab === 'token' && <TokenSection />}
+
+      {tab === 'polling' && (
+        <>
       <Box sx={sectionSx}>
         <Heading as="h2" sx={{ fontSize: 3, mb: 3 }}>Repository &amp; polling</Heading>
-        {errors.length > 0 && (
-          <Flash variant="danger" sx={{ mb: 3 }}>
-            <Box as="ul" sx={{ m: 0, pl: 3 }}>
-              {errors.map((e) => (
-                <li key={e}>{e}</li>
-              ))}
-            </Box>
-          </Flash>
-        )}
-        {savedMsg && <Flash variant="success" sx={{ mb: 3 }}>Settings saved.</Flash>}
-
         <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
           <FormControl sx={{ flex: 1, minWidth: 160 }} required>
             <FormControl.Label>Upstream owner</FormControl.Label>
@@ -673,15 +751,9 @@ export function SettingsPage() {
         )}
       </Box>
 
-      <NotificationsSection
-        prefs={draft.notifications}
-        onChange={(patch) => updateNested('notifications', patch)}
-      />
+      <UpdatesSection enabled={draft.autoUpdate} onChange={(v) => update({ autoUpdate: v })} />
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
-        <Button variant="primary" onClick={onSave}>Save changes</Button>
-        <Button onClick={() => setDraft(clone(config))}>Reset</Button>
-      </Box>
+      {draftFooter}
 
       <Box sx={sectionSx}>
         <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Import / export JSON</Heading>
@@ -712,6 +784,18 @@ export function SettingsPage() {
           Import &amp; apply
         </Button>
       </Box>
+        </>
+      )}
+
+      {tab === 'notifications' && (
+        <>
+          <NotificationsSection
+            prefs={draft.notifications}
+            onChange={(patch) => updateNested('notifications', patch)}
+          />
+          {draftFooter}
+        </>
+      )}
     </Box>
   );
 }

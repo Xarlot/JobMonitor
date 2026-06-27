@@ -23,31 +23,31 @@
     "electron:publish": "npm run build && npm run icons && electron-builder --publish always"
   },
   "dependencies": {
-    "@primer/octicons-react": "^19.12.0",
+    "@primer/octicons-react": "^19.28.1",
     "@primer/react": "^36.27.0",
-    "@tanstack/react-table": "^8.20.5",
-    "electron-updater": "^6.3.9",
+    "@tanstack/react-table": "^8.21.3",
+    "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "styled-components": "^5.3.11",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@testing-library/jest-dom": "^6.4.8",
-    "@testing-library/react": "^16.0.1",
-    "@types/node": "^20.19.43",
-    "@types/react": "^18.3.5",
-    "@types/react-dom": "^18.3.0",
-    "@types/styled-components": "^5.1.34",
-    "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "fake-indexeddb": "^6.0.0",
-    "jsdom": "^25.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.0.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/styled-components": "^5.1.36",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
     "playwright": "^1.61.1",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.2",
-    "vitest": "^2.0.5"
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
   }
 }

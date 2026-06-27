@@ -7,6 +7,20 @@ if (!globalThis.crypto?.subtle) {
   Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });
 }
 
+// jsdom lacks the Popover API; declare it "supported" so @primer/react's
+// TooltipV2 doesn't load @oddbird/popover-polyfill (which throws under jsdom).
+if (typeof HTMLElement !== 'undefined' && !('popover' in HTMLElement.prototype)) {
+  Object.defineProperty(HTMLElement.prototype, 'popover', {
+    value: null,
+    writable: true,
+    configurable: true,
+  });
+  const proto = HTMLElement.prototype as unknown as Record<string, () => void>;
+  proto.showPopover = () => {};
+  proto.hidePopover = () => {};
+  proto.togglePopover = () => {};
+}
+
 // jsdom gaps that @primer/react relies on at render time.
 if (!('ResizeObserver' in globalThis)) {
   class ResizeObserverStub {
