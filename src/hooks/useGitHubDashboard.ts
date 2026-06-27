@@ -26,7 +26,7 @@ import {
   isConfigComplete,
   type MonitorConfig,
 } from '../storage/configStore';
-import { combineChecksAndStatus } from '../lib/status';
+import { combineChecksAndStatus, isActiveStatus } from '../lib/status';
 import { detectNewlyCompleted, prPhase } from '../lib/completion';
 import { sendNotification } from '../lib/notifications';
 import { useConfig } from '../context/ConfigContext';
@@ -62,10 +62,21 @@ function matchesFork(pr: PullRequest, config: MonitorConfig): boolean {
   return true;
 }
 
-/** A PR needs a checks fetch if never fetched, or if its aggregate is still active. */
-function needsChecks(e: PrEntry): boolean {
+/**
+ * A PR needs a checks fetch if never fetched, no checks have appeared yet, or any
+ * individual check-run / commit status is still running.
+ *
+ * Note: we must NOT key off the *aggregate* status — that reads `failure` as soon
+ * as one check fails (failure has top precedence), which would stop polling while
+ * other checks are still in progress and freeze them at their last-seen state.
+ */
+export function needsChecks(e: PrEntry): boolean {
   if (e.checksUpdatedAt === null) return true;
-  return e.overall === 'pending' || e.overall === 'in_progress' || e.overall === 'unknown';
+  // No checks discovered yet — keep watching; CI may register checks shortly.
+  if (e.overall === 'unknown') return true;
+  if (e.checkRuns.some((c) => isActiveStatus(c.status))) return true;
+  if (e.combined && e.combined.total_count > 0 && e.combined.state === 'pending') return true;
+  return false;
 }
 
 function newEntry(pr: PullRequest): PrEntry {
