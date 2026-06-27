@@ -1,217 +1,172 @@
 # Job Monitor
 
-A **frontend-only** GitHub Actions dashboard (React + Vite, GitHub's Primer design system).
-It watches your fork → upstream pull requests and configurable workflow "flows" — no backend,
-no webhooks. Data is read directly from `api.github.com` with a read-only PAT that is stored
-**encrypted** in your browser.
+**Job Monitor** is a dashboard for keeping an eye on your GitHub Actions — your pull‑request
+checks and your workflow “flows” — in one place. It reads everything straight from GitHub with
+your own read‑only token; there’s no server, no account, nothing leaves your machine except
+requests to `api.github.com`.
 
-## Features
+Use it in the **browser** (a static web page) or as a **desktop app** (Windows / macOS / Linux)
+that lives in the tray and pops a notification when something finishes.
 
-- **Overview** — the landing tab: a tile per PR (by title, with status + branch) and a tile
-  per flow (showing its **latest run** — title, event, when). Clicking a PR tile opens the
-  Pull requests tab; clicking a flow tile jumps to the Flows tab and highlights that flow.
-- **PR dashboard** — open PRs from your fork into upstream, with an aggregated status
-  (success / failure / pending / in progress) and an expandable list of check-runs + commit
-  statuses. Filters: All / Active / Failed / Success. Manual refresh.
-- **Flows** — a master-detail grid (TanStack Table) per configured flow: workflow **runs** as
-  master rows, **jobs** as lazily-loaded detail rows. Filter runs by branch and event
-  (e.g. `workflow_dispatch`). Expand/collapse state is persisted and **invalidated on critical
-  changes** (re-run or new commit) so stale detail is never shown.
-- **Job summary & logs** — each job row has three icon buttons (with tooltips): **Summary**
-  (a dialog with the job's annotations — failure/warning/notice + file:line + message — and a
-  step status breakdown), **Logs** (a dialog where each step expands to show its log lines,
-  fetched once per job and split by step timestamps), and **Open on GitHub**. The job-logs
-  endpoint is CORS-enabled, so logs render in-app — but it requires a token that can download
-  logs: a **classic PAT with the `repo` scope** (a read-only fine-grained PAT returns 404,
-  and the Logs dialog then links out to GitHub).
-- **Timeline (Gantt)** — a button on each PR and flow run opens a Gantt-style timeline: bars
-  positioned by start offset and sized by duration. For flow-run jobs, each bar is split into
-  **runner allocation** (queue + “Set up job”) and **payload** (actual work) so slow setup vs
-  slow work is obvious.
-- **Overall summary** — a button on each flow run and PR opens a summary: a status roll-up plus
-  the **actual annotation content** (errors/warnings with file:line + message) of every job/check
-  that needs attention. (Per-job/check Summary shows that one's annotations; the run/PR summary
-  shows them all.) GitHub's `$GITHUB_STEP_SUMMARY` markdown isn't exposed by the API, so
-  annotations are the summary content shown.
-- **PR checks = flow jobs** — PR check-runs get the same per-check Summary / Logs / GitHub
-  buttons as flow jobs (the job is resolved from the check-run's `details_url`).
-- **All run jobs fetched** — job lists are paginated, so a run with >100 jobs still surfaces a
-  failing job beyond the first page (previously a run could read `failure` while all visible jobs
-  were green).
-- **Request stats** — a header badge shows API requests in a **sliding 1-hour window** against the
-  hourly limit (`N / 5000/h`); tooltip breaks down fresh / cached-304 / error + remaining. Events
-  are persisted and pruned to the window.
-- **Caching with TTL** — fetched job logs are cached in memory (reused when re-opening a dialog),
-  the persistent ETag cache and flow-runs cache carry timestamps and are evicted past their TTL.
-- **Compact view** — an **All / Compact** toggle in both the Flows and Pull-requests tabs
-  (persisted, lives in the tab — not Settings). Compact hides quiet items (success + skipped)
-  from the job/check lists so only failures and in-progress/pending work shows.
-- **Flow filters** — filter runs by status (All / Active / Failed / Success) and by a
-  **job condition**: runs that contain a job whose name matches and that is e.g. *not skipped*,
-  succeeded, failed, or in progress. The job filter loads jobs for all runs to evaluate.
-- **Per-flow empty filter** (Settings) — each flow can opt in to "Hide when empty" and choose
-  the signal: *no runs* (misconfigured / never triggered), *only skipped runs*, *no / tiny
-  artifacts* (latest completed run's total `size_in_bytes` at/below a KB threshold), or *a job
-  in a state* (latest run has a job whose name contains X and is e.g. skipped — "if a `test`
-  job was skipped, hide the flow"). Hidden flows drop from both the Flows view and the Overview.
-- **Cached on reload** — flow runs render instantly from a local cache on reload, and the
-  ETag cache is persisted so the first refresh is a cheap `304`.
-- **Secure token storage** — the PAT is encrypted with AES-GCM using a key derived from your
-  passphrase (PBKDF2-SHA256). Only the `{salt, iv, ciphertext}` envelope is persisted (IndexedDB);
-  the plaintext lives only in memory. "Forget token" wipes both.
-- **Rate-limit aware** — every GET uses ETag / `If-None-Match`; `304` responses don't cost quota
-  and don't churn state. A badge shows remaining/limit + reset countdown and warns when low or
-  throttled (with backoff on 403/429).
-- **Polling, not realtime** — PR list & flow runs poll slowly (~3 min), active checks/jobs every
-  ~60 s, completed items aren't polled, and everything slows down when the tab is hidden.
-- **Desktop notifications** — opt-in (Settings), separately for **PRs** and **Flows**. A system
-  notification fires when a tracked PR's checks finish or a flow run completes — only on an observed
-  *in-progress → finished* transition, so reloads and already-done items never spam you. Uses the
-  browser's Web Notification permission; nothing leaves the browser.
+![Overview](docs/screenshots/overview.png)
+
+---
+
+## What you get
+
+- A single **Overview** of every PR and flow you track, red/green at a glance.
+- **PR checks** with an aggregated status and a drill‑down into every check‑run.
+- **Flows** — pick any workflow and watch its runs and jobs, filtered by branch / event.
+- **Logs, summaries and timelines** for any job, right inside the app.
+- **Desktop notifications** when a PR’s checks or a flow run finish.
+- Everything is **read‑only** — Job Monitor never triggers or changes anything on GitHub.
+
+---
 
 ## Getting started
 
-```bash
-npm install
-npm run dev            # http://localhost:5173
-npm run build          # tsc --noEmit && vite build  -> dist/
-npm run test           # vitest
-VITE_MOCK=1 npm run dev  # offline UI with fixtures, no token / no rate-limit cost
-```
+### Option A — open the website
 
-> This repo targets **Node 24** (see `.nvmrc`). If `node` isn't on your PATH, install it (e.g. via nvm: `nvm install`) before `npm install`.
+Open the published page (e.g. `https://<owner>.github.io/<repo>/`) in a modern browser
+(Chrome/Edge recommended). Nothing to install.
 
-### Publish via GitHub Pages
+### Option B — install the desktop app
 
-A workflow (`.github/workflows/deploy-pages.yml`) builds the app and deploys it to GitHub Pages
-on every push to `master` (or via **Run workflow**). One-time setup:
+Grab the installer for your OS from the project’s **Releases** page:
 
-1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Push to `master` — the site publishes to `https://<owner>.github.io/<repo>/`.
+| OS | File |
+|----|------|
+| Windows | `Job Monitor-x.y.z-setup.exe` |
+| macOS | `Job Monitor-x.y.z-*.dmg` |
+| Linux | `Job Monitor-x.y.z.AppImage` or `.deb` |
 
-The production build uses a **relative base** (`./`), so it works under the `/<repo>/` subpath.
-It's a static, backend-less site: each visitor enters their own PAT, encrypted in their browser;
-nothing is sent anywhere except `api.github.com`.
+> The installers aren’t code‑signed yet, so the first launch may show a Gatekeeper (macOS) or
+> SmartScreen (Windows) warning — choose “Open anyway”. On Linux, make the AppImage executable
+> (`chmod +x`) and run it.
 
-## Desktop app (Windows / macOS / Linux)
+The desktop app does everything the website does, **plus** it can minimise to the system tray,
+keep checking in the background, and show native notifications.
 
-An **Electron** wrapper ships the same UI as a native app — so it can live in the system tray
-and fire OS notifications even when the window is closed (the GitHub Pages site stays available
-for browser users too). The desktop app **bundles** the built UI (no dependency on Pages being up).
+---
 
-- **Tray** — closing the window hides it to the tray; the app keeps polling in the background
-  (`backgroundThrottling` is off) so completion notifications still arrive. Tray menu: Open /
-  Check for updates / Quit. Single-instance.
-- **System notifications** — the same opt-in PR/Flow notifications (Settings) render as native OS
-  notifications; Electron grants the Notification permission by default.
-- **Auto-update** — `electron-updater` checks GitHub Releases on launch (and every 6 h), downloads
-  in the background, and installs on quit.
+## First‑time setup
 
-### Build locally
+When you first open Job Monitor you’ll be taken to **Settings**. Three things to do:
 
-```bash
-npm run electron:dev      # build the UI + run the app
-npm run electron:dist     # build installers into release/ (current OS only)
-```
+### 1. Add your GitHub token (Settings → **Token & login**)
 
-`npm run icons` rasterizes `build/icon.svg` → `build/icon.png` (+ tray icon) via `@resvg/resvg-js`;
-the `electron:*` scripts run it automatically.
+Job Monitor needs a personal access token to read your data. Create a
+[**classic token**](https://github.com/settings/tokens/new?scopes=repo&description=Job%20Monitor)
+with the **`repo`** scope (or `public_repo` if you only watch public repositories), paste it in,
+and choose a **passphrase**.
 
-### Installers & releases (CI)
+- The token is **encrypted** with your passphrase and stored only in this browser; the plain token
+  lives only in memory and is sent only to `api.github.com`.
+- On the desktop app you can tick **“Remember on this device”** to unlock automatically next time
+  (stored in your OS keychain).
+- After the first run you’ll just be asked for the passphrase to unlock.
 
-`.github/workflows/desktop-release.yml` builds on a **win / mac / linux** matrix and uploads
-installers to a **GitHub Release** (NSIS `.exe`, `.dmg`/`.zip`, `AppImage`/`.deb`). To cut a release:
+> A read‑only **fine‑grained** token works for most things but **can’t download Actions logs**
+> (GitHub returns 404), so a classic `repo` token is recommended.
 
-```bash
-npm version patch          # bumps package.json + tags vX.Y.Z
-git push --follow-tags
-```
+### 2. Point it at a repository (Settings → **Polling**)
 
-The workflow publishes a **draft** Release — review it, then click **Publish** on GitHub.
-electron-updater serves auto-updates only from *published* releases.
+![Settings — repository & polling](docs/screenshots/settings-polling.png)
 
-> **Code signing:** CI builds are **unsigned** (no Apple/Windows certs), so first launch shows a
-> Gatekeeper / SmartScreen warning. Add `CSC_LINK`/`CSC_KEY_PASSWORD` (Win) and Apple notarization
-> secrets later to remove it.
+- **Upstream owner / repo** — the repository you’re monitoring (you can paste a full GitHub URL).
+- **Fork owner** — whose pull requests into upstream you want to see.
+- **Branch filter / PR author** — optional narrowing.
+- **Polling intervals** — how often to refresh (sensible defaults are filled in).
 
-### First run
+### 3. Add flows to watch (Settings → **Polling → Flows**)
 
-1. Open **Settings**.
-2. Paste a **fine-grained PAT** (see below) and choose a **passphrase** to encrypt it.
-3. Set **upstream owner/repo**, **fork owner**, optional **branch filter** and **PR author**.
-4. Add one or more **Flows** (workflow file + branches + optional events), or paste a JSON config.
-5. On reload you'll be asked for the passphrase to decrypt the token for the session.
+A *flow* is any workflow you want to track. Give it a name, the workflow file (or its display
+name / id), the branches, and optionally the trigger events.
 
-## Token
+![Settings — a flow](docs/screenshots/settings-flow.png)
 
-Use a **classic personal access token** with the **`repo`** scope (or **`public_repo`** if the
-repo is public). That grants read access to PRs, checks, commit statuses, Actions runs, jobs, and
-**logs**. The app only makes read (GET) requests.
+You can also **Hide when empty** — automatically hide a flow when it has no runs, only skipped
+runs, no artifacts, or when a named job ended up in a certain state (e.g. a `test` job was skipped).
 
-> A read-only **fine-grained** PAT works for most data, but **can't download Actions logs**
-> (GitHub returns 404 for the logs endpoint), so the per-step logs feature needs a classic
-> `repo` token. Annotations, statuses, timelines and summaries work with either.
+Click **Save changes** and you’re ready.
 
-The token is encrypted (AES-GCM, key derived from your passphrase) and stored only in this
-browser's IndexedDB; the plaintext is only in memory, never logged, and sent only to
-`api.github.com`.
+---
 
-## Configuration (JSON)
+## Using the dashboard
 
-The monitor config is validated with zod and can be edited via the Settings form or imported/
-exported as JSON:
+### Overview
 
-```json
-{
-  "version": 1,
-  "upstream": { "owner": "acme", "repo": "rocket" },
-  "fork": { "owner": "octodev", "branch": null },
-  "prAuthor": "octodev",
-  "polling": { "prListSeconds": 180, "checksSeconds": 60, "flowRunsSeconds": 180, "hiddenSeconds": 240 },
-  "notifications": { "pr": false, "flow": false },
-  "rateLimitWarnAt": 50,
-  "flows": [
-    {
-      "id": "uuid",
-      "name": "CI",
-      "owner": "acme",
-      "repo": "rocket",
-      "workflowFile": "ci.yml",
-      "branches": ["main", "release/*"],
-      "events": ["workflow_dispatch", "push"],
-      "maxRuns": 5,
-      "emptyFilter": { "enabled": false, "by": "no_runs", "minArtifactKB": 0, "jobName": "", "jobState": "skipped" }
-    }
-  ]
-}
-```
+The landing tab rolls everything up: one tile per PR and one per flow, with the latest status,
+branch and when it last changed. Click a tile to jump straight to its details. The header badge
+shows how many API requests you’ve used in the last hour.
 
-Flow `owner`/`repo` default to upstream when omitted. Empty `events` means any event.
+![Overview](docs/screenshots/overview.png)
 
-## Security / deployment notes
+### Pull requests
 
-- A strict **Content-Security-Policy** is injected into the production `index.html`
-  (`connect-src` limited to `https://api.github.com`, `script-src 'self'`, `object-src 'none'`,
-  `frame-ancestors 'none'`, …). When hosting, also send it as a real **HTTP header**. The dev
-  server relaxes `script-src`/`connect-src` for HMR only.
-- `style-src` includes `'unsafe-inline'` because Primer (styled-components v5) injects styles at
-  runtime.
-- No third-party runtime scripts, no analytics — everything is bundled by Vite.
-- Workflow runs are **monitored only**; the read-only PAT cannot trigger `workflow_dispatch`.
+Every open PR from your fork into upstream, with an overall status. Expand a PR to see all its
+check‑runs and commit statuses. Filter by **All / Active / Failed / Success**, and use **Compact**
+to hide the green noise and show only what needs attention.
 
-## Architecture
+![Pull requests](docs/screenshots/pull-requests.png)
 
-```
-src/crypto/webcrypto.ts        PBKDF2 + AES-GCM
-src/storage/                   IndexedDB (secret) + localStorage (config, expand-state)
-src/api/                       githubClient (ETag/304), rateLimit, endpoints, types
-src/hooks/                     usePolling, useVisibility, useGitHubDashboard, useFlows, useExpandState
-src/context/                   Auth + Config providers
-src/components/                PrList, CheckRunsTable, FlowRunsGrid, JobsTable, SettingsPage, …
-src/mocks/                     VITE_MOCK fixtures + fetch
-```
+### Flows
 
-## Limitations
+Each flow shows its recent **runs**; expand a run to load its **jobs**. Filter runs by status, and
+use the **Job filter** to find runs that contain a job matching a name in a given state. **Compact**
+hides passed/skipped jobs.
 
-- Webhooks/live logs are out of scope (no upstream admin needed; polling only).
-- Logs/jobs load lazily on expand; deep log streaming is not implemented.
+![Flows](docs/screenshots/flows.png)
+
+### Job summary, logs and timeline
+
+Every job (and every PR check) has three quick actions:
+
+- **Summary** — the job’s annotations (errors/warnings with file\:line + message) and a per‑step
+  status breakdown.
+
+  ![Job summary](docs/screenshots/summary.png)
+
+- **Logs** — expand any step to read its log lines, fetched on demand.
+
+  ![Job logs](docs/screenshots/logs.png)
+
+- **Open on GitHub** — jump to the run on github.com.
+
+There’s also a **Timeline** (Gantt) button on each PR and flow run: bars positioned by start time
+and sized by duration, splitting **runner allocation** (queue + “Set up job”) from the actual
+**work** — so it’s obvious whether time went to waiting or running.
+
+![Timeline](docs/screenshots/timeline.png)
+
+### Notifications (Settings → **Notifications**)
+
+Opt in — separately for **PRs** and **Flows** — to get a desktop notification the moment a tracked
+PR’s checks finish or a flow run completes. You’ll only be notified about things that finish while
+you’re watching, never about items that were already done.
+
+In the **desktop app**, notifications keep working even when the window is hidden in the tray.
+
+---
+
+## Desktop app extras
+
+- **Tray** — closing or minimising the window tucks it into the system tray; it keeps checking in
+  the background. Right‑click the tray icon for **Open / Check for updates / About / Exit**.
+- **Auto‑update** — the app can download and install new versions automatically. Toggle it in
+  **Settings → Polling → Updates** (available on the `.exe` / `.dmg` / AppImage builds).
+
+---
+
+## Privacy
+
+Job Monitor is **read‑only** and **backend‑less**. Your token is encrypted locally, and the app
+talks only to `api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no
+third‑party servers.
+
+---
+
+## For developers
+
+Building, deploying, the configuration JSON schema and the internal architecture are documented in
+**[development.md](development.md)**.
