@@ -67,6 +67,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          name: Job Monitor ${{ github.ref_name }}
           draft: true # review, then click Publish on GitHub
           fail_on_unmatched_files: true
           files: artifacts/**/*

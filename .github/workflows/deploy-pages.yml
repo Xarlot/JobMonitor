@@ -23,11 +23,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need tags to derive the version shown in the UI
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
+
+      # Show the latest released version on the site (master's package.json may
+      # lag the tags). Picks the highest v* tag; no-op if there are none.
+      - name: Sync version to latest tag
+        shell: bash
+        run: |
+          TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+          if [ -n "$TAG" ]; then npm version --no-git-tag-version --allow-same-version "${TAG#v}"; fi
+
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const appVersion: string = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+).version;
 
 /**
  * Content-Security-Policy for the app.
@@ -50,6 +55,7 @@ export default defineConfig(({ command }) => ({
   // Relative base for production so the build works under a GitHub Pages subpath
   // (https://<user>.github.io/<repo>/); '/' in dev for clean HMR URLs.
   base: command === 'serve' ? '/' : './',
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react(), cspPlugin(command === 'serve')],
   test: {
     globals: true,

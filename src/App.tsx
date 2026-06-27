@@ -38,8 +38,16 @@ function Header() {
       }}
     >
       <Octicon icon={MarkGithubIcon} size={28} />
-      <Heading as="h1" sx={{ fontSize: 2 }}>Job Monitor</Heading>
-      <Text sx={{ fontSize: 0, color: 'fg.muted' }}>GitHub Actions dashboard</Text>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+        <Heading as="h1" sx={{ fontSize: 2 }}>Job Monitor</Heading>
+        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>GitHub Actions dashboard</Text>
+        <Text
+          sx={{ fontSize: 0, color: 'fg.muted', fontFamily: 'mono' }}
+          title={`Job Monitor v${__APP_VERSION__}`}
+        >
+          v{__APP_VERSION__}
+        </Text>
+      </Box>
       <Box sx={{ flex: 1 }} />
       <StatsBadge />
     </Box>
