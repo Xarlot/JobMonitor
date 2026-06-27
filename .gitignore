@@ -7,3 +7,10 @@ dist-ssr
 coverage
 .vite
 .idea/
+
+# Electron build output + generated icons
+release
+build/icon.png
+build/icon.ico
+build/icon.icns
+electron/tray.png

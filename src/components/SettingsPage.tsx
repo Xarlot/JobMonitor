@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -32,6 +32,7 @@ import {
   notificationPermission,
   notificationsSupported,
 } from '../lib/notifications';
+import { canRememberSecret } from '../storage/desktopSecret';
 import { isMockMode } from '../mocks/mockMode';
 
 const sectionSx = {
@@ -55,6 +56,16 @@ function TokenSection() {
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [canRemember, setCanRemember] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    canRememberSecret().then((ok) => active && setCanRemember(ok));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const mismatch = confirm.length > 0 && confirm !== passphrase;
 
@@ -66,14 +77,17 @@ function TokenSection() {
       setLocalError('That does not look like a valid token.');
       return;
     }
-    if (
-      passphrase.length < 8 ||
-      !/[A-Z]/.test(passphrase) ||
-      !/[^A-Za-z0-9]/.test(passphrase)
-    ) {
-      setLocalError(
-        'Use a passphrase of at least 8 characters, including an uppercase letter and a special character.',
-      );
+    // Report each unmet requirement specifically so it's clear which rule failed.
+    // Unicode-aware so non-Latin layouts work: an uppercase letter is any
+    // upper-case letter in any script (\p{Lu}) — e.g. Cyrillic "Й" counts — and a
+    // "special character" is anything that is not a letter, digit or whitespace,
+    // so letters from other scripts are NOT mistaken for special characters.
+    const missing: string[] = [];
+    if (passphrase.length < 8) missing.push('at least 8 characters');
+    if (!/\p{Lu}/u.test(passphrase)) missing.push('an uppercase letter');
+    if (!/[^\p{L}\p{N}\s]/u.test(passphrase)) missing.push('a special character (e.g. ! @ # -)');
+    if (missing.length > 0) {
+      setLocalError(`Passphrase needs ${missing.join(', ')}.`);
       return;
     }
     if (passphrase !== confirm) {
@@ -82,7 +96,7 @@ function TokenSection() {
     }
     setBusy(true);
     try {
-      await saveToken(token.trim(), passphrase);
+      await saveToken(token.trim(), passphrase, remember);
       setToken('');
       setPassphrase('');
       setConfirm('');
@@ -160,6 +174,15 @@ function TokenSection() {
                 />
               </FormControl>
             </Box>
+            {canRemember && (
+              <FormControl sx={{ mb: 3 }}>
+                <Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                <FormControl.Label>Remember on this device</FormControl.Label>
+                <FormControl.Caption>
+                  Stores the passphrase in your OS keychain so the app unlocks automatically.
+                </FormControl.Caption>
+              </FormControl>
+            )}
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
               <Button type="submit" variant="primary" disabled={busy}>
                 {busy ? 'Saving…' : status === 'unlocked' ? 'Replace token' : 'Encrypt & store token'}

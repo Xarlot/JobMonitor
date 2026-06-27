@@ -28,6 +28,7 @@ import {
 } from '../storage/secureTokenStore';
 import { clearEtagCache } from '../api/githubClient';
 import { clearLogCache } from '../api/logCache';
+import { forgetSecret, recallSecret, rememberSecret } from '../storage/desktopSecret';
 import { isMockMode } from '../mocks/mockMode';
 
 export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
@@ -35,10 +36,17 @@ export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
 interface AuthContextValue {
   status: AuthStatus;
   error: string | null;
-  saveToken: (token: string, passphrase: string) => Promise<void>;
-  unlock: (passphrase: string) => Promise<void>;
+  /** `remember` persists the passphrase in the OS keychain (desktop app only). */
+  saveToken: (token: string, passphrase: string, remember?: boolean) => Promise<void>;
+  unlock: (passphrase: string, remember?: boolean) => Promise<void>;
   forget: () => Promise<void>;
   lock: () => void;
+}
+
+/** Persist or drop the remembered passphrase based on the `remember` choice. */
+async function syncRemembered(passphrase: string, remember: boolean): Promise<void> {
+  if (remember) await rememberSecret(passphrase);
+  else await forgetSecret();
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -58,18 +66,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let active = true;
-    hasStoredToken()
-      .then((exists) => active && setStatus(exists ? 'locked' : 'needs-setup'))
-      .catch(() => active && setStatus('needs-setup'));
+    (async () => {
+      const exists = await hasStoredToken().catch(() => false);
+      if (!active) return;
+      if (!exists) {
+        setStatus('needs-setup');
+        return;
+      }
+      // Desktop only: auto-unlock with a passphrase remembered in the OS keychain.
+      const remembered = await recallSecret().catch(() => null);
+      if (active && remembered) {
+        try {
+          await unlockToken(remembered);
+          if (active) setStatus('unlocked');
+          return;
+        } catch {
+          await forgetSecret().catch(() => {}); // stale/invalid -> drop it
+        }
+      }
+      if (active) setStatus('locked');
+    })();
     return () => {
       active = false;
     };
   }, []);
 
-  const saveToken = useCallback(async (token: string, passphrase: string) => {
+  const saveToken = useCallback(async (token: string, passphrase: string, remember = false) => {
     setError(null);
     try {
       await persistToken(token, passphrase);
+      await syncRemembered(passphrase, remember);
       clearEtagCache();
       setStatus('unlocked');
     } catch (e) {
@@ -78,10 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const unlock = useCallback(async (passphrase: string) => {
+  const unlock = useCallback(async (passphrase: string, remember = false) => {
     setError(null);
     try {
       await unlockToken(passphrase);
+      await syncRemembered(passphrase, remember);
       setStatus('unlocked');
     } catch (e) {
       setError(errorMessage(e));
@@ -92,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const forget = useCallback(async () => {
     setError(null);
     await forgetToken();
+    await forgetSecret();
     clearEtagCache();
     clearLogCache();
     setStatus('needs-setup');

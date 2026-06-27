@@ -1,0 +1,48 @@
+appId: com.devexpress.javajobmonitor
+productName: Job Monitor
+copyright: © DevExpress
+
+directories:
+  output: release
+  buildResources: build
+
+# What gets packed into the app (the built SPA + the Electron main/preload).
+files:
+  - dist/**
+  - electron/**
+  - package.json
+
+# Publish target for `electron-builder --publish` and electron-updater.
+publish:
+  provider: github
+  owner: DevExpress
+  repo: JavaJobMonitor
+  # Uploaded as a draft release; publish it on GitHub to make auto-update see it.
+  releaseType: draft
+
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - dmg
+    - zip # required by electron-updater for macOS
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+linux:
+  category: Development
+  icon: build/icon.png
+  target:
+    - AppImage
+    - deb
+  artifactName: ${productName}-${version}.${ext}

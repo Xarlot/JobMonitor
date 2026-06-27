@@ -1,19 +1,30 @@
-import { useState } from 'react';
-import { Box, Button, Flash, FormControl, Heading, Octicon, Text, TextInput } from '@primer/react';
+import { useEffect, useState } from 'react';
+import { Box, Button, Checkbox, Flash, FormControl, Heading, Octicon, Text, TextInput } from '@primer/react';
 import { ShieldLockIcon } from '@primer/octicons-react';
 import { useAuth } from '../context/AuthContext';
+import { canRememberSecret } from '../storage/desktopSecret';
 
 /** Full-screen gate shown when an encrypted token exists but is locked. */
 export function UnlockDialog() {
   const { unlock, forget, error } = useAuth();
   const [passphrase, setPassphrase] = useState('');
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [canRemember, setCanRemember] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    canRememberSecret().then((ok) => active && setCanRemember(ok));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await unlock(passphrase);
+      await unlock(passphrase, remember);
     } catch {
       // error surfaced via context
     } finally {
@@ -63,6 +74,15 @@ export function UnlockDialog() {
             autoComplete="current-password"
           />
         </FormControl>
+        {canRemember && (
+          <FormControl sx={{ mb: 3 }}>
+            <Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            <FormControl.Label>Remember on this device</FormControl.Label>
+            <FormControl.Caption>
+              Stores the passphrase in your OS keychain and unlocks automatically next time.
+            </FormControl.Caption>
+          </FormControl>
+        )}
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-between' }}>
           <Button type="button" variant="danger" onClick={onForget}>
             Forget token

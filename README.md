@@ -93,6 +93,47 @@ The production build uses a **relative base** (`./`), so it works under the `/<r
 It's a static, backend-less site: each visitor enters their own PAT, encrypted in their browser;
 nothing is sent anywhere except `api.github.com`.
 
+## Desktop app (Windows / macOS / Linux)
+
+An **Electron** wrapper ships the same UI as a native app — so it can live in the system tray
+and fire OS notifications even when the window is closed (the GitHub Pages site stays available
+for browser users too). The desktop app **bundles** the built UI (no dependency on Pages being up).
+
+- **Tray** — closing the window hides it to the tray; the app keeps polling in the background
+  (`backgroundThrottling` is off) so completion notifications still arrive. Tray menu: Open /
+  Check for updates / Quit. Single-instance.
+- **System notifications** — the same opt-in PR/Flow notifications (Settings) render as native OS
+  notifications; Electron grants the Notification permission by default.
+- **Auto-update** — `electron-updater` checks GitHub Releases on launch (and every 6 h), downloads
+  in the background, and installs on quit.
+
+### Build locally
+
+```bash
+npm run electron:dev      # build the UI + run the app
+npm run electron:dist     # build installers into release/ (current OS only)
+```
+
+`npm run icons` rasterizes `build/icon.svg` → `build/icon.png` (+ tray icon) via `@resvg/resvg-js`;
+the `electron:*` scripts run it automatically.
+
+### Installers & releases (CI)
+
+`.github/workflows/desktop-release.yml` builds on a **win / mac / linux** matrix and uploads
+installers to a **GitHub Release** (NSIS `.exe`, `.dmg`/`.zip`, `AppImage`/`.deb`). To cut a release:
+
+```bash
+npm version patch          # bumps package.json + tags vX.Y.Z
+git push --follow-tags
+```
+
+The workflow publishes a **draft** Release — review it, then click **Publish** on GitHub.
+electron-updater serves auto-updates only from *published* releases.
+
+> **Code signing:** CI builds are **unsigned** (no Apple/Windows certs), so first launch shows a
+> Gatekeeper / SmartScreen warning. Add `CSC_LINK`/`CSC_KEY_PASSWORD` (Win) and Apple notarization
+> secrets later to remove it.
+
 ### First run
 
 1. Open **Settings**.
