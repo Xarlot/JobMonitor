@@ -8,6 +8,8 @@ requests to `api.github.com`.
 Use it in the **browser** (a static web page) or as a **desktop app** (Windows / macOS / Linux)
 that lives in the tray and pops a notification when something finishes.
 
+**▶ Live site: <https://ideal-adventure-zzoj21p.pages.github.io/>**
+
 ![Overview](docs/screenshots/overview.png)
 
 ---
@@ -27,7 +29,7 @@ that lives in the tray and pops a notification when something finishes.
 
 ### Option A — open the website
 
-Open the published page (e.g. `https://<owner>.github.io/<repo>/`) in a modern browser
+Open **<https://ideal-adventure-zzoj21p.pages.github.io/>** in a modern browser
 (Chrome/Edge recommended). Nothing to install.
 
 ### Option B — install the desktop app
