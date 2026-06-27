@@ -46,9 +46,9 @@ function clone(config: MonitorConfig): MonitorConfig {
   return JSON.parse(JSON.stringify(config)) as MonitorConfig;
 }
 
-/** Token credentials: encrypt + store a PAT, or lock/forget an active one. */
+/** Token credentials: encrypt + store a PAT, or forget an active one. */
 function TokenSection() {
-  const { status, saveToken, forget, lock, error } = useAuth();
+  const { status, saveToken, forget, error } = useAuth();
   const [token, setToken] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -111,13 +111,9 @@ function TokenSection() {
           classic token
         </Link>{' '}
         with the <strong>repo</strong> scope (for a public-only repo, <strong>public_repo</strong>
-        {' '}is enough). That single scope covers everything the app reads: PRs, checks, commit
-        statuses, Actions runs, jobs, and <strong>logs</strong> — no <code>workflow</code> scope is
-        needed (that one only grants editing workflow files). A read-only fine-grained PAT also works
+        {' '}is enough). A read-only fine-grained PAT also works
         for most data but <strong>can’t download Actions logs</strong> (GitHub returns 404), so a
-        classic <code>repo</code> token is recommended. The app only makes read (GET) requests; the token is
-        encrypted with your passphrase (AES-GCM), stored only in this browser, and never logged or
-        sent anywhere except api.github.com.
+        classic <code>repo</code> token is recommended.
       </Text>
 
       {isMockMode() ? (
@@ -169,18 +165,15 @@ function TokenSection() {
                 {busy ? 'Saving…' : status === 'unlocked' ? 'Replace token' : 'Encrypt & store token'}
               </Button>
               {status === 'unlocked' && (
-                <>
-                  <Button type="button" onClick={lock}>Lock</Button>
-                  <Button
-                    type="button"
-                    variant="danger"
-                    onClick={() => {
-                      if (window.confirm('Forget the stored token?')) void forget();
-                    }}
-                  >
-                    Forget token
-                  </Button>
-                </>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => {
+                    if (window.confirm('Forget the stored token?')) void forget();
+                  }}
+                >
+                  Forget token
+                </Button>
               )}
             </Box>
           </Box>
