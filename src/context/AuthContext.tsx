@@ -20,6 +20,7 @@ import {
 } from 'react';
 import {
   forgetToken,
+  getTokenInMemory,
   hasStoredToken,
   lockToken,
   saveToken as persistToken,
@@ -29,6 +30,7 @@ import {
 import { clearEtagCache } from '../api/githubClient';
 import { clearLogCache } from '../api/logCache';
 import { forgetSecret, recallSecret, rememberSecret } from '../storage/desktopSecret';
+import { setUpdateToken } from '../storage/desktopUpdates';
 import { isMockMode } from '../mocks/mockMode';
 
 export type AuthStatus = 'loading' | 'needs-setup' | 'locked' | 'unlocked';
@@ -131,6 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearLogCache();
     setStatus('locked');
   }, []);
+
+  useEffect(() => {
+    void setUpdateToken(status === 'unlocked' ? getTokenInMemory() : null);
+  }, [status]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ status, error, saveToken, unlock, forget, lock }),

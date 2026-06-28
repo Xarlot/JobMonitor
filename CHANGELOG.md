@@ -24,6 +24,10 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
   preflight.
 
 ### Fixed
+- **Auto-update now works for the internal app repo.** electron-updater read the release feed
+  anonymously and got a 404 (the repo is internal). The desktop app now authenticates the updater
+  with your GitHub token (passed from the renderer after unlock, never persisted), and picks up the
+  published pre-releases. _Requires one manual update to a build that includes this fix._
 - Dialogs use a thin, subtle scrollbar instead of the chunky default, and the artifacts dialog row
   no longer changes height when a download starts.
 

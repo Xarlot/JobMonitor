@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('desktop', {
   updates: {
     supported: () => ipcRenderer.invoke('updates:supported'),
     setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
+    setToken: (token) => ipcRenderer.invoke('updates:setToken', token),
   },
   // Save already-fetched bytes to the Downloads folder (see registerDownloadIpc).
   downloads: {

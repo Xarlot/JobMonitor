@@ -38,6 +38,10 @@ const isDev = !app.isPackaged;
 // unset the app loads the bundled build over app://.
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const REPO_URL = 'https://github.com/DevExpress/JavaJobMonitor';
+// The app's own repo (for auto-update). It's an internal/private repo, so the
+// updater must authenticate with the user's token (see configureUpdaterFeed).
+const UPDATE_OWNER = 'DevExpress';
+const UPDATE_REPO = 'JavaJobMonitor';
 // Auto-update is only possible in a packaged build whose format supports self-
 // update: NSIS (Windows), dmg/zip (macOS), AppImage (Linux). A .deb install is
 // managed by apt and a dev run isn't packaged — so those can't auto-update.
@@ -343,6 +347,27 @@ let manualUpdateCheck = false;
 let autoUpdateEnabled = false;
 let autoUpdateTimer = null;
 
+/**
+ * Point the updater at the internal app repo authenticated with the user's token.
+ * Without a token it falls back to the default (anonymous) feed, which 404s.
+ */
+function configureUpdaterFeed() {
+  autoUpdater.allowPrerelease = true; // releases are published as pre-releases
+  if (!updateToken) return false;
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: UPDATE_OWNER,
+      repo: UPDATE_REPO,
+      private: true, // use the authenticated GitHub API instead of releases.atom
+      token: updateToken,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function info(title, message, detail) {
   return dialog.showMessageBox(mainWindow ?? undefined, { type: 'info', title, message, detail });
 }
@@ -392,15 +417,17 @@ function setupAutoUpdate() {
   });
 }
 
-/** Start/stop background update checks based on env support + the user setting. */
+/** Start/stop background update checks based on env support + setting + token. */
 function applyAutoUpdatePolicy() {
-  const active = CAN_AUTO_UPDATE && autoUpdateEnabled;
+  // No token => the authenticated feed isn't available yet; don't 404 in a loop.
+  const active = CAN_AUTO_UPDATE && autoUpdateEnabled && Boolean(updateToken);
   if (active && !autoUpdateTimer) {
+    configureUpdaterFeed();
     autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-    autoUpdateTimer = setInterval(
-      () => autoUpdater.checkForUpdatesAndNotify().catch(() => {}),
-      6 * 60 * 60 * 1000,
-    );
+    autoUpdateTimer = setInterval(() => {
+      configureUpdaterFeed();
+      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    }, 6 * 60 * 60 * 1000);
   } else if (!active && autoUpdateTimer) {
     clearInterval(autoUpdateTimer);
     autoUpdateTimer = null;
@@ -416,21 +443,33 @@ function registerUpdateIpc() {
     applyAutoUpdatePolicy();
     return CAN_AUTO_UPDATE;
   });
+  // Renderer pushes the user's token after unlock (null on lock/forget).
+  ipcMain.handle('updates:setToken', (_e, token) => {
+    updateToken = typeof token === 'string' && token ? token : null;
+    applyAutoUpdatePolicy(); // a check can now run once the token arrives
+    return CAN_AUTO_UPDATE;
+  });
 }
 
 /** Tray "Check for updates…" — always runs and reports the result or the error. */
 function checkForUpdatesManual() {
   manualUpdateCheck = true;
-  if (isDev) {
-    // Run against the real GitHub releases even unpackaged, so the button is
-    // testable and surfaces the real error (e.g. no release yet / private repo).
-    autoUpdater.forceDevUpdateConfig = true;
-    try {
-      autoUpdater.setFeedURL({ provider: 'github', owner: 'DevExpress', repo: 'JavaJobMonitor' });
-    } catch {
-      /* ignore */
-    }
+  // The app repo is internal, so a token is required to read its releases.
+  if (!updateToken) {
+    manualUpdateCheck = false;
+    info(
+      'Sign in to check for updates',
+      'Updates need your GitHub token.',
+      'Unlock Job Monitor with your token, then try again. (The internal app repo ' +
+        'can’t be read without authentication.)',
+    );
+    return;
   }
+  if (isDev) {
+    // Run against the real GitHub releases even unpackaged, so the button is testable.
+    autoUpdater.forceDevUpdateConfig = true;
+  }
+  configureUpdaterFeed();
   autoUpdater.checkForUpdates().catch((err) => {
     if (manualUpdateCheck) {
       manualUpdateCheck = false;

@@ -7,6 +7,7 @@
 interface UpdatesApi {
   supported: () => Promise<boolean>;
   setEnabled: (enabled: boolean) => Promise<boolean>;
+  setToken: (token: string | null) => Promise<boolean>;
 }
 
 function api(): UpdatesApi | undefined {
@@ -30,6 +31,15 @@ export async function setAutoUpdateEnabled(enabled: boolean): Promise<void> {
   if (!u) return;
   try {
     await u.setEnabled(enabled);
+  } catch {
+    /* ignore */
+  }
+}
+export async function setUpdateToken(token: string | null): Promise<void> {
+  const u = api();
+  if (!u?.setToken) return;
+  try {
+    await u.setToken(token);
   } catch {
     /* ignore */
   }
