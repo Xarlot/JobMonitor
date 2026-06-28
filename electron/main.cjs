@@ -69,6 +69,7 @@ if (!gotLock) {
     registerAppProtocol();
     registerSecretIpc();
     registerUpdateIpc();
+    registerDownloadIpc();
     createWindow();
     createTray();
     setupAutoUpdate();
@@ -307,6 +308,30 @@ function registerSecretIpc() {
     } catch {
       /* ignore */
     }
+    return true;
+  });
+}
+
+// Saves already-fetched bytes to the OS Downloads folder. The renderer does the
+// network fetch + (for bundles) the zip building, then hands us the finished
+// bytes — so the in-app downloads panel owns the progress UI and we just persist.
+function registerDownloadIpc() {
+  ipcMain.handle('downloads:save', (_e, payload) => {
+    const { filename, data } = payload ?? {};
+    if (typeof filename !== 'string' || !data) throw new Error('bad download payload');
+    const dir = app.getPath('downloads');
+    fs.mkdirSync(dir, { recursive: true });
+    // Avoid clobbering: name.zip -> name (1).zip -> name (2).zip …
+    const dot = filename.lastIndexOf('.');
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const ext = dot > 0 ? filename.slice(dot) : '';
+    let target = path.join(dir, filename);
+    for (let n = 1; fs.existsSync(target); n++) target = path.join(dir, `${stem} (${n})${ext}`);
+    fs.writeFileSync(target, Buffer.from(data));
+    return target;
+  });
+  ipcMain.handle('downloads:showInFolder', (_e, fullPath) => {
+    if (typeof fullPath === 'string' && fullPath) shell.showItemInFolder(fullPath);
     return true;
   });
 }

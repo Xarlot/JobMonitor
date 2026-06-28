@@ -1,5 +1,15 @@
 /** Small date/duration formatting helpers (no dependency). */
 
+/** Human-readable byte size: "0 B", "512 B", "1.4 KB", "3.2 MB", "1.1 GB". */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / 1024 ** i;
+  // No decimals for plain bytes; one decimal otherwise.
+  return `${i === 0 ? value : value.toFixed(1)} ${units[i]}`;
+}
+
 /** Duration between two ISO timestamps as "1h 2m", "3m 4s", "45s". */
 export function formatDuration(
   start: string | null,

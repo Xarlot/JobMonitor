@@ -19,6 +19,7 @@ import { FlowsRuntimeProvider } from './context/FlowsRuntimeContext';
 import { FlowsFilterProvider } from './context/FlowsFilterContext';
 import { ViewModeProvider } from './context/ViewModeContext';
 import { StatsBadge } from './components/StatsBadge';
+import { DownloadsButton } from './components/DownloadsButton';
 import { UnlockDialog } from './components/UnlockDialog';
 import { Overview } from './components/Overview';
 import { PrList } from './components/PrList';
@@ -58,6 +59,7 @@ function Header({ onSettings, settingsActive }: { onSettings: () => void; settin
       </Box>
       <Box sx={{ flex: 1 }} />
       <StatsBadge />
+      <DownloadsButton />
       <IconButton
         icon={THEME_ICON[mode]}
         aria-label={`Theme: ${mode} (click to change)`}

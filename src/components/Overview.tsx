@@ -28,6 +28,8 @@ import { formatRelative } from '../lib/format';
 import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryDialog';
 import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
 import { GroupStatusCounts } from './GroupStatusCounts';
+import { ArtifactsButton } from './ArtifactsButton';
+import { runIdFromUrl } from '../api/endpoints';
 
 const STATUS_BORDER: Record<OverallStatus, string> = {
   success: 'success.emphasis',
@@ -239,6 +241,12 @@ export function Overview({
       completed_at: c.completed_at,
     }));
 
+  // Artifacts are per-run; the Actions run id lives in a check-run's details_url.
+  const prRunId = (entry: PrEntry): number | null =>
+    entry.checkRuns
+      .map((c) => runIdFromUrl(c.details_url) ?? runIdFromUrl(c.html_url))
+      .find((id) => id != null) ?? null;
+
   const iconBtn = (icon: typeof GraphIcon, label: string, onClick: () => void) => (
     <IconButton
       size="small"
@@ -270,6 +278,14 @@ export function Overview({
               {iconBtn(GraphIcon, 'Run timeline', () =>
                 setDlg({ kind: 'flowTimeline', owner: fOwner, repo: fRepo, run }),
               )}
+              <ArtifactsButton
+                owner={fOwner}
+                repo={fRepo}
+                runId={run.id}
+                title="Artifacts"
+                subtitle={`${run.display_title || run.name} · run #${run.run_number}`}
+                bundleName={`run-${run.run_number}-artifacts`}
+              />
               {iconBtn(LinkExternalIcon, 'Open run on GitHub', () => open(run.html_url))}
             </>
           ) : undefined
@@ -353,6 +369,19 @@ export function Overview({
                 <>
                   {iconBtn(ChecklistIcon, 'Checks summary', () => setDlg({ kind: 'prSummary', entry }))}
                   {iconBtn(GraphIcon, 'Check timeline', () => setDlg({ kind: 'prTimeline', entry }))}
+                  {(() => {
+                    const rid = prRunId(entry);
+                    return rid != null ? (
+                      <ArtifactsButton
+                        owner={upOwner}
+                        repo={upRepo}
+                        runId={rid}
+                        title="Artifacts"
+                        subtitle={`${entry.pr.title} · #${entry.pr.number}`}
+                        bundleName={`pr-${entry.pr.number}-artifacts`}
+                      />
+                    ) : null;
+                  })()}
                   {iconBtn(LinkExternalIcon, 'Open PR on GitHub', () => open(entry.pr.html_url))}
                 </>
               }

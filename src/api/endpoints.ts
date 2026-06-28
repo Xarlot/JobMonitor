@@ -48,6 +48,18 @@ export function runArtifactsPath(owner: string, repo: string, runId: number): st
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/artifacts?per_page=100`;
 }
 
+/** Download endpoint for a single artifact's zip; 302-redirects to a signed blob URL. */
+export function artifactZipPath(owner: string, repo: string, artifactId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/artifacts/${artifactId}/zip`;
+}
+
+/** Extract the Actions run id from a URL like `.../actions/runs/{id}` (job/check URLs included). */
+export function runIdFromUrl(url: string | null | undefined): number | null {
+  if (!url) return null;
+  const m = url.match(/\/actions\/runs\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
 export function jobLogsPath(owner: string, repo: string, jobId: number): string {
   return `/repos/${enc(owner)}/${enc(repo)}/actions/jobs/${jobId}/logs`;
 }
