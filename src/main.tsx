@@ -4,6 +4,7 @@ import { App } from './App';
 import { AppThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ConfigProvider } from './context/ConfigContext';
+import { DownloadsProvider } from './context/DownloadsContext';
 import { isMockMode } from './mocks/mockMode';
 import { setFetchImpl } from './api/githubClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -34,7 +35,9 @@ async function bootstrap() {
         <AppThemeProvider>
           <ConfigProvider>
             <AuthProvider>
-              <App />
+              <DownloadsProvider>
+                <App />
+              </DownloadsProvider>
             </AuthProvider>
           </ConfigProvider>
         </AppThemeProvider>

@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Box, Heading, IconButton, Text } from '@primer/react';
 import { XIcon } from '@primer/octicons-react';
+import { subtleScrollbarSx } from '../lib/scrollbar';
 
 /**
  * Large, scrollable modal rendered into a body-level portal (so it isn't clipped
@@ -86,7 +87,7 @@ export function Modal({
           <IconButton icon={XIcon} aria-label="Close" variant="invisible" onClick={onClose} />
         </Box>
 
-        <Box sx={{ p: 3, overflowY: 'auto', flex: 1 }}>{children}</Box>
+        <Box sx={{ p: 3, overflowY: 'auto', flex: 1, ...subtleScrollbarSx }}>{children}</Box>
 
         {footer && (
           <Box

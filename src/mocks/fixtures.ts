@@ -172,8 +172,9 @@ export function mockCheckRuns(sha: string): CheckRunsResponse {
   const base = (over: Partial<CheckRun> & { id: number }) => ({
     started_at: new Date(BOOT - 600_000).toISOString(),
     completed_at: new Date(BOOT - 300_000).toISOString(),
-    // details_url carries the job id (.../job/{id}) — enables per-check Summary/Logs.
-    html_url: `https://github.com/${SLUG}/actions/runs/1002/job/${over.id}`,
+    // Mirror real GitHub: html_url is the generic /runs/{check_run_id} page,
+    // while details_url carries the Actions run + job id (.../actions/runs/{id}/job/{id}).
+    html_url: `https://github.com/${SLUG}/runs/${over.id}`,
     details_url: `https://github.com/${SLUG}/actions/runs/1002/job/${over.id}`,
     app: { slug: 'github-actions', name: 'GitHub Actions' },
     ...over,
@@ -242,8 +243,40 @@ function run(over: Partial<WorkflowRun> & { id: number }): WorkflowRun {
 export function mockArtifacts(runId: number): ArtifactsResponse {
   if (runId === 1001) {
     return {
-      total_count: 1,
-      artifacts: [{ id: 1, name: 'test-summary', size_in_bytes: 1_048_576, expired: false }],
+      total_count: 2,
+      artifacts: [
+        { id: runId * 10 + 1, name: 'test-summary', size_in_bytes: 1_048_576, expired: false },
+        { id: runId * 10 + 2, name: 'build-logs', size_in_bytes: 245_760, expired: false },
+      ],
+    };
+  }
+  if (runId === 1002) {
+    const names: [string, number][] = [
+      ['exporttopdf-pdfs', 8_734_208],
+      ['coverage-report', 524_288],
+      ['unit-test-results', 1_310_720],
+      ['junit-xml', 98_304],
+      ['screenshots-linux', 6_291_456],
+      ['screenshots-windows', 5_767_168],
+      ['build-logs', 245_760],
+    ];
+    return {
+      total_count: names.length,
+      artifacts: names.map(([name, size_in_bytes], i) => ({
+        id: runId * 10 + i + 1,
+        name,
+        size_in_bytes,
+        expired: false,
+      })),
+    };
+  }
+  if (runId === 1003) {
+    return {
+      total_count: 2,
+      artifacts: [
+        { id: runId * 10 + 1, name: 'diff-screenshots', size_in_bytes: 3_145_728, expired: false },
+        { id: runId * 10 + 2, name: 'old-logs', size_in_bytes: 131_072, expired: true },
+      ],
     };
   }
   return { total_count: 0, artifacts: [] };

@@ -36,12 +36,15 @@ import { statusToOverall } from '../lib/status';
 import { filterRuns } from '../lib/flowFilter';
 import { StatusBadge } from './StatusBadge';
 import { JobsTable } from './JobsTable';
+import { ArtifactsButton } from './ArtifactsButton';
 import { formatDuration, formatRelative } from '../lib/format';
 
 interface TableMeta {
   isExpanded: (runId: number) => boolean;
   onTimeline: (run: WorkflowRun) => void;
   onSummary: (run: WorkflowRun) => void;
+  owner: string;
+  repo: string;
 }
 
 const columnHelper = createColumnHelper<WorkflowRun>();
@@ -229,6 +232,14 @@ export function FlowRunsGrid({
                   meta.onTimeline(r);
                 }}
               />
+              <ArtifactsButton
+                owner={meta.owner}
+                repo={meta.repo}
+                runId={r.id}
+                title="Artifacts"
+                subtitle={`${r.display_title || r.name} · run #${r.run_number}`}
+                bundleName={`run-${r.run_number}-artifacts`}
+              />
               <IconButton
                 size="small"
                 variant="invisible"
@@ -256,6 +267,8 @@ export function FlowRunsGrid({
       isExpanded,
       onTimeline: setTimelineRun,
       onSummary: setSummaryRun,
+      owner,
+      repo,
     } satisfies TableMeta,
   });
 

@@ -19,6 +19,8 @@ import { recordRequest } from './requestStats';
 
 const API_BASE = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Artifact zips can be large, so downloads get a more generous timeout. */
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export interface GhResult<T> {
   data: T;
@@ -265,4 +267,39 @@ export async function ghGetText(path: string): Promise<string> {
   }
   recordRequest('fresh');
   return res.text();
+}
+
+/**
+ * Fetch a binary resource (e.g. an artifact zip) as a Blob. Like {@link ghGetText},
+ * the endpoint 302-redirects to a CORS-enabled signed blob URL; the browser follows
+ * it and drops Authorization on the cross-origin hop.
+ */
+export async function ghGetBlob(path: string): Promise<Blob> {
+  const token = tokenProvider();
+  if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: 'follow',
+      signal: controller.signal,
+      referrerPolicy: 'no-referrer',
+    });
+  } catch {
+    recordRequest('error');
+    if (controller.signal.aborted) throw new GitHubApiError('Download timed out.', 0);
+    throw new GitHubApiError('Network request failed (download may be CORS-restricted).', 0);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    recordRequest('error');
+    throw new GitHubApiError(`Failed to download (HTTP ${res.status}).`, res.status);
+  }
+  recordRequest('fresh');
+  return res.blob();
 }

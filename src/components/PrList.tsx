@@ -31,6 +31,8 @@ import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
 import { TimelineDialog, type GanttItem } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
+import { ArtifactsButton } from './ArtifactsButton';
+import { runIdFromUrl } from '../api/endpoints';
 import { formatRelative } from '../lib/format';
 
 export type PrFilter = 'all' | 'active' | 'failed' | 'success';
@@ -56,6 +58,16 @@ function PrRow({ entry }: { entry: PrEntry }) {
   const { config } = useConfig();
   const { owner, repo } = config.upstream;
   const { pr, overall } = entry;
+  // Artifacts are per-run; derive the PR's CI run id from its check-run URLs.
+  // The Actions run id lives in `details_url` (.../actions/runs/{id}/job/{id});
+  // `html_url` is the generic /runs/{check_run_id} page, so check it second.
+  const runId = useMemo(
+    () =>
+      entry.checkRuns
+        .map((c) => runIdFromUrl(c.details_url) ?? runIdFromUrl(c.html_url))
+        .find((id) => id != null) ?? null,
+    [entry.checkRuns],
+  );
   const timelineItems: GanttItem[] = entry.checkRuns.map((c) => ({
     id: c.id,
     label: c.name,
@@ -122,6 +134,16 @@ function PrRow({ entry }: { entry: PrEntry }) {
               setTimelineOpen(true);
             }}
           />
+          {runId != null && (
+            <ArtifactsButton
+              owner={owner}
+              repo={repo}
+              runId={runId}
+              title="Artifacts"
+              subtitle={`${pr.title} · #${pr.number}`}
+              bundleName={`pr-${pr.number}-artifacts`}
+            />
+          )}
           <IconButton
             size="small"
             variant="invisible"

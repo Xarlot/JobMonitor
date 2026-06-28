@@ -81,7 +81,11 @@ npm run test           # vitest
 VITE_MOCK=1 npm run dev  # offline UI with fixtures, no token / no rate-limit cost
 ```
 
-> This repo targets **Node 24** (see `.nvmrc`). If `node` isn't on your PATH, install it (e.g. via nvm: `nvm install`) before `npm install`.
+> **Node ≥ 22.12 is required** (the repo pins **Node 24** in `.nvmrc`). This is enforced:
+> `npm install` aborts with `EBADENGINE` on older Node, and the `electron:*` scripts run a
+> `check-node` preflight first. The reason is Electron's installer — it `require()`s the ESM-only
+> `@electron/get`, which only works on Node ≥ 22.12 (older Node fails with `ERR_REQUIRE_ESM` and the
+> Electron binary never downloads). With nvm: `nvm use` (reads `.nvmrc`), or `nvm install 24 && nvm use`.
 
 ### Publish via GitHub Pages
 

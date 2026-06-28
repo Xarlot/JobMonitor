@@ -23,4 +23,9 @@ contextBridge.exposeInMainWorld('desktop', {
     supported: () => ipcRenderer.invoke('updates:supported'),
     setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
   },
+  // Save already-fetched bytes to the Downloads folder (see registerDownloadIpc).
+  downloads: {
+    save: (filename, data) => ipcRenderer.invoke('downloads:save', { filename, data }),
+    showInFolder: (fullPath) => ipcRenderer.invoke('downloads:showInFolder', fullPath),
+  },
 });

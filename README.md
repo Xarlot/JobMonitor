@@ -25,6 +25,8 @@ that lives in the tray and pops a notification when something finishes.
 - **Export / import** your board (groups + flow order) as JSON to move your setup between machines.
 - **Light / dark themes** — a one‑click switcher in the header (auto / light / GitHub's dark dimmed).
 - **Logs, summaries and timelines** for any job, right inside the app.
+- **Artifact downloads** — grab a run's artifacts as a single `.zip` or bundle several into one
+  (in the desktop app, via a downloads panel with progress and a Save button).
 - **Desktop notifications** when a PR’s checks or a flow run finish.
 - Everything is **read‑only** — Job Monitor never triggers or changes anything on GitHub.
 
@@ -172,6 +174,24 @@ and sized by duration, splitting **runner allocation** (queue + “Set up job”
 **work** — so it’s obvious whether time went to waiting or running.
 
 ![Timeline](docs/screenshots/timeline.png)
+
+### Artifacts
+
+Flow runs, pull requests, **and their Overview tiles** all show an **artifacts** button (the zip
+icon). It opens a dialog listing the run's uploaded artifacts (sorted by name, with sizes). Download
+any one as its own `.zip`, or tick several — or hit **Download all** — to get **one combined `.zip`
+with a folder per artifact**. The list is fetched only when you open the dialog, so it costs nothing
+until you ask. (Expired artifacts are shown but can't be downloaded — GitHub deletes them after the
+retention window.)
+
+> Artifacts belong to a **run** in GitHub's API, not to an individual job, so they're listed per run.
+
+In the **desktop app**, downloads don't save immediately: they appear in a **Downloads panel** (the
+tray-arrow button, top-right) with progress, and you press **Save** there to write the file to your
+Downloads folder — with a "Show in folder" shortcut and a completion alert. In the **browser**, your
+browser handles the download as usual.
+
+![Download artifacts](docs/screenshots/artifacts.png)
 
 ### Notifications (Settings → **Notifications**)
 
