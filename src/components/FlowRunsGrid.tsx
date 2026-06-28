@@ -21,6 +21,7 @@ import {
   ChecklistIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GrabberIcon,
   GraphIcon,
   LinkExternalIcon,
   SyncIcon,
@@ -70,14 +71,33 @@ function eventVariant(event: string): 'accent' | 'done' | 'secondary' {
   return 'secondary';
 }
 
+export interface FlowDnd {
+  dragging: boolean;
+  /** Show an insertion line at the top / bottom of this card. */
+  dropBefore: boolean;
+  dropAfter: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOver: (after: boolean) => void;
+  onDrop: () => void;
+}
+
 export function FlowRunsGrid({
   flow,
   state,
   highlight = false,
+  expanded = true,
+  onToggle,
+  dnd,
 }: {
   flow: Flow;
   state: FlowState | undefined;
   highlight?: boolean;
+  /** Accordion: when false the card is a thin header-only strip. */
+  expanded?: boolean;
+  onToggle?: () => void;
+  /** Drag-and-drop reordering handlers (omitted = not draggable). */
+  dnd?: FlowDnd;
 }) {
   const { filter } = useFlowsFilter();
 
@@ -245,17 +265,45 @@ export function FlowRunsGrid({
   return (
     <Box
       id={`flow-${flow.id}`}
+      onDragOver={
+        dnd
+          ? (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation(); // don't bubble to the group section's handler
+              e.dataTransfer.dropEffect = 'move';
+              const r = e.currentTarget.getBoundingClientRect();
+              dnd.onDragOver(e.clientY > r.top + r.height / 2); // bottom half = after
+            }
+          : undefined
+      }
+      onDrop={
+        dnd
+          ? (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              dnd.onDrop();
+            }
+          : undefined
+      }
       sx={{
         border: '1px solid',
         borderColor: highlight ? 'accent.emphasis' : 'border.default',
-        boxShadow: highlight ? '0 0 0 2px var(--bgColor-accent-muted, rgba(9,105,218,0.3))' : 'none',
+        boxShadow: dnd?.dropBefore
+          ? 'inset 0 3px 0 0 var(--fgColor-accent, #2f81f7)'
+          : dnd?.dropAfter
+            ? 'inset 0 -3px 0 0 var(--fgColor-accent, #2f81f7)'
+            : highlight
+              ? '0 0 0 2px var(--bgColor-accent-muted, rgba(9,105,218,0.3))'
+              : 'none',
         borderRadius: 2,
-        mb: 4,
+        mb: 2,
         overflow: 'hidden',
-        transition: 'border-color 0.3s, box-shadow 0.3s',
+        opacity: dnd?.dragging ? 0.4 : 1,
+        transition: 'box-shadow 0.12s, border-color 0.3s, opacity 0.2s',
       }}
     >
       <Box
+        onClick={onToggle}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -263,11 +311,39 @@ export function FlowRunsGrid({
           px: 3,
           py: 2,
           bg: 'canvas.subtle',
-          borderBottom: '1px solid',
+          borderBottom: expanded ? '1px solid' : 'none',
           borderColor: 'border.default',
           flexWrap: 'wrap',
+          cursor: onToggle ? 'pointer' : 'default',
         }}
       >
+        {dnd && (
+          <Box
+            as="span"
+            draggable
+            title="Drag to reorder"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            onDragStart={(e: React.DragEvent) => {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', flow.id); // Firefox needs data
+              // Drag a ghost of the whole card, not just the tiny grip handle.
+              const card = document.getElementById(`flow-${flow.id}`);
+              if (card) e.dataTransfer.setDragImage(card, 24, 24);
+              dnd.onDragStart();
+            }}
+            onDragEnd={() => dnd.onDragEnd()}
+            sx={{ display: 'flex', alignItems: 'center', cursor: 'grab', color: 'fg.muted' }}
+          >
+            <Octicon icon={GrabberIcon} size={16} />
+          </Box>
+        )}
+        {onToggle && (
+          <Octicon
+            icon={expanded ? ChevronDownIcon : ChevronRightIcon}
+            size={16}
+            sx={{ color: 'fg.muted' }}
+          />
+        )}
         <StatusBadge status={overall} withText={false} size={18} />
         <Heading as="h3" sx={{ fontSize: 2 }}>{flow.name}</Heading>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -281,23 +357,36 @@ export function FlowRunsGrid({
           {flow.repo || ''} · {flow.workflowFile}
         </Text>
         <Box sx={{ flex: 1 }} />
+        {!expanded && runs.length > 0 && (
+          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+            {runs.length} {runs.length === 1 ? 'run' : 'runs'}
+          </Text>
+        )}
         {runsUpdatedAt && (
           <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
             updated {formatRelative(new Date(runsUpdatedAt).toISOString())}
           </Text>
         )}
         {isFetchingRuns && <Spinner size="small" />}
-        <Button leadingVisual={SyncIcon} size="small" onClick={refresh}>
+        <Button
+          leadingVisual={SyncIcon}
+          size="small"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            refresh();
+          }}
+        >
           Refresh
         </Button>
       </Box>
 
-      {runsError && (
+      {expanded && runsError && (
         <Flash variant="danger" sx={{ m: 2, fontSize: 0 }}>
           Failed to load runs: {runsError.message}
         </Flash>
       )}
 
+      {expanded && (
       <Box sx={{ overflowX: 'auto' }}>
         <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
           <Box as="thead">
@@ -361,6 +450,7 @@ export function FlowRunsGrid({
           </Box>
         </Box>
       </Box>
+      )}
 
       {timelineRun && (
         <FlowRunTimelineDialog

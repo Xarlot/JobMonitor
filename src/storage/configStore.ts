@@ -95,6 +95,19 @@ export const notificationsSchema = z
   })
   .prefault({});
 
+/**
+ * A user-defined group of flows, shown as a section in the Flows board and the
+ * Overview. Membership is by flow `id` (stable, uuid), so the layout transfers
+ * unambiguously between machines via export/import. A flow not referenced by any
+ * group is "ungrouped". `flowIds` order is the order within the group.
+ */
+export const flowGroupSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1, 'group name is required'),
+  flowIds: z.array(z.string().min(1)).default([]),
+  collapsed: z.boolean().default(false),
+});
+
 export const monitorConfigSchema = z.object({
   version: z.literal(1).default(1),
   upstream: ownerRepoSchema,
@@ -110,9 +123,12 @@ export const monitorConfigSchema = z.object({
   autoUpdate: z.boolean().default(true),
   rateLimitWarnAt: z.number().int().min(0).max(5000).default(50),
   flows: z.array(flowSchema).default([]),
+  /** Optional grouping of flows (Overview + Flows board). */
+  groups: z.array(flowGroupSchema).default([]),
 });
 
 export type Flow = z.infer<typeof flowSchema>;
+export type FlowGroup = z.infer<typeof flowGroupSchema>;
 export type PollingConfig = z.infer<typeof pollingSchema>;
 export type NotificationPrefs = z.infer<typeof notificationsSchema>;
 export type EmptyFlowFilter = z.infer<typeof emptyFlowFilterSchema>;
@@ -135,6 +151,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   autoUpdate: true,
   rateLimitWarnAt: 50,
   flows: [],
+  groups: [],
 };
 
 /** Parse + validate untrusted JSON (e.g. from the import textarea). */
@@ -153,6 +170,29 @@ export function safeParseConfig(
     errors: result.error.issues.map(
       (i) => `${i.path.join('.') || '(root)'}: ${i.message}`,
     ),
+  };
+}
+
+/**
+ * The exportable "board": full flow definitions + their grouping, keyed by stable
+ * flow ids. Self-contained so it transfers between machines unambiguously (the
+ * token/coordinates are intentionally NOT included — those are per-machine).
+ */
+export const flowBoardSchema = z.object({
+  version: z.literal(1).default(1),
+  flows: z.array(flowSchema).default([]),
+  groups: z.array(flowGroupSchema).default([]),
+});
+export type FlowBoard = z.infer<typeof flowBoardSchema>;
+
+export function safeParseBoard(
+  raw: unknown,
+): { ok: true; board: FlowBoard } | { ok: false; errors: string[] } {
+  const result = flowBoardSchema.safeParse(raw);
+  if (result.success) return { ok: true, board: result.data };
+  return {
+    ok: false,
+    errors: result.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
   };
 }
 
@@ -187,4 +227,8 @@ export function effectivePrAuthor(config: MonitorConfig): string {
 
 export function newFlowId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `flow-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function newGroupId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `group-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

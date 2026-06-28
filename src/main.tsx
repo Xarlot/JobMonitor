@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BaseStyles, ThemeProvider } from '@primer/react';
 import { App } from './App';
+import { AppThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ConfigProvider } from './context/ConfigContext';
 import { isMockMode } from './mocks/mockMode';
@@ -31,15 +31,13 @@ async function bootstrap() {
   createRoot(root).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <ThemeProvider colorMode="auto">
-          <BaseStyles>
-            <ConfigProvider>
-              <AuthProvider>
-                <App />
-              </AuthProvider>
-            </ConfigProvider>
-          </BaseStyles>
-        </ThemeProvider>
+        <AppThemeProvider>
+          <ConfigProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ConfigProvider>
+        </AppThemeProvider>
       </ErrorBoundary>
     </React.StrictMode>,
   );

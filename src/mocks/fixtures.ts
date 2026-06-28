@@ -54,6 +54,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       emptyFilter: { enabled: true, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
   ],
+  groups: [],
 };
 
 const SHA_OK = 'aaaa111';
