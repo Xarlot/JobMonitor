@@ -33,11 +33,13 @@ describe('App smoke', () => {
 
     // Overview is the default tab: a tile per PR (by name) and per flow.
     expect(await screen.findByText('Job Monitor')).toBeInTheDocument();
-    expect(await screen.findByText('Fix fuel mixture calc')).toBeInTheDocument(); // PR tile
-    expect(await screen.findByText('CI')).toBeInTheDocument(); // flow tile
+    expect(await screen.findByText('space handling')).toBeInTheDocument(); // PR tile
+    expect(await screen.findByText('java')).toBeInTheDocument(); // flow tile
 
-    // Navigate to the Flows tab and confirm the master-detail grid renders.
+    // Navigate to the Flows tab; cards start collapsed (accordion), so expand
+    // one and confirm the master-detail run grid renders.
     fireEvent.click(screen.getByRole('link', { name: /Flows/ }));
+    fireEvent.click(await screen.findByText('java-cron'));
     expect(await screen.findByText('workflow_dispatch')).toBeInTheDocument();
   });
 });

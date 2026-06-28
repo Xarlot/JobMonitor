@@ -7,6 +7,7 @@
 
 import {
   MOCK_PULLS,
+  flowHasRuns,
   mockAnnotations,
   mockArtifacts,
   mockCheckRuns,
@@ -83,10 +84,10 @@ export async function mockFetch(
 
   const runsMatch = path.match(/\/actions\/workflows\/([^/]+)\/runs$/);
   if (runsMatch) {
-    // Only the "ci" workflow has runs; others are empty (demos the empty-flow filter).
+    // Each known workflow has its own run history; unknown ones stay empty
+    // (demonstrates the empty-flow filter).
     const wf = decodeURIComponent(runsMatch[1]);
-    const hasRuns = wf === '42' || /ci/i.test(wf);
-    return json(hasRuns ? mockWorkflowRuns() : { total_count: 0, workflow_runs: [] }, inm);
+    return json(flowHasRuns(wf) ? mockWorkflowRuns(wf) : { total_count: 0, workflow_runs: [] }, inm);
   }
 
   if (/\/actions\/workflows$/.test(path)) {

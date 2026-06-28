@@ -19,6 +19,11 @@ that lives in the tray and pops a notification when something finishes.
 - A single **Overview** of every PR and flow you track, red/green at a glance.
 - **PR checks** with an aggregated status and a drill‑down into every check‑run.
 - **Flows** — pick any workflow and watch its runs and jobs, filtered by branch / event.
+- **Groups** — organise flows into collapsible groups; each group header tallies passed /
+  in‑progress / failed so a collapsed group still tells you what's inside.
+- **Drag‑and‑drop** — reorder flows and move them between groups; collapse any card to a thin strip.
+- **Export / import** your board (groups + flow order) as JSON to move your setup between machines.
+- **Light / dark themes** — a one‑click switcher in the header (auto / light / GitHub's dark dimmed).
 - **Logs, summaries and timelines** for any job, right inside the app.
 - **Desktop notifications** when a PR’s checks or a flow run finish.
 - Everything is **read‑only** — Job Monitor never triggers or changes anything on GitHub.
@@ -53,7 +58,10 @@ keep checking in the background, and show native notifications.
 
 ## First‑time setup
 
-When you first open Job Monitor you’ll be taken to **Settings**. Three things to do:
+When you first open Job Monitor you’ll be taken to **Settings** (it opens automatically until a
+token is set). You can reopen it any time from the **gear icon in the top‑right corner** — it opens
+as a full‑screen page with three tabs: **Token & login**, **Polling** and **Notifications**. Three
+things to do:
 
 ### 1. Add your GitHub token (Settings → **Token & login**)
 
@@ -99,8 +107,10 @@ Click **Save changes** and you’re ready.
 ### Overview
 
 The landing tab rolls everything up: one tile per PR and one per flow, with the latest status,
-branch and when it last changed. Click a tile to jump straight to its details. The header badge
-shows how many API requests you’ve used in the last hour.
+branch and when it last changed. Flows are arranged into the **groups** you've defined, and each
+group header tallies how many flows passed / are running / failed — so a collapsed group still tells
+you what's inside. Click a tile to jump straight to its details. The header badge shows how many API
+requests you’ve used in the last hour.
 
 ![Overview](docs/screenshots/overview.png)
 
@@ -114,11 +124,33 @@ to hide the green noise and show only what needs attention.
 
 ### Flows
 
-Each flow shows its recent **runs**; expand a run to load its **jobs**. Filter runs by status, and
-use the **Job filter** to find runs that contain a job matching a name in a given state. **Compact**
-hides passed/skipped jobs.
+Each flow is a collapsible card. Expand one to see its recent **runs**; expand a run to load its
+**jobs**. Filter runs by status, and use the **Job filter** to find runs that contain a job matching
+a name in a given state. **Compact** hides passed/skipped jobs. Cards behave like an accordion —
+expanding one collapses the rest — and you can **drag the grip** on the left to reorder flows or move
+them between groups.
 
 ![Flows](docs/screenshots/flows.png)
+
+### Groups, drag‑and‑drop and export / import
+
+Both **Overview** and **Flows** let you organise flows into named **groups**. Use **New group** to
+create one, drag a flow by its grip to move it between groups or reorder it, and collapse a group to
+tuck it away (its header keeps showing the pass/fail tally).
+
+Your layout is saved locally. To move it to another machine — or back it up — use **Export / Import**
+in the Flows tab: it serialises your flows and groups (keyed by id) to JSON. Importing replaces the
+current board. Your **token and repository coordinates are never included** in the export.
+
+![Export / import the board](docs/screenshots/board-export.png)
+
+### Theme
+
+A one‑click switcher sits in the header, next to the gear. It cycles **auto → light → dark**, the
+icon reflects the current mode, and your choice is remembered. The dark theme uses GitHub's softer
+**dark dimmed** palette.
+
+![Light theme](docs/screenshots/theme-light.png)
 
 ### Job summary, logs and timeline
 
@@ -165,6 +197,12 @@ In the **desktop app**, notifications keep working even when the window is hidde
 Job Monitor is **read‑only** and **backend‑less**. Your token is encrypted locally, and the app
 talks only to `api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no
 third‑party servers.
+
+---
+
+## Changelog
+
+Release notes for each version live in **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 
