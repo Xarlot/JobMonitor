@@ -19,7 +19,7 @@ import { useDashboard } from '../context/DashboardContext';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import type { OverallStatus, WorkflowRun } from '../api/types';
-import type { Flow } from '../storage/configStore';
+import type { Flow, FlowGroup } from '../storage/configStore';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
 import { statusToOverall } from '../lib/status';
 import { isFlowEmpty, latestRunJobs } from '../lib/flowEmptiness';
@@ -29,6 +29,7 @@ import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryD
 import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
 import { GroupStatusCounts } from './GroupStatusCounts';
 import { ArtifactsButton } from './ArtifactsButton';
+import { PromptDialog } from './PromptDialog';
 import { runIdFromUrl } from '../api/endpoints';
 
 const STATUS_BORDER: Record<OverallStatus, string> = {
@@ -168,6 +169,7 @@ export function Overview({
   const { prs, refreshAll, isFetchingList, isFetchingChecks } = useDashboard();
   const flowStates = useFlowStates();
   const [dlg, setDlg] = useState<Dlg | null>(null);
+  const [groupPrompt, setGroupPrompt] = useState<{ mode: 'create' | 'rename'; group?: FlowGroup } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropEdge, setDropEdge] = useState<{ id: string; after: boolean } | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null); // group id, '' = ungrouped
@@ -409,10 +411,7 @@ export function Overview({
         <Button
           leadingVisual={PlusIcon}
           size="small"
-          onClick={() => {
-            const name = window.prompt('New group name', 'New group');
-            if (name && name.trim()) addGroup(name.trim());
-          }}
+          onClick={() => setGroupPrompt({ mode: 'create' })}
         >
           New group
         </Button>
@@ -457,51 +456,51 @@ export function Overview({
                 transition: 'border-color 0.12s, background-color 0.12s',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 2 }}>
-                <IconButton
-                  size="small"
-                  variant="invisible"
-                  aria-label={collapsed ? 'Expand group' : 'Collapse group'}
-                  icon={collapsed ? ChevronRightIcon : ChevronDownIcon}
-                  onClick={() => group && setCollapsed(group.id, !collapsed)}
-                  sx={{ visibility: group ? 'visible' : 'hidden' }}
-                />
-                <Heading as="h4" sx={{ fontSize: 0, color: group ? 'fg.default' : 'fg.muted' }}>
-                  {group ? group.name : 'Ungrouped'}
-                </Heading>
-                <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
-                <GroupStatusCounts
-                  statuses={visible.map((f) => {
-                    const run = latestRun(flowStates.get(f.id)?.runs ?? []);
-                    return run ? statusToOverall(run.status, run.conclusion) : 'unknown';
-                  })}
-                />
-                <Box sx={{ flex: 1 }} />
-                {group && (
-                  <>
-                    <IconButton
-                      size="small"
-                      variant="invisible"
-                      aria-label="Rename group"
-                      icon={PencilIcon}
-                      onClick={() => {
-                        const n = window.prompt('Rename group', group.name);
-                        if (n && n.trim()) renameGroup(group.id, n.trim());
-                      }}
-                    />
-                    <IconButton
-                      size="small"
-                      variant="invisible"
-                      aria-label="Delete group"
-                      icon={TrashIcon}
-                      onClick={() => {
-                        if (window.confirm(`Delete group “${group.name}”? Its flows become ungrouped.`))
-                          deleteGroup(group.id);
-                      }}
-                    />
-                  </>
-                )}
-              </Box>
+              {/* With no groups at all, there's just one ungrouped list — skip the header. */}
+              {(group || config.groups.length > 0) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 2 }}>
+                  <IconButton
+                    size="small"
+                    variant="invisible"
+                    aria-label={collapsed ? 'Expand group' : 'Collapse group'}
+                    icon={collapsed ? ChevronRightIcon : ChevronDownIcon}
+                    onClick={() => group && setCollapsed(group.id, !collapsed)}
+                    sx={{ visibility: group ? 'visible' : 'hidden' }}
+                  />
+                  <Heading as="h4" sx={{ fontSize: 0, color: group ? 'fg.default' : 'fg.muted' }}>
+                    {group ? group.name : 'Ungrouped'}
+                  </Heading>
+                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
+                  <GroupStatusCounts
+                    statuses={visible.map((f) => {
+                      const run = latestRun(flowStates.get(f.id)?.runs ?? []);
+                      return run ? statusToOverall(run.status, run.conclusion) : 'unknown';
+                    })}
+                  />
+                  <Box sx={{ flex: 1 }} />
+                  {group && (
+                    <>
+                      <IconButton
+                        size="small"
+                        variant="invisible"
+                        aria-label="Rename group"
+                        icon={PencilIcon}
+                        onClick={() => setGroupPrompt({ mode: 'rename', group })}
+                      />
+                      <IconButton
+                        size="small"
+                        variant="invisible"
+                        aria-label="Delete group"
+                        icon={TrashIcon}
+                        onClick={() => {
+                          if (window.confirm(`Delete group “${group.name}”? Its flows become ungrouped.`))
+                            deleteGroup(group.id);
+                        }}
+                      />
+                    </>
+                  )}
+                </Box>
+              )}
               {!collapsed &&
                 (visible.length > 0 ? (
                   <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 3 }}>
@@ -555,6 +554,20 @@ export function Overview({
           subtitle={`#${dlg.entry.pr.number} · check timeline`}
           items={checkItems(dlg.entry)}
           onClose={() => setDlg(null)}
+        />
+      )}
+      {groupPrompt && (
+        <PromptDialog
+          title={groupPrompt.mode === 'create' ? 'New group' : 'Rename group'}
+          label="Group name"
+          initialValue={groupPrompt.mode === 'create' ? '' : (groupPrompt.group?.name ?? '')}
+          submitLabel={groupPrompt.mode === 'create' ? 'Create' : 'Rename'}
+          onSubmit={(name) =>
+            groupPrompt.mode === 'create'
+              ? addGroup(name)
+              : groupPrompt.group && renameGroup(groupPrompt.group.id, name)
+          }
+          onClose={() => setGroupPrompt(null)}
         />
       )}
     </Box>

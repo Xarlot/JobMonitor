@@ -4,7 +4,20 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0]
+
+### Fixed
+- **Creating/renaming a group now works in the desktop app.** It used `window.prompt`, which Electron
+  doesn't implement (it silently returns null); replaced with an in-app input dialog (works in the
+  browser too).
+- **"Check for updates" no longer crashes the desktop app.** A missing `updateToken` declaration in
+  the main process threw `ReferenceError: updateToken is not defined`.
+
+### Changed
+- When there are **no groups at all**, the lone "Ungrouped" header is hidden — flows just render one
+  after another.
+
+## [0.7.0]
 
 ### Added
 - **Artifact downloads** — flow runs, pull requests and their Overview tiles now have an artifacts

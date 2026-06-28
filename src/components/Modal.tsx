@@ -15,12 +15,14 @@ export function Modal({
   onClose,
   footer,
   children,
+  width = 'min(1080px, 94vw)',
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
   children: ReactNode;
+  width?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,7 +53,7 @@ export function Modal({
         aria-modal="true"
         sx={{
           mt: [3, 4, 5],
-          width: 'min(1080px, 94vw)',
+          width,
           maxHeight: '88vh',
           display: 'flex',
           flexDirection: 'column',

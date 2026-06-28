@@ -346,6 +346,9 @@ let manualUpdateCheck = false;
 // Background auto-update on/off, driven by the renderer's config setting.
 let autoUpdateEnabled = false;
 let autoUpdateTimer = null;
+// The user's GitHub token, pushed from the renderer (updates:setToken). Required
+// because the app repo is internal: the anonymous release feed 404s without it.
+let updateToken = null;
 
 /**
  * Point the updater at the internal app repo authenticated with the user's token.
