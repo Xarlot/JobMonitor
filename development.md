@@ -111,7 +111,7 @@ for browser users too). The desktop app **bundles** the built UI (no dependency 
 - **System notifications** — the same opt-in PR/Flow notifications (Settings) render as native OS
   notifications; Electron grants the Notification permission by default.
 - **Auto-update** — `electron-updater` checks GitHub Releases on launch (and every 6 h), downloads
-  in the background, and installs on restart. Toggleable in **Settings → Polling → Updates**; only
+  in the background, and installs on restart. Toggleable in **Settings → Updates**; only
   active where the build can self-update (NSIS / dmg / AppImage — not a `.deb` or a dev run).
 - **Window state** — position/size are remembered and validated against the current displays so the
   window can't reopen off-screen.

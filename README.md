@@ -18,7 +18,8 @@ that lives in the tray and pops a notification when something finishes.
 
 - A single **Overview** of every PR and flow you track, red/green at a glance.
 - **PR checks** with an aggregated status and a drill‑down into every check‑run.
-- **Flows** — pick any workflow and watch its runs and jobs, filtered by branch / event.
+- **Flows** — pick any workflow and watch its runs and jobs, filtered by branch / event; **Browse**
+  the repo's last‑24h runs to add a flow without typing anything.
 - **Groups** — organise flows into collapsible groups; each group header tallies passed /
   in‑progress / failed so a collapsed group still tells you what's inside.
 - **Drag‑and‑drop** — reorder flows and move them between groups; collapse any card to a thin strip.
@@ -62,8 +63,8 @@ keep checking in the background, and show native notifications.
 
 When you first open Job Monitor you’ll be taken to **Settings** (it opens automatically until a
 token is set). You can reopen it any time from the **gear icon in the top‑right corner** — it opens
-as a full‑screen page with three tabs: **Token & login**, **Polling** and **Notifications**. Three
-things to do:
+as a full‑screen page with tabs for **Token & login**, **Repository**, **Polling**, **Flows** and
+**Notifications** (plus **Updates** in the desktop app). Three things to do:
 
 ### 1. Add your GitHub token (Settings → **Token & login**)
 
@@ -81,24 +82,36 @@ and choose a **passphrase**.
 > A read‑only **fine‑grained** token works for most things but **can’t download Actions logs**
 > (GitHub returns 404), so a classic `repo` token is recommended.
 
-### 2. Point it at a repository (Settings → **Polling**)
+### 2. Point it at a repository (Settings → **Repository**)
 
-![Settings — repository & polling](docs/screenshots/settings-polling.png)
+![Settings — repository](docs/screenshots/settings-polling.png)
 
 - **Upstream owner / repo** — the repository you’re monitoring (you can paste a full GitHub URL).
 - **Fork owner** — whose pull requests into upstream you want to see.
 - **Branch filter / PR author** — optional narrowing.
-- **Polling intervals** — how often to refresh (sensible defaults are filled in).
 
-### 3. Add flows to watch (Settings → **Polling → Flows**)
+How often everything refreshes lives on the separate **Polling** tab (sensible defaults are filled
+in), alongside the rate‑limit warning threshold.
 
-A *flow* is any workflow you want to track. Give it a name, the workflow file (or its display
-name / id), the branches, and optionally the trigger events.
+### 3. Add flows to watch (Settings → **Flows**)
+
+A *flow* is any workflow you want to track. Give it a **name** and the **workflow** (file name,
+display name or id) — or hit **Browse…** to pick from everything that ran in the repo recently and
+have the fields filled in for you. Branches, trigger events, owner/repo overrides and max-runs sit
+under **Additional settings**, collapsed by default.
 
 ![Settings — a flow](docs/screenshots/settings-flow.png)
 
-You can also **Hide when empty** — automatically hide a flow when it has no runs, only skipped
-runs, no artifacts, or when a named job ended up in a certain state (e.g. a `test` job was skipped).
+**Browse…** opens a dialog listing every workflow that ran in the repo **in the last 24 hours**,
+grouped by workflow × branch × trigger, with each one's status, file, trigger event, branch and
+last‑run time. **Search** by name or file and **filter** by trigger or branch, then click a row to
+fill the flow's name, workflow file, branch and event in one go.
+
+![Browse recent workflows](docs/screenshots/settings-browse.png)
+
+Under Additional settings you can also **Hide when empty** — automatically hide a flow when it has no
+runs, only skipped runs, no artifacts, or when a named job ended up in a certain state (e.g. a `test`
+job was skipped).
 
 Click **Save changes** and you’re ready.
 
@@ -208,7 +221,7 @@ In the **desktop app**, notifications keep working even when the window is hidde
 - **Tray** — closing or minimising the window tucks it into the system tray; it keeps checking in
   the background. Right‑click the tray icon for **Open / Check for updates / About / Exit**.
 - **Auto‑update** — the app can download and install new versions automatically. Toggle it in
-  **Settings → Polling → Updates** (available on the `.exe` / `.dmg` / AppImage builds).
+  **Settings → Updates** (a desktop‑only tab; available on the `.exe` / `.dmg` / AppImage builds).
 
 ---
 

@@ -113,6 +113,10 @@ export interface WorkflowRun {
   created_at: string;
   updated_at: string;
   run_started_at: string | null;
+  /** Workflow file path, e.g. ".github/workflows/ci.yml" (present on repo-wide runs). */
+  path?: string;
+  /** Numeric id of the workflow this run belongs to. */
+  workflow_id?: number;
 }
 
 export interface WorkflowRunsResponse {

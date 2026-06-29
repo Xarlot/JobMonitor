@@ -40,6 +40,21 @@ export function workflowRunsPath(
   return `/repos/${enc(owner)}/${enc(repo)}/actions/workflows/${enc(workflowFile)}/runs?${params.toString()}`;
 }
 
+/**
+ * Repo-wide workflow runs across all workflows, most-recent first. `created`
+ * accepts a GitHub date filter (e.g. ">=2024-01-01T00:00:00Z") to bound the window.
+ */
+export function repoRunsPath(
+  owner: string,
+  repo: string,
+  opts: { created?: string; perPage?: number; page?: number } = {},
+): string {
+  const params = new URLSearchParams({ per_page: String(opts.perPage ?? 100) });
+  if (opts.created) params.set('created', opts.created);
+  if (opts.page && opts.page > 1) params.set('page', String(opts.page));
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs?${params.toString()}`;
+}
+
 export function runJobsPath(owner: string, repo: string, runId: number, page = 1): string {
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/jobs?per_page=100&page=${page}`;
 }

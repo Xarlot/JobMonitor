@@ -16,8 +16,21 @@ import {
   Textarea,
   UnderlineNav,
 } from '@primer/react';
-import { BellIcon, GearIcon, PlusIcon, ShieldLockIcon, TrashIcon } from '@primer/octicons-react';
+import {
+  BellIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  DownloadIcon,
+  GearIcon,
+  PlusIcon,
+  SearchIcon,
+  ShieldLockIcon,
+  TrashIcon,
+  WorkflowIcon,
+} from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
+import { WorkflowBrowserDialog, type FlowPick } from './WorkflowBrowserDialog';
 import { useAuth } from '../context/AuthContext';
 import {
   monitorConfigSchema,
@@ -269,13 +282,18 @@ function EventsField({
 
 function FlowEditor({
   flow,
+  upstream,
   onChange,
   onRemove,
 }: {
   flow: Flow;
+  /** Effective fallback coordinates used when the flow has no owner/repo override. */
+  upstream: { owner: string; repo: string };
   onChange: (next: Flow) => void;
   onRemove: () => void;
 }) {
+  const [advanced, setAdvanced] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const set = <K extends keyof Flow>(key: K, value: Flow[K]) => onChange({ ...flow, [key]: value });
   const csv = (arr: string[]) => arr.join(', ');
   const parseCsv = (s: string) =>
@@ -284,83 +302,141 @@ function FlowEditor({
       .map((x) => x.trim())
       .filter(Boolean);
 
+  // The browser queries the flow's own coordinates, falling back to upstream.
+  const browseOwner = (flow.owner ?? '').trim() || upstream.owner.trim();
+  const browseRepo = (flow.repo ?? '').trim() || upstream.repo.trim();
+  const canBrowse = Boolean(browseOwner && browseRepo);
+
+  const applyPick = (pick: FlowPick) => {
+    onChange({
+      ...flow,
+      name: pick.name || flow.name,
+      workflowFile: pick.workflowFile || flow.workflowFile,
+      branches: pick.branch ? [pick.branch] : flow.branches,
+      events: pick.event ? [pick.event] : flow.events,
+    });
+    setAdvanced(true); // reveal the just-filled branch/event so the change is visible
+  };
+
   return (
     <Box sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, p: 3, mb: 3 }}>
-      {/* Header: name, max runs, remove */}
+      {/* Header: name + remove */}
       <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-end', mb: 3 }}>
         <FormControl sx={{ flex: 1 }}>
           <FormControl.Label>Name</FormControl.Label>
           <TextInput value={flow.name} onChange={(e) => set('name', e.target.value)} block />
-        </FormControl>
-        <FormControl sx={{ width: 130 }}>
-          <FormControl.Label>Max runs / event</FormControl.Label>
-          <TextInput
-            type="number"
-            value={String(flow.maxRuns)}
-            onChange={(e) => set('maxRuns', Math.max(1, Number(e.target.value) || 1))}
-            title="Kept per branch × event"
-            block
-          />
         </FormControl>
         <IconButton
           aria-label="Remove flow"
           icon={TrashIcon}
           variant="danger"
           onClick={onRemove}
-          sx={{ mb: 1 }}
         />
       </Box>
 
-      {/* Coordinates: workflow full-width, then owner/repo and branches/events paired */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], columnGap: 3, rowGap: 3 }}>
-        <FormControl sx={{ gridColumn: ['auto', '1 / -1'] }}>
-          <FormControl.Label>Workflow name, file, or id</FormControl.Label>
-          <TextInput
-            value={flow.workflowFile}
-            onChange={(e) => set('workflowFile', e.target.value)}
-            placeholder="ci.yml, CI, or 42"
-            block
-          />
-          <FormControl.Caption>
-            Display name, file name (with/without .yml), or numeric id — resolved automatically.
-          </FormControl.Caption>
-        </FormControl>
-        <FormControl>
-          <FormControl.Label>Owner (optional)</FormControl.Label>
-          <TextInput
-            value={flow.owner ?? ''}
-            onChange={(e) => set('owner', e.target.value || undefined)}
-            placeholder="defaults to upstream"
-            block
-          />
-        </FormControl>
-        <FormControl>
-          <FormControl.Label>Repo (optional)</FormControl.Label>
-          <TextInput
-            value={flow.repo ?? ''}
-            onChange={(e) => set('repo', e.target.value || undefined)}
-            placeholder="defaults to upstream"
-            block
-          />
-        </FormControl>
-        <FormControl sx={{ gridColumn: ['auto', '1 / -1'] }}>
-          <FormControl.Label>Branches</FormControl.Label>
-          <TextInput
-            value={csv(flow.branches)}
-            onChange={(e) => set('branches', parseCsv(e.target.value))}
-            placeholder="main, release/*"
-            block
-          />
-          <FormControl.Caption>Comma-separated</FormControl.Caption>
-        </FormControl>
-        <Box sx={{ gridColumn: ['auto', '1 / -1'] }}>
-          <EventsField events={flow.events} onChange={(next) => set('events', next)} />
+      {/* Workflow reference + "browse recent runs" picker */}
+      <Box>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+          <FormControl sx={{ flex: 1 }}>
+            <FormControl.Label>Workflow name, file, or id</FormControl.Label>
+            <TextInput
+              value={flow.workflowFile}
+              onChange={(e) => set('workflowFile', e.target.value)}
+              placeholder="ci.yml, CI, or 42"
+              block
+            />
+          </FormControl>
+          <Button
+            leadingVisual={SearchIcon}
+            onClick={() => setBrowsing(true)}
+            disabled={!canBrowse}
+            title={
+              canBrowse
+                ? 'Browse workflows that ran in the last day'
+                : 'Set an upstream repo (or this flow’s owner/repo) first'
+            }
+          >
+            Browse…
+          </Button>
         </Box>
+        <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 1 }}>
+          Display name, file name (with/without .yml), or numeric id — resolved automatically.
+        </Text>
       </Box>
 
-      {/* Per-flow empty filter */}
+      {/* Additional settings — collapsed by default */}
       <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
-        <FormControl sx={{ mb: flow.emptyFilter.enabled ? 3 : 0 }}>
+        <Box
+          as="button"
+          type="button"
+          aria-expanded={advanced}
+          onClick={() => setAdvanced((v) => !v)}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            p: 0,
+            border: 0,
+            bg: 'transparent',
+            color: 'fg.muted',
+            cursor: 'pointer',
+            fontSize: 1,
+            fontWeight: 'bold',
+          }}
+        >
+          <Octicon icon={advanced ? ChevronDownIcon : ChevronRightIcon} size={16} />
+          Additional settings
+        </Box>
+
+        {advanced && (
+          <Box sx={{ mt: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], columnGap: 3, rowGap: 3 }}>
+              <FormControl>
+                <FormControl.Label>Owner</FormControl.Label>
+                <TextInput
+                  value={flow.owner ?? ''}
+                  onChange={(e) => set('owner', e.target.value || undefined)}
+                  placeholder="defaults to upstream"
+                  block
+                />
+              </FormControl>
+              <FormControl>
+                <FormControl.Label>Repo</FormControl.Label>
+                <TextInput
+                  value={flow.repo ?? ''}
+                  onChange={(e) => set('repo', e.target.value || undefined)}
+                  placeholder="defaults to upstream"
+                  block
+                />
+              </FormControl>
+              <FormControl sx={{ gridColumn: ['auto', '1 / -1'] }}>
+                <FormControl.Label>Branches</FormControl.Label>
+                <TextInput
+                  value={csv(flow.branches)}
+                  onChange={(e) => set('branches', parseCsv(e.target.value))}
+                  placeholder="main, release/*"
+                  block
+                />
+                <FormControl.Caption>Comma-separated</FormControl.Caption>
+              </FormControl>
+              <Box sx={{ gridColumn: ['auto', '1 / -1'] }}>
+                <EventsField events={flow.events} onChange={(next) => set('events', next)} />
+              </Box>
+              <FormControl sx={{ width: 130 }}>
+                <FormControl.Label>Max runs / event</FormControl.Label>
+                <TextInput
+                  type="number"
+                  value={String(flow.maxRuns)}
+                  onChange={(e) => set('maxRuns', Math.max(1, Number(e.target.value) || 1))}
+                  title="Kept per branch × event"
+                  block
+                />
+              </FormControl>
+            </Box>
+
+            {/* Per-flow empty filter */}
+            <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
+              <FormControl sx={{ mb: flow.emptyFilter.enabled ? 3 : 0 }}>
           <Checkbox
             checked={flow.emptyFilter.enabled}
             onChange={(e) => set('emptyFilter', { ...flow.emptyFilter, enabled: e.target.checked })}
@@ -433,7 +509,19 @@ function FlowEditor({
             )}
           </Box>
         )}
+            </Box>
+          </Box>
+        )}
       </Box>
+
+      {browsing && (
+        <WorkflowBrowserDialog
+          owner={browseOwner}
+          repo={browseRepo}
+          onSelect={applyPick}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
     </Box>
   );
 }
@@ -532,7 +620,7 @@ export function SettingsPage() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
-  const [tab, setTab] = useState<'polling' | 'token' | 'notifications'>('token');
+  const [tab, setTab] = useState<'repo' | 'polling' | 'flows' | 'token' | 'notifications' | 'updates'>('token');
 
   const exportJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
 
@@ -610,11 +698,15 @@ export function SettingsPage() {
     </>
   );
 
-  const TABS = [
+  const TABS: Array<[typeof tab, string, typeof ShieldLockIcon]> = [
     ['token', 'Token & login', ShieldLockIcon],
-    ['polling', 'Polling', GearIcon],
+    ['repo', 'Repository', GearIcon],
+    ['polling', 'Polling', ClockIcon],
+    ['flows', 'Flows', WorkflowIcon],
     ['notifications', 'Notifications', BellIcon],
-  ] as const;
+  ];
+  // Auto-update is a desktop-only feature, so its tab only appears there.
+  if (isDesktop()) TABS.push(['updates', 'Updates', DownloadIcon]);
 
   return (
     <Box sx={{ maxWidth: 860 }}>
@@ -638,10 +730,10 @@ export function SettingsPage() {
 
       {tab === 'token' && <TokenSection />}
 
-      {tab === 'polling' && (
+      {tab === 'repo' && (
         <>
       <Box sx={sectionSx}>
-        <Heading as="h2" sx={{ fontSize: 3, mb: 3 }}>Repository &amp; polling</Heading>
+        <Heading as="h2" sx={{ fontSize: 3, mb: 3 }}>Repository</Heading>
         <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
           <FormControl sx={{ flex: 1, minWidth: 160 }} required>
             <FormControl.Label>Upstream owner</FormControl.Label>
@@ -694,9 +786,19 @@ export function SettingsPage() {
           </FormControl>
         </Box>
 
-        <Heading as="h3" sx={{ fontSize: 1, mt: 4, mb: 2, color: 'fg.muted' }}>
-          Polling intervals (seconds)
-        </Heading>
+      </Box>
+
+      {draftFooter}
+        </>
+      )}
+
+      {tab === 'polling' && (
+        <>
+      <Box sx={sectionSx}>
+        <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>Polling</Heading>
+        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+          How often each kind of data is refreshed, in seconds.
+        </Text>
         <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
           {(
             [
@@ -730,6 +832,12 @@ export function SettingsPage() {
         </Box>
       </Box>
 
+      {draftFooter}
+        </>
+      )}
+
+      {tab === 'flows' && (
+        <>
       <Box sx={sectionSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Heading as="h2" sx={{ fontSize: 3 }}>Flows</Heading>
@@ -744,14 +852,13 @@ export function SettingsPage() {
             <FlowEditor
               key={flow.id}
               flow={flow}
+              upstream={draft.upstream}
               onChange={(next) => updateFlow(i, next)}
               onRemove={() => removeFlow(i)}
             />
           ))
         )}
       </Box>
-
-      <UpdatesSection enabled={draft.autoUpdate} onChange={(v) => update({ autoUpdate: v })} />
 
       {draftFooter}
 
@@ -793,6 +900,13 @@ export function SettingsPage() {
             prefs={draft.notifications}
             onChange={(patch) => updateNested('notifications', patch)}
           />
+          {draftFooter}
+        </>
+      )}
+
+      {tab === 'updates' && (
+        <>
+          <UpdatesSection enabled={draft.autoUpdate} onChange={(v) => update({ autoUpdate: v })} />
           {draftFooter}
         </>
       )}

@@ -4,6 +4,31 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.9.0]
+
+A Settings overhaul plus a workflow picker that fills in a flow for you from the repo's recent runs.
+
+### Added
+- **Browse recent workflows** — the flow editor's workflow field now has a **Browse…** button that
+  opens a dialog listing every workflow that ran in the repo **in the last 24 hours**, grouped by
+  workflow × branch × trigger, showing each one's status, file, trigger event, branch and last-run
+  time. **Search** by name/file and **filter** by trigger or branch; pick a row and the flow's name,
+  workflow file, branch and event are filled in automatically. The full day is paged through (not
+  just the newest 100 runs), and the list is ETag-cached so reopening is cheap.
+
+### Changed
+- **Settings is split into focused tabs** — **Token & login**, **Repository**, **Polling**, **Flows**,
+  **Notifications**, and (desktop only) **Updates**. Previously the repository, polling, flows and
+  updates settings were all stacked under one "Polling" tab.
+- **Flow cards are tidier** — only **Name** and **Workflow** (with the new Browse button) show by
+  default; owner/repo, branches, events, max-runs and the "hide when empty" filter now live under a
+  collapsed **Additional settings** section.
+
+### Fixed
+- **Action-icon alignment** — the per-job icons under an expanded flow run (and the per-check icons
+  under a PR) now line up with the run/PR row's icons instead of being inset by the nested table's
+  padding; the remove-flow trash icon also aligns with its row.
+
 ## [0.8.0]
 
 ### Fixed

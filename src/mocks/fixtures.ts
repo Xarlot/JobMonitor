@@ -236,8 +236,41 @@ function run(over: Partial<WorkflowRun> & { id: number }): WorkflowRun {
     created_at: new Date(BOOT - 7200_000).toISOString(),
     updated_at: new Date(BOOT - 7000_000).toISOString(),
     run_started_at: new Date(BOOT - 7200_000).toISOString(),
+    path: '.github/workflows/check-pull-request-java.yml',
+    workflow_id: 42,
     ...over,
   };
+}
+
+/**
+ * Repo-wide recent runs across several workflows / branches / events — feeds the
+ * "browse recent workflows" picker in the flow editor. Spans the full day so the
+ * 24h window is visible, plus one run >24h old. Honors the GitHub `created`
+ * filter (e.g. ">=<iso>") so mock mode mirrors the real server-side windowing.
+ */
+export function mockRepoRuns(created?: string | null): WorkflowRunsResponse {
+  // created_at + run_started_at both set so the `created` filter behaves like GitHub.
+  const at = (h: number) => {
+    const iso = new Date(BOOT - h * 3600_000).toISOString();
+    return { created_at: iso, run_started_at: iso } as const;
+  };
+  const runs: WorkflowRun[] = [
+    run({ id: 2004, name: 'Publish', display_title: 'Publish 24.1', path: '.github/workflows/publish.yml', workflow_id: 45, event: 'workflow_dispatch', head_branch: 'release/24.1', status: 'in_progress', conclusion: null, ...at(0.2) }),
+    run({ id: 2001, name: 'java', display_title: 'CI', path: '.github/workflows/check-pull-request-java.yml', workflow_id: 42, event: 'pull_request', head_branch: 'feature/embedded-fonts', conclusion: 'success', ...at(1) }),
+    run({ id: 2002, name: 'WPF Tests', display_title: 'WPF Tests', path: '.github/workflows/wpf-tests.yml', workflow_id: 43, event: 'push', head_branch: 'main', conclusion: 'failure', ...at(4) }),
+    run({ id: 2005, name: 'java', display_title: 'CI', path: '.github/workflows/check-pull-request-java.yml', workflow_id: 42, event: 'push', head_branch: 'main', conclusion: 'success', ...at(9) }),
+    run({ id: 2003, name: 'Visual Tests', display_title: 'Visual Tests', path: '.github/workflows/visualtests.yml', workflow_id: 44, event: 'schedule', head_branch: 'main', conclusion: 'success', ...at(15) }),
+    run({ id: 2006, name: 'java-cron', display_title: 'Nightly Java', path: '.github/workflows/java-cron.yml', workflow_id: 46, event: 'schedule', head_branch: 'main', conclusion: 'success', ...at(22) }),
+    // Older than the 24h window — must be filtered out by `created`.
+    run({ id: 2007, name: 'Docs', display_title: 'Publish docs', path: '.github/workflows/docs.yml', workflow_id: 47, event: 'schedule', head_branch: 'main', conclusion: 'success', ...at(30) }),
+  ];
+
+  let filtered = runs;
+  if (created && created.startsWith('>=')) {
+    const cutoff = Date.parse(created.slice(2));
+    if (!Number.isNaN(cutoff)) filtered = runs.filter((r) => Date.parse(r.created_at) >= cutoff);
+  }
+  return { total_count: filtered.length, workflow_runs: filtered };
 }
 
 export function mockArtifacts(runId: number): ArtifactsResponse {

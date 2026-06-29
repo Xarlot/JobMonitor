@@ -15,6 +15,7 @@ import {
   mockCombinedStatus,
   mockJobLog,
   mockJobs,
+  mockRepoRuns,
   mockSingleJob,
   mockWorkflowRuns,
   mockWorkflows,
@@ -104,6 +105,15 @@ export async function mockFetch(
     // (demonstrates the empty-flow filter).
     const wf = decodeURIComponent(runsMatch[1]);
     return json(flowHasRuns(wf) ? mockWorkflowRuns(wf) : { total_count: 0, workflow_runs: [] }, inm);
+  }
+
+  // Repo-wide runs (browse picker) — matched before the workflows list, distinct
+  // from the per-workflow `/actions/workflows/{file}/runs` route above. Honors the
+  // `created` window and paginates (page > 1 is past our small fixture set).
+  if (/\/actions\/runs$/.test(path)) {
+    const page = Number(url.searchParams.get('page') ?? '1');
+    if (page > 1) return json({ total_count: 0, workflow_runs: [] }, inm);
+    return json(mockRepoRuns(url.searchParams.get('created')), inm);
   }
 
   if (/\/actions\/workflows$/.test(path)) {
