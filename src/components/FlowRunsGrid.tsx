@@ -450,7 +450,7 @@ export function FlowRunsGrid({
                     {open && (
                       <Box as="tr">
                         <Box as="td" colSpan={colSpan} sx={{ p: 0, bg: 'canvas.inset' }}>
-                          <Box sx={{ px: 4, py: 2 }}>
+                          <Box sx={{ pl: 4, py: 2 }}>
                             <JobsTable entry={jobsByRun[row.original.id]} owner={owner} repo={repo} />
                           </Box>
                         </Box>

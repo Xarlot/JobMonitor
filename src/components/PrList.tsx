@@ -181,7 +181,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
         />
       )}
       {open && (
-        <Box sx={{ px: 4, pb: 3, pt: 1, bg: 'canvas.subtle' }}>
+        <Box sx={{ pl: 4, pr: 2, pb: 3, pt: 1, bg: 'canvas.subtle' }}>
           {entry.checksError && (
             <Flash variant="danger" sx={{ mb: 2, fontSize: 0 }}>{entry.checksError}</Flash>
           )}
