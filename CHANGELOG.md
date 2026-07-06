@@ -4,6 +4,20 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.0.0]
+
+The per-flow "hide when empty" toggle grows up into a two-way visibility filter.
+
+### Changed
+- **Per-flow visibility filter — Hide when / Show when.** The flow editor's old *Hide when empty*
+  checkbox is now a filter with a direction. Pick **Hide when** to drop matching flows from the board
+  (the previous behavior) or **Show when** to keep *only* the matching ones and hide the rest, then
+  choose the condition: the flow has **no runs**, **all runs skipped**, **no / tiny artifacts**, or
+  **a named job is in a given state** (e.g. a `test` job that was skipped). Applies to both the
+  **Overview** and the **Flows** board. A flow whose state is still loading stays visible in both
+  modes, so there's no flicker. Existing configs are read unchanged and default to *Hide when*,
+  preserving the old behavior.
+
 ## [0.9.0]
 
 A Settings overhaul plus a workflow picker that fills in a flow for you from the repo's recent runs.
