@@ -23,7 +23,7 @@ import {
 } from '@primer/octicons-react';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
-import { isFlowEmpty, latestRunJobs } from '../lib/flowEmptiness';
+import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
 import {
   DEFAULT_FLOWS_FILTER,
   isJobFilterActive,
@@ -186,7 +186,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
 
   const isVisible = (flow: Flow) => {
     const st = states.get(flow.id);
-    return !isFlowEmpty(
+    return !isFlowHidden(
       {
         runs: st?.runs ?? [],
         latestArtifactBytes: st?.latestArtifactBytes ?? null,
@@ -261,8 +261,8 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
 
       {hiddenCount > 0 && (
         <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mb: 3 }}>
-          {hiddenCount} empty {hiddenCount === 1 ? 'flow' : 'flows'} hidden by per-flow filter
-          (configure in Settings → each flow's “Hide when empty”).
+          {hiddenCount} {hiddenCount === 1 ? 'flow' : 'flows'} hidden by per-flow filter
+          (configure in Settings → each flow's visibility filter).
         </Text>
       )}
 

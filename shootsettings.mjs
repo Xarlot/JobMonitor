@@ -49,23 +49,28 @@ await page.screenshot({
 await tabs.getByText('Flows', { exact: true }).click();
 await page.getByRole('button', { name: 'Add flow' }).waitFor({ timeout: 8000 });
 await page.getByText('Additional settings').first().click();
-await page.getByText('Hide when empty').first().waitFor({ timeout: 8000 });
+// Enable the per-flow visibility filter so its Hide/Show controls are in shot.
+await page.getByText('Filter this flow by activity').first().waitFor({ timeout: 8000 });
+await page.getByText('Filter this flow by activity').first().click();
+await page.getByText('Visibility', { exact: true }).first().waitFor({ timeout: 8000 });
+await page.getByText('Condition', { exact: true }).first().waitFor({ timeout: 8000 });
 await page.waitForTimeout(300);
 // Bound the clip to the first card using its corner landmarks: the "Name" label
-// (top-left), the "Remove flow" button (right edge) and "Hide when empty" (bottom).
+// (top-left), the "Remove flow" button (right edge) and the "Condition" select (bottom).
 const pad = 16;
 const nameLabel = await page.getByText('Name', { exact: true }).first().boundingBox();
 const trash = await page.getByRole('button', { name: 'Remove flow' }).first().boundingBox();
-const hideEmpty = await page.getByText('Hide when empty').first().boundingBox();
+const condition = await page.getByText('Condition', { exact: true }).first().boundingBox();
 const x = Math.max(0, nameLabel.x - pad);
 const y = Math.max(0, nameLabel.y - pad);
 await page.screenshot({
   path: `${OUT}/settings-flow.png`,
+  // +64 clears the select row that sits below the "Condition" label.
   clip: {
     x,
     y,
     width: trash.x + trash.width + pad - x,
-    height: hideEmpty.y + hideEmpty.height + pad - y,
+    height: condition.y + condition.height + 64 - y,
   },
 });
 

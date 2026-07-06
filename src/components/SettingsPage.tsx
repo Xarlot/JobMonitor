@@ -434,19 +434,32 @@ function FlowEditor({
               </FormControl>
             </Box>
 
-            {/* Per-flow empty filter */}
+            {/* Per-flow visibility filter */}
             <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
               <FormControl sx={{ mb: flow.emptyFilter.enabled ? 3 : 0 }}>
           <Checkbox
             checked={flow.emptyFilter.enabled}
             onChange={(e) => set('emptyFilter', { ...flow.emptyFilter, enabled: e.target.checked })}
           />
-          <FormControl.Label>Hide when empty</FormControl.Label>
+          <FormControl.Label>Filter this flow by activity</FormControl.Label>
         </FormControl>
         {flow.emptyFilter.enabled && (
           <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', 'repeat(3, 1fr)'], gap: 3 }}>
             <FormControl>
-              <FormControl.Label>Empty when</FormControl.Label>
+              <FormControl.Label>Visibility</FormControl.Label>
+              <Select
+                value={flow.emptyFilter.mode}
+                onChange={(e) =>
+                  set('emptyFilter', { ...flow.emptyFilter, mode: e.target.value as EmptyFlowFilter['mode'] })
+                }
+                block
+              >
+                <Select.Option value="hide">Hide when</Select.Option>
+                <Select.Option value="show">Show when</Select.Option>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <FormControl.Label>Condition</FormControl.Label>
               <Select
                 value={flow.emptyFilter.by}
                 onChange={(e) =>
@@ -669,7 +682,7 @@ export function SettingsPage() {
       branches: ['main'],
       events: [],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     };
     update({ flows: [...draft.flows, flow] });
   };

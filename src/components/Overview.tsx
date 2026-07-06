@@ -22,7 +22,7 @@ import type { OverallStatus, WorkflowRun } from '../api/types';
 import type { Flow, FlowGroup } from '../storage/configStore';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
 import { statusToOverall } from '../lib/status';
-import { isFlowEmpty, latestRunJobs } from '../lib/flowEmptiness';
+import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
 import { StatusBadge } from './StatusBadge';
 import { formatRelative } from '../lib/format';
 import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryDialog';
@@ -182,7 +182,7 @@ export function Overview({
 
   const isVisible = (flow: Flow) => {
     const state = flowStates.get(flow.id);
-    return !isFlowEmpty(
+    return !isFlowHidden(
       {
         runs: state?.runs ?? [],
         latestArtifactBytes: state?.latestArtifactBytes ?? null,

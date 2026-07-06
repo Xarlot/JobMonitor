@@ -109,9 +109,10 @@ fill the flow's name, workflow file, branch and event in one go.
 
 ![Browse recent workflows](docs/screenshots/settings-browse.png)
 
-Under Additional settings you can also **Hide when empty** — automatically hide a flow when it has no
-runs, only skipped runs, no artifacts, or when a named job ended up in a certain state (e.g. a `test`
-job was skipped).
+Under Additional settings you can also add a per-flow **visibility filter** — pick **Hide when** or
+**Show when**, then a condition: the flow has no runs, only skipped runs, no artifacts, or a named job
+ended up in a certain state (e.g. a `test` job was skipped). *Hide when* drops matching flows from the
+board; *Show when* keeps only the matching ones.
 
 Click **Save changes** and you’re ready.
 

@@ -44,7 +44,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: ['workflow_dispatch', 'push'],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
     {
       id: 'flow-wpf',
@@ -55,7 +55,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: ['push'],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
     {
       id: 'flow-visualtests',
@@ -66,7 +66,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: ['pull_request'],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
     {
       id: 'flow-java-cron',
@@ -77,7 +77,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: ['workflow_dispatch'],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
     {
       id: 'flow-publish',
@@ -88,7 +88,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: ['workflow_dispatch'],
       maxRuns: 5,
-      emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
     {
       // No runs in the mock; its own filter hides it — demonstrates per-flow empty filtering.
@@ -100,7 +100,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       branches: [BRANCH],
       events: [],
       maxRuns: 5,
-      emptyFilter: { enabled: true, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      emptyFilter: { enabled: true, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
     },
   ],
   groups: [

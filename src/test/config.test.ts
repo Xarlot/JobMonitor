@@ -46,6 +46,7 @@ describe('configStore', () => {
     });
     expect(cfg.flows[0].emptyFilter).toEqual({
       enabled: false,
+      mode: 'hide',
       by: 'no_runs',
       minArtifactKB: 0,
       jobName: '',

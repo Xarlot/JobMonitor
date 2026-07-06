@@ -23,7 +23,7 @@ function flow(id: string): Flow {
     branches: ['main'],
     events: [],
     maxRuns: 5,
-    emptyFilter: { enabled: false, by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+    emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
   };
 }
 

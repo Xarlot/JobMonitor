@@ -31,6 +31,12 @@ const ownerRepoSchema = z.preprocess(
 export const emptyFlowFilterSchema = z.object({
   enabled: z.boolean().default(false),
   /**
+   * Direction of the filter:
+   *  - hide: hide the flow when it matches the "empty" condition (the default).
+   *  - show: show the flow ONLY when it matches — i.e. hide the non-empty ones.
+   */
+  mode: z.enum(['hide', 'show']).default('hide'),
+  /**
    * What counts as "empty":
    *  - no_runs / only_skipped: derived from the runs themselves
    *  - no_artifacts: latest run's total artifact size at/below `minArtifactKB`
@@ -73,7 +79,7 @@ export const flowSchema = z.preprocess(
     /** Event filter (e.g. workflow_dispatch, push). Empty = any event. */
     events: z.array(z.string().trim().min(1)).default([]),
     maxRuns: z.number().int().min(1).max(50).default(5),
-    /** Per-flow "hide when empty" filter. */
+    /** Per-flow visibility filter: hide/show the flow based on an "empty" condition. */
     emptyFilter: emptyFlowFilterSchema.prefault({}),
   }),
 );

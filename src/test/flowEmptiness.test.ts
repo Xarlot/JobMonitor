@@ -3,6 +3,7 @@ import {
   emptyFilterNeedsArtifacts,
   emptyFilterNeedsLatestJobs,
   isFlowEmpty,
+  isFlowHidden,
 } from '../lib/flowEmptiness';
 import type { EmptyFlowFilter } from '../storage/configStore';
 import type { Job, WorkflowRun } from '../api/types';
@@ -43,6 +44,7 @@ function job(name: string, over: Partial<Job> = {}): Job {
 
 const filter = (over: Partial<EmptyFlowFilter>): EmptyFlowFilter => ({
   enabled: true,
+  mode: 'hide',
   by: 'no_runs',
   minArtifactKB: 0,
   jobName: '',
@@ -104,5 +106,29 @@ describe('isFlowEmpty', () => {
     expect(emptyFilterNeedsLatestJobs(filter({ by: 'job' }))).toBe(true);
     expect(emptyFilterNeedsLatestJobs(filter({ enabled: false, by: 'job' }))).toBe(false);
     expect(emptyFilterNeedsLatestJobs(filter({ by: 'no_runs' }))).toBe(false);
+  });
+});
+
+describe('isFlowHidden', () => {
+  it('is never hidden when the filter is disabled', () => {
+    expect(isFlowHidden(input({ runs: [] }), filter({ enabled: false }))).toBe(false);
+  });
+
+  it('hide mode: hides matching (empty) flows, keeps the rest', () => {
+    const f = filter({ mode: 'hide', by: 'no_runs' });
+    expect(isFlowHidden(input({ runs: [] }), f)).toBe(true);
+    expect(isFlowHidden(input({ runs: [run({ id: 1 })] }), f)).toBe(false);
+  });
+
+  it('show mode: keeps only matching (empty) flows, hides the rest', () => {
+    const f = filter({ mode: 'show', by: 'no_runs' });
+    expect(isFlowHidden(input({ runs: [] }), f)).toBe(false);
+    expect(isFlowHidden(input({ runs: [run({ id: 1 })] }), f)).toBe(true);
+  });
+
+  it('keeps the flow visible in both modes while emptiness is unknown', () => {
+    const loading = input({ runs: [run({ id: 1 })], latestArtifactBytes: null });
+    expect(isFlowHidden(loading, filter({ mode: 'hide', by: 'no_artifacts', minArtifactKB: 10 }))).toBe(false);
+    expect(isFlowHidden(loading, filter({ mode: 'show', by: 'no_artifacts', minArtifactKB: 10 }))).toBe(false);
   });
 });
