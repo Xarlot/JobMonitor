@@ -51,6 +51,27 @@ export const emptyFlowFilterSchema = z.object({
   jobState: z.enum(['skipped', 'failure', 'success', 'in_progress']).default('skipped'),
 });
 
+/** Hard ceiling on how many workflows one regex flow may expand into. */
+export const MAX_FLOW_MATCHES = 50;
+
+/**
+ * Regex matching: instead of naming one workflow, a flow can watch *every*
+ * workflow of the repo whose name/file matches `pattern`. Each match becomes its
+ * own card on the board — with its own runs, filters and group placement — so a
+ * pattern flow is a template rather than a single monitored workflow.
+ * `pattern: ''` (the default) keeps the classic single-`workflowFile` flow.
+ */
+export const flowMatchSchema = z.object({
+  /** JavaScript regex source, matched against the repo's workflow list. */
+  pattern: z.string().trim().default(''),
+  /** What the regex is tested against: display name, file name, or either. */
+  by: z.enum(['name', 'file', 'any']).default('name'),
+  /** Off (the default) adds the `i` flag. */
+  caseSensitive: z.boolean().default(false),
+  /** Safety cap — every match polls on its own, so an unbounded regex is costly. */
+  maxMatches: z.number().int().min(1).max(MAX_FLOW_MATCHES).default(12),
+});
+
 export const flowSchema = z.preprocess(
   (val) => {
     if (val && typeof val === 'object') {
@@ -67,21 +88,47 @@ export const flowSchema = z.preprocess(
     }
     return val;
   },
-  z.object({
-    id: z.string().min(1),
-    name: z.string().trim().min(1, 'flow name is required'),
-    /** Defaults to upstream owner/repo when omitted. */
-    owner: z.string().trim().min(1).optional(),
-    repo: z.string().trim().min(1).optional(),
-    /** Workflow file name (e.g. "build.yml") or numeric workflow id as string. */
-    workflowFile: z.string().trim().min(1, 'workflowFile is required'),
-    branches: z.array(z.string().trim().min(1)).min(1, 'at least one branch'),
-    /** Event filter (e.g. workflow_dispatch, push). Empty = any event. */
-    events: z.array(z.string().trim().min(1)).default([]),
-    maxRuns: z.number().int().min(1).max(50).default(5),
-    /** Per-flow visibility filter: hide/show the flow based on an "empty" condition. */
-    emptyFilter: emptyFlowFilterSchema.prefault({}),
-  }),
+  z
+    .object({
+      id: z.string().min(1),
+      name: z.string().trim().min(1, 'flow name is required'),
+      /** Defaults to upstream owner/repo when omitted. */
+      owner: z.string().trim().min(1).optional(),
+      repo: z.string().trim().min(1).optional(),
+      /**
+       * Workflow file name (e.g. "build.yml") or numeric workflow id as string.
+       * Required unless `match.pattern` is set (then the matches supply it).
+       */
+      workflowFile: z.string().trim().default(''),
+      branches: z.array(z.string().trim().min(1)).min(1, 'at least one branch'),
+      /** Event filter (e.g. workflow_dispatch, push). Empty = any event. */
+      events: z.array(z.string().trim().min(1)).default([]),
+      maxRuns: z.number().int().min(1).max(50).default(5),
+      /** Per-flow visibility filter: hide/show the flow based on an "empty" condition. */
+      emptyFilter: emptyFlowFilterSchema.prefault({}),
+      /** Watch every workflow matching a regex instead of a single one. */
+      match: flowMatchSchema.prefault({}),
+    })
+    .superRefine((flow, ctx) => {
+      if (!flow.match.pattern && !flow.workflowFile) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['workflowFile'],
+          message: 'workflowFile is required (or set a match pattern)',
+        });
+      }
+      if (flow.match.pattern) {
+        try {
+          new RegExp(flow.match.pattern);
+        } catch (e) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['match', 'pattern'],
+            message: `invalid regex: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      }
+    }),
 );
 
 export const pollingSchema = z.object({
@@ -131,9 +178,17 @@ export const monitorConfigSchema = z.object({
   flows: z.array(flowSchema).default([]),
   /** Optional grouping of flows (Overview + Flows board). */
   groups: z.array(flowGroupSchema).default([]),
+  /**
+   * Explicit order of the "Ungrouped" section, by flow id. Needed because
+   * pattern-derived flows have no entry in `flows` to reorder; also marks a
+   * derived flow as deliberately ungrouped so its pattern's group placement
+   * doesn't pull it back in. Ids missing here follow `flows` order.
+   */
+  ungroupedOrder: z.array(z.string().min(1)).default([]),
 });
 
 export type Flow = z.infer<typeof flowSchema>;
+export type FlowMatch = z.infer<typeof flowMatchSchema>;
 export type FlowGroup = z.infer<typeof flowGroupSchema>;
 export type PollingConfig = z.infer<typeof pollingSchema>;
 export type NotificationPrefs = z.infer<typeof notificationsSchema>;
@@ -158,6 +213,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   rateLimitWarnAt: 50,
   flows: [],
   groups: [],
+  ungroupedOrder: [],
 };
 
 /** Parse + validate untrusted JSON (e.g. from the import textarea). */
@@ -188,6 +244,7 @@ export const flowBoardSchema = z.object({
   version: z.literal(1).default(1),
   flows: z.array(flowSchema).default([]),
   groups: z.array(flowGroupSchema).default([]),
+  ungroupedOrder: z.array(z.string().min(1)).default([]),
 });
 export type FlowBoard = z.infer<typeof flowBoardSchema>;
 

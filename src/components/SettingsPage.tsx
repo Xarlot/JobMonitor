@@ -10,7 +10,9 @@ import {
   Label,
   Link,
   Octicon,
+  SegmentedControl,
   Select,
+  Spinner,
   Text,
   TextInput,
   Textarea,
@@ -33,14 +35,20 @@ import { useConfig } from '../context/ConfigContext';
 import { WorkflowBrowserDialog, type FlowPick } from './WorkflowBrowserDialog';
 import { useAuth } from '../context/AuthContext';
 import {
+  MAX_FLOW_MATCHES,
   monitorConfigSchema,
   newFlowId,
   safeParseConfig,
   type EmptyFlowFilter,
   type Flow,
+  type FlowMatch,
   type MonitorConfig,
   type NotificationPrefs,
 } from '../storage/configStore';
+import { compileFlowPattern, isPatternFlow, matchWorkflows } from '../lib/flowPatterns';
+import { fetchWorkflows } from '../api/workflows';
+import { workflowBasename } from '../lib/workflow';
+import type { Workflow } from '../api/types';
 import {
   ensureNotificationPermission,
   notificationPermission,
@@ -280,6 +288,200 @@ function EventsField({
   );
 }
 
+const MATCH_BY_LABELS: Record<FlowMatch['by'], string> = {
+  name: 'workflow name',
+  file: 'file name',
+  any: 'name or file',
+};
+
+/**
+ * Live answer to "what does this regex actually match?" — the repo's workflow list
+ * is fetched once (ETag-cached) and re-filtered locally on every keystroke.
+ */
+function PatternPreview({
+  owner,
+  repo,
+  match,
+}: {
+  owner: string;
+  repo: string;
+  match: FlowMatch;
+}) {
+  const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!owner || !repo) return;
+    let active = true;
+    setLoading(true);
+    fetchWorkflows(owner, repo)
+      .then((list) => {
+        if (!active) return;
+        setWorkflows(list);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [owner, repo]);
+
+  const patternError = compileFlowPattern(match).error;
+  if (patternError) {
+    return (
+      <Flash variant="danger" sx={{ mt: 2, fontSize: 1 }}>
+        Invalid regex: {patternError}
+      </Flash>
+    );
+  }
+  if (!match.pattern.trim()) {
+    return (
+      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+        Enter a regex to see which workflows it matches.
+      </Text>
+    );
+  }
+  if (!owner || !repo) {
+    return (
+      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+        Set an upstream repo (or this flow’s owner/repo) to preview the matches.
+      </Text>
+    );
+  }
+  if (error) {
+    return (
+      <Flash variant="warning" sx={{ mt: 2, fontSize: 1 }}>
+        Couldn’t load the workflow list: {error}
+      </Flash>
+    );
+  }
+  if (!workflows) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+        {loading && <Spinner size="small" />}
+        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>Loading the repo’s workflows…</Text>
+      </Box>
+    );
+  }
+
+  // Uncapped first, so we can tell the user when `maxMatches` is what's limiting them.
+  const matched = matchWorkflows(workflows, { ...match, maxMatches: MAX_FLOW_MATCHES });
+  const shown = matched.slice(0, match.maxMatches);
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Text sx={{ fontSize: 0, color: matched.length === 0 ? 'attention.fg' : 'fg.muted' }}>
+        Matches <strong>{matched.length}</strong> of {workflows.length} workflows
+        {matched.length > shown.length && ` · showing ${shown.length} (raise “Max matches”)`}
+      </Text>
+      {shown.length > 0 && (
+        <Box
+          as="ul"
+          sx={{
+            listStyle: 'none',
+            m: 0,
+            mt: 1,
+            p: 2,
+            maxHeight: 160,
+            overflowY: 'auto',
+            border: '1px solid',
+            borderColor: 'border.muted',
+            borderRadius: 2,
+            bg: 'canvas.subtle',
+          }}
+        >
+          {shown.map((w) => (
+            <Box as="li" key={w.id} sx={{ fontSize: 0, display: 'flex', gap: 2 }}>
+              <Text sx={{ fontWeight: 'bold' }}>{w.name}</Text>
+              <Text sx={{ color: 'fg.muted', fontFamily: 'mono' }}>
+                {workflowBasename(w.path)}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** The regex source of a flow: pattern + what it is matched against + the cap. */
+function PatternFields({
+  match,
+  owner,
+  repo,
+  onChange,
+}: {
+  match: FlowMatch;
+  owner: string;
+  repo: string;
+  onChange: (next: FlowMatch) => void;
+}) {
+  return (
+    <Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '2fr 1fr'], columnGap: 3, rowGap: 3 }}>
+        <FormControl>
+          <FormControl.Label>Regex</FormControl.Label>
+          <TextInput
+            value={match.pattern}
+            onChange={(e) => onChange({ ...match, pattern: e.target.value })}
+            placeholder="^check-.*|tests?$"
+            sx={{ fontFamily: 'mono' }}
+            block
+          />
+          <FormControl.Caption>
+            JavaScript regex, unanchored — it just has to match somewhere.
+          </FormControl.Caption>
+        </FormControl>
+        <FormControl>
+          <FormControl.Label>Match against</FormControl.Label>
+          <Select
+            value={match.by}
+            onChange={(e) => onChange({ ...match, by: e.target.value as FlowMatch['by'] })}
+            block
+          >
+            {(Object.keys(MATCH_BY_LABELS) as FlowMatch['by'][]).map((by) => (
+              <Select.Option key={by} value={by}>
+                {MATCH_BY_LABELS[by]}
+              </Select.Option>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start', mt: 3, flexWrap: 'wrap' }}>
+        <FormControl>
+          <Checkbox
+            checked={match.caseSensitive}
+            onChange={(e) => onChange({ ...match, caseSensitive: e.target.checked })}
+          />
+          <FormControl.Label>Case sensitive</FormControl.Label>
+        </FormControl>
+        <FormControl sx={{ width: 130 }}>
+          <FormControl.Label>Max matches</FormControl.Label>
+          <TextInput
+            type="number"
+            value={String(match.maxMatches)}
+            onChange={(e) =>
+              onChange({
+                ...match,
+                maxMatches: Math.min(MAX_FLOW_MATCHES, Math.max(1, Number(e.target.value) || 1)),
+              })
+            }
+            title="Each match polls on its own — keep this tight"
+            block
+          />
+        </FormControl>
+      </Box>
+      <PatternPreview owner={owner} repo={repo} match={match} />
+    </Box>
+  );
+}
+
 function FlowEditor({
   flow,
   upstream,
@@ -294,6 +496,9 @@ function FlowEditor({
 }) {
   const [advanced, setAdvanced] = useState(false);
   const [browsing, setBrowsing] = useState(false);
+  // A flow *is* a regex flow when its pattern is non-empty; the mode is separate UI
+  // state so the fields stay put while the pattern box is still empty.
+  const [regexMode, setRegexMode] = useState(() => isPatternFlow(flow));
   const set = <K extends keyof Flow>(key: K, value: Flow[K]) => onChange({ ...flow, [key]: value });
   const csv = (arr: string[]) => arr.join(', ');
   const parseCsv = (s: string) =>
@@ -334,34 +539,67 @@ function FlowEditor({
         />
       </Box>
 
-      {/* Workflow reference + "browse recent runs" picker */}
+      {/* What this flow watches: one workflow, or every workflow matching a regex */}
       <Box>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
-          <FormControl sx={{ flex: 1 }}>
-            <FormControl.Label>Workflow name, file, or id</FormControl.Label>
-            <TextInput
-              value={flow.workflowFile}
-              onChange={(e) => set('workflowFile', e.target.value)}
-              placeholder="ci.yml, CI, or 42"
-              block
-            />
-          </FormControl>
-          <Button
-            leadingVisual={SearchIcon}
-            onClick={() => setBrowsing(true)}
-            disabled={!canBrowse}
-            title={
-              canBrowse
-                ? 'Browse workflows that ran in the last day'
-                : 'Set an upstream repo (or this flow’s owner/repo) first'
-            }
+        <SegmentedControl aria-label="What this flow watches" size="small" sx={{ mb: 3 }}>
+          <SegmentedControl.Button
+            selected={!regexMode}
+            onClick={() => {
+              setRegexMode(false);
+              // Clear the pattern, otherwise the flow keeps expanding into matches.
+              if (isPatternFlow(flow)) set('match', { ...flow.match, pattern: '' });
+            }}
           >
-            Browse…
-          </Button>
-        </Box>
-        <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 1 }}>
-          Display name, file name (with/without .yml), or numeric id — resolved automatically.
-        </Text>
+            One workflow
+          </SegmentedControl.Button>
+          <SegmentedControl.Button selected={regexMode} onClick={() => setRegexMode(true)}>
+            Every workflow matching a regex
+          </SegmentedControl.Button>
+        </SegmentedControl>
+
+        {regexMode ? (
+          <>
+            <PatternFields
+              match={flow.match}
+              owner={browseOwner}
+              repo={browseRepo}
+              onChange={(next) => set('match', next)}
+            />
+            <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+              Each match becomes its own card on the board — with the branches, events and
+              visibility filter below — and can be dragged into any group.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+              <FormControl sx={{ flex: 1 }}>
+                <FormControl.Label>Workflow name, file, or id</FormControl.Label>
+                <TextInput
+                  value={flow.workflowFile}
+                  onChange={(e) => set('workflowFile', e.target.value)}
+                  placeholder="ci.yml, CI, or 42"
+                  block
+                />
+              </FormControl>
+              <Button
+                leadingVisual={SearchIcon}
+                onClick={() => setBrowsing(true)}
+                disabled={!canBrowse}
+                title={
+                  canBrowse
+                    ? 'Browse workflows that ran in the last day'
+                    : 'Set an upstream repo (or this flow’s owner/repo) first'
+                }
+              >
+                Browse…
+              </Button>
+            </Box>
+            <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 1 }}>
+              Display name, file name (with/without .yml), or numeric id — resolved automatically.
+            </Text>
+          </>
+        )}
       </Box>
 
       {/* Additional settings — collapsed by default */}
@@ -683,6 +921,7 @@ export function SettingsPage() {
       events: [],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: { pattern: '', by: 'name', caseSensitive: false, maxMatches: 12 },
     };
     update({ flows: [...draft.flows, flow] });
   };
@@ -858,7 +1097,8 @@ export function SettingsPage() {
         </Box>
         {draft.flows.length === 0 ? (
           <Text sx={{ color: 'fg.muted' }}>
-            No flows yet. Add one to monitor workflow runs by branch / event.
+            No flows yet. Add one to monitor workflow runs by branch / event — a single workflow,
+            or every workflow matching a regex.
           </Text>
         ) : (
           draft.flows.map((flow, i) => (

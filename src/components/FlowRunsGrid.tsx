@@ -29,7 +29,7 @@ import {
 import { FlowRunTimelineDialog } from './TimelineDialog';
 import { RunOverallSummaryDialog } from './OverallSummaryDialog';
 import type { WorkflowRun } from '../api/types';
-import type { Flow } from '../storage/configStore';
+import type { ResolvedFlow } from '../lib/flowPatterns';
 import type { FlowState } from '../hooks/useFlows';
 import { useFlowsFilter } from '../context/FlowsFilterContext';
 import { statusToOverall } from '../lib/status';
@@ -93,7 +93,7 @@ export function FlowRunsGrid({
   onToggle,
   dnd,
 }: {
-  flow: Flow;
+  flow: ResolvedFlow;
   state: FlowState | undefined;
   highlight?: boolean;
   /** Accordion: when false the card is a thin header-only strip. */
@@ -364,10 +364,18 @@ export function FlowRunsGrid({
             <BranchName key={b} as="span" sx={{ fontSize: 0 }}>{b}</BranchName>
           ))}
         </Box>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text
+          sx={{ fontSize: 0, color: 'fg.muted' }}
+          title={
+            flow.source
+              ? `Matched by the regex /${flow.source.pattern}/ of flow “${flow.source.patternName}”`
+              : undefined
+          }
+        >
           {flow.owner || ''}
           {flow.owner ? '/' : ''}
-          {flow.repo || ''} · {flow.workflowFile}
+          {flow.repo || ''} · {flow.source?.workflow.file ?? flow.workflowFile}
+          {flow.source ? ' · regex' : ''}
         </Text>
         <Box sx={{ flex: 1 }} />
         {!expanded && runs.length > 0 && (

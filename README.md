@@ -20,6 +20,8 @@ that lives in the tray and pops a notification when something finishes.
 - **PR checks** with an aggregated status and a drill‑down into every check‑run.
 - **Flows** — pick any workflow and watch its runs and jobs, filtered by branch / event; **Browse**
   the repo's last‑24h runs to add a flow without typing anything.
+- **Regex flows** — instead of one workflow, give a flow a pattern (e.g. `^nightly-`) and every
+  matching workflow shows up as its own card, groupable and draggable like any other.
 - **Groups** — organise flows into collapsible groups; each group header tallies passed /
   in‑progress / failed so a collapsed group still tells you what's inside.
 - **Drag‑and‑drop** — reorder flows and move them between groups; collapse any card to a thin strip.
@@ -95,10 +97,18 @@ in), alongside the rate‑limit warning threshold.
 
 ### 3. Add flows to watch (Settings → **Flows**)
 
-A *flow* is any workflow you want to track. Give it a **name** and the **workflow** (file name,
-display name or id) — or hit **Browse…** to pick from everything that ran in the repo recently and
-have the fields filled in for you. Branches, trigger events, owner/repo overrides and max-runs sit
-under **Additional settings**, collapsed by default.
+A *flow* is any workflow you want to track. Give it a **name**, then choose what it watches:
+
+- **One workflow** — a file name, display name or numeric id, or hit **Browse…** to pick from
+  everything that ran in the repo recently and have the fields filled in for you.
+- **Every workflow matching a regex** — type a pattern (e.g. `^nightly-`) and every matching
+  workflow of the repo becomes its own card on the board. Pick whether the regex is tested against
+  the workflow's **name**, its **file name** or **either**, toggle case sensitivity, and cap how
+  many matches may expand with **Max matches** (each one polls on its own). The editor lists the
+  matches live as you type, so you can see what you're about to watch.
+
+Branches, trigger events, owner/repo overrides and max-runs sit under **Additional settings**,
+collapsed by default — a regex flow applies them to every match.
 
 ![Settings — a flow](docs/screenshots/settings-flow.png)
 
@@ -152,7 +162,19 @@ them between groups.
 
 Both **Overview** and **Flows** let you organise flows into named **groups**. Use **New group** to
 create one, drag a flow by its grip to move it between groups or reorder it, and collapse a group to
-tuck it away (its header keeps showing the pass/fail tally).
+tuck it away (its header keeps showing the pass/fail tally). Dropping a card into a collapsed group
+opens it, so nothing lands out of sight.
+
+Regex matches are dragged exactly like ordinary flows: a match you move keeps that spot (it's
+remembered by workflow, not by position), while the rest of the pattern's matches — including
+workflows added to the repo later — stay together where you put the pattern.
+
+If a flow behind such a spot disappears — you edited the regex, or the workflow was renamed — the
+spot is kept (the card returns when the workflow does) and the group header shows an **N unmatched**
+button. Click it to review those leftovers by name and drop the ones you don't want back, one at a
+time or all at once; only the placement is removed, never a flow or your regex.
+
+![Unmatched places on the board](docs/screenshots/board-unmatched.png)
 
 Your layout is saved locally. To move it to another machine — or back it up — use **Export / Import**
 in the Flows tab: it serialises your flows and groups (keyed by id) to JSON. Importing replaces the

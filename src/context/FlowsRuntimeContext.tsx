@@ -1,8 +1,11 @@
 /**
- * Mounts each configured flow's runtime (useFlow) once, regardless of the active
+ * Mounts each resolved flow's runtime (useFlow) once, regardless of the active
  * tab, and publishes their live state into a tiny external store. Both the Flows
  * grid and the Overview read from this store via useSyncExternalStore — so flows
  * keep polling in the background and feed the Overview without double-polling.
+ *
+ * "Resolved" = a regex flow's matches each get their own runner, keyed by the
+ * derived flow id, so they poll, cache and expand independently.
  *
  * The provider itself does not subscribe to the store, so store updates never
  * re-render the FlowRunners (which would loop).
@@ -18,7 +21,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { useConfig } from './ConfigContext';
+import { useResolvedFlows } from './ResolvedFlowsContext';
 import { useFlow, type FlowState } from '../hooks/useFlows';
 import type { Flow } from '../storage/configStore';
 
@@ -46,7 +49,7 @@ function FlowRunner({
 }
 
 export function FlowsRuntimeProvider({ children }: { children: ReactNode }) {
-  const { config } = useConfig();
+  const { flows } = useResolvedFlows();
   const mapRef = useRef<Map<string, FlowState>>(new Map());
   const listenersRef = useRef<Set<() => void>>(new Set());
 
@@ -64,9 +67,9 @@ export function FlowsRuntimeProvider({ children }: { children: ReactNode }) {
     [notify],
   );
 
-  // Drop runtime state for flows that were removed from the config.
+  // Drop runtime state for flows that are gone (removed, or no longer matched).
   useEffect(() => {
-    const ids = new Set(config.flows.map((f) => f.id));
+    const ids = new Set(flows.map((f) => f.id));
     let changed = false;
     const next = new Map(mapRef.current);
     for (const key of next.keys()) {
@@ -79,7 +82,7 @@ export function FlowsRuntimeProvider({ children }: { children: ReactNode }) {
       mapRef.current = next;
       notify();
     }
-  }, [config.flows, notify]);
+  }, [flows, notify]);
 
   const api = useMemo<RuntimeApi>(
     () => ({
@@ -94,7 +97,7 @@ export function FlowsRuntimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <FlowsRuntimeContext.Provider value={api}>
-      {config.flows.map((flow) => (
+      {flows.map((flow) => (
         <FlowRunner key={flow.id} flow={flow} publish={publish} />
       ))}
       {children}

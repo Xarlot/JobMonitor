@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import {
   Box,
   Button,
+  Flash,
   Heading,
   IconButton,
   Octicon,
   SegmentedControl,
   Select,
+  Spinner,
   Text,
   TextInput,
 } from '@primer/react';
@@ -32,9 +34,11 @@ import {
   type RunStatusFilter,
 } from '../context/FlowsFilterContext';
 import { useViewMode } from '../context/ViewModeContext';
-import type { Flow, FlowGroup } from '../storage/configStore';
+import type { ResolvedFlow } from '../lib/flowPatterns';
+import type { FlowGroup } from '../storage/configStore';
 import { FlowRunsGrid } from './FlowRunsGrid';
 import { FlowBoardDialog } from './FlowBoardDialog';
+import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { PromptDialog } from './PromptDialog';
 import { GroupStatusCounts } from './GroupStatusCounts';
 
@@ -145,19 +149,31 @@ function FlowsToolbar() {
 
 export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
   const states = useFlowStates();
-  const { config, sections, addGroup, renameGroup, deleteGroup, setCollapsed, moveFlow } =
-    useFlowGroups();
+  const {
+    config,
+    flows,
+    sections,
+    patterns,
+    resolving,
+    addGroup,
+    renameGroup,
+    deleteGroup,
+    setCollapsed,
+    moveFlow,
+    describeId,
+  } = useFlowGroups();
 
   const [highlightId, setHighlightId] = useState<string | null>(null);
   // Accordion: at most one flow expanded across all groups.
   const [expandedId, setExpandedId] = useState<string | null>(() => {
     const saved = loadExpanded();
-    return saved === null ? (config.flows[0]?.id ?? null) : saved || null;
+    return saved === null ? (flows[0]?.id ?? null) : saved || null;
   });
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropEdge, setDropEdge] = useState<{ id: string; after: boolean } | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null); // group id, '' = ungrouped
   const [boardOpen, setBoardOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const [groupPrompt, setGroupPrompt] = useState<{ mode: 'create' | 'rename'; group?: FlowGroup } | null>(null);
 
   const resetDrag = () => {
@@ -173,6 +189,13 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
       return next;
     });
 
+  // Regex flows resolve a moment after mount, so the default "expand the first
+  // card" has nothing to pick yet on the first render — apply it once they land.
+  useEffect(() => {
+    if (loadExpanded() !== null) return; // the user already chose
+    setExpandedId((cur) => cur ?? flows[0]?.id ?? null);
+  }, [flows]);
+
   useEffect(() => {
     if (!focusFlowId) return;
     setExpandedId(focusFlowId);
@@ -184,7 +207,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
     return () => clearTimeout(t);
   }, [focusFlowId]);
 
-  const isVisible = (flow: Flow) => {
+  const isVisible = (flow: ResolvedFlow) => {
     const st = states.get(flow.id);
     return !isFlowHidden(
       {
@@ -213,7 +236,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
     resetDrag();
   };
 
-  const flowDnd = (flow: Flow) => ({
+  const flowDnd = (flow: ResolvedFlow) => ({
     dragging: dragId === flow.id,
     dropBefore: dropEdge?.id === flow.id && !dropEdge.after && dragId !== flow.id,
     dropAfter: dropEdge?.id === flow.id && dropEdge.after && dragId !== flow.id,
@@ -233,14 +256,40 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
         <Octicon icon={WorkflowIcon} size={32} />
         <Text as="p" sx={{ mt: 2 }}>
           No flows configured yet. Add one in <strong>Settings → Flows</strong> to monitor
-          workflow runs on specific branches or triggered via workflow_dispatch.
+          workflow runs on specific branches or triggered via workflow_dispatch — either a single
+          workflow or every workflow matching a regex.
         </Text>
       </Box>
     );
   }
 
+  if (flows.length === 0 && resolving) {
+    return (
+      <Box sx={{ p: 6, textAlign: 'center', color: 'fg.muted' }}>
+        <Spinner />
+        <Text as="p" sx={{ mt: 2 }}>Matching workflows against the configured regex…</Text>
+      </Box>
+    );
+  }
+
+  // A regex that matches nothing (or a workflow list that failed to load) would
+  // otherwise just show an empty board — say so instead.
+  const patternIssues = [...patterns.entries()].flatMap(([id, st]) => {
+    const flow = config.flows.find((f) => f.id === id);
+    if (!flow || st.loading) return [];
+    if (st.error) return [{ id, text: `Flow “${flow.name}”: ${st.error}` }];
+    if (st.matches === 0)
+      return [
+        {
+          id,
+          text: `Flow “${flow.name}”: the regex /${flow.match.pattern}/ matches no workflow in the repo.`,
+        },
+      ];
+    return [];
+  });
+
   const totalVisible = sections.reduce((n, s) => n + s.flows.filter(isVisible).length, 0);
-  const hiddenCount = config.flows.length - totalVisible;
+  const hiddenCount = flows.length - totalVisible;
 
   return (
     <Box>
@@ -259,6 +308,16 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
         </Button>
       </Box>
 
+      {patternIssues.length > 0 && (
+        <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
+          <Box as="ul" sx={{ m: 0, pl: 3 }}>
+            {patternIssues.map((issue) => (
+              <li key={issue.id}>{issue.text}</li>
+            ))}
+          </Box>
+        </Flash>
+      )}
+
       {hiddenCount > 0 && (
         <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mb: 3 }}>
           {hiddenCount} {hiddenCount === 1 ? 'flow' : 'flows'} hidden by per-flow filter
@@ -270,8 +329,10 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
         const group = section.group;
         const groupKey = group ? group.id : '';
         const visible = section.flows.filter(isVisible);
-        // Hide an empty ungrouped section only when groups exist (avoid a stray header).
-        if (!group && visible.length === 0 && config.groups.length > 0) return null;
+        // Hide an empty ungrouped section only when groups exist (avoid a stray
+        // header) — unless it still holds places to clean up.
+        if (!group && visible.length === 0 && config.groups.length > 0 && section.pinnedMissing.length === 0)
+          return null;
         const collapsed = group?.collapsed ?? false;
         const isDropTarget = Boolean(dragId) && dropGroup === groupKey;
 
@@ -296,8 +357,8 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                 : undefined
             }
             sx={{
-              mb: 4,
-              py: 2,
+              mb: 2,
+              py: 1,
               borderRadius: 2,
               border: '1px dashed',
               borderColor: isDropTarget ? 'accent.emphasis' : 'transparent',
@@ -307,7 +368,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
           >
             {/* With no groups at all, there's just one ungrouped list — skip the header. */}
             {(group || config.groups.length > 0) && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 1 }}>
                 <IconButton
                   size="small"
                   variant="invisible"
@@ -323,6 +384,20 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                 <GroupStatusCounts
                   statuses={visible.map((f) => states.get(f.id)?.overall ?? 'unknown')}
                 />
+                {/* Cards the group still holds a place for: a deleted flow, or a
+                    regex match the pattern no longer produces. The placement is
+                    kept, so the card returns when the workflow does. */}
+                {!resolving && section.pinnedMissing.length > 0 && (
+                  <Button
+                    size="small"
+                    variant="invisible"
+                    sx={{ color: 'attention.fg', fontSize: 0 }}
+                    title={`Placed here but not available right now:\n${section.pinnedMissing.map(describeId).join('\n')}\n\nClick to review / remove.`}
+                    onClick={() => setCleanupOpen(true)}
+                  >
+                    {section.pinnedMissing.length} unmatched
+                  </Button>
+                )}
                 <Box sx={{ flex: 1 }} />
                 {group && (
                   <>
@@ -381,6 +456,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
       })}
 
       {boardOpen && <FlowBoardDialog onClose={() => setBoardOpen(false)} />}
+      {cleanupOpen && <UnmatchedFlowsDialog onClose={() => setCleanupOpen(false)} />}
       {groupPrompt && (
         <PromptDialog
           title={groupPrompt.mode === 'create' ? 'New group' : 'Rename group'}

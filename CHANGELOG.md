@@ -6,9 +6,31 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 
 ## [1.0.0]
 
-The per-flow "hide when empty" toggle grows up into a two-way visibility filter.
+Flows can be described by a regex instead of one workflow, and the per-flow "hide when empty"
+toggle grows up into a two-way visibility filter.
+
+### Added
+- **Regex flows.** A flow's workflow field now has two modes: **One workflow** (as before) or
+  **Every workflow matching a regex**. Give it a pattern like `^nightly-`, choose whether it's
+  tested against the workflow's **name**, its **file name** or **either**, toggle case sensitivity,
+  and cap the expansion with **Max matches**; the editor lists the matching workflows live as you
+  type. Every match becomes its own card on the **Overview** and the **Flows** board, with its own
+  runs, run/job filters and per-flow visibility filter (all inherited from the regex flow), and
+  workflows added to the repo later show up on their own.
+  Matches take part in **groups and drag & drop** like ordinary flows: drag one anywhere and it
+  keeps that spot (remembered per workflow, not per position), while the rest of the pattern —
+  including future matches — stays where the pattern was placed. Dropping a card into a collapsed
+  group now expands it, and a regex that matches nothing says so instead of showing an empty board.
+  Existing configs are unchanged: no pattern means the old single-workflow behavior.
+- **Unmatched places editor.** A spot on the board whose flow is gone — an edited regex, a renamed
+  or deleted workflow — is kept, so the card comes back where it was when the workflow does. The
+  group header now shows an **N unmatched** button that opens an editor listing those leftovers by
+  workflow (and which regex flow they came from), where you can drop them individually, per group,
+  or all at once. Removing one only forgets the placement: flow definitions and regexes are never
+  touched.
 
 ### Changed
+- **Tighter spacing between groups** in the Flows board.
 - **Per-flow visibility filter — Hide when / Show when.** The flow editor's old *Hide when empty*
   checkbox is now a filter with a direction. Pick **Hide when** to drop matching flows from the board
   (the previous behavior) or **Show when** to keep *only* the matching ones and hide the rest, then

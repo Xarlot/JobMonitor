@@ -51,6 +51,10 @@ no webhooks. Data is read directly from `api.github.com` with a read-only PAT th
 - **Flow filters** — filter runs by status (All / Active / Failed / Success) and by a
   **job condition**: runs that contain a job whose name matches and that is e.g. *not skipped*,
   succeeded, failed, or in progress. The job filter loads jobs for all runs to evaluate.
+- **Regex flows** — a flow can name a **regex** instead of one workflow: the repo's workflow list is
+  fetched once per repo (ETag-cached, re-polled every 15 min) and every match becomes its own flow —
+  own runs, own filters, own place in a group. Matching is against the workflow name, its file name
+  or either, case-insensitive by default, capped by `maxMatches`.
 - **Per-flow empty filter** (Settings) — each flow can opt in to "Hide when empty" and choose
   the signal: *no runs* (misconfigured / never triggered), *only skipped runs*, *no / tiny
   artifacts* (latest completed run's total `size_in_bytes` at/below a KB threshold), or *a job
@@ -188,13 +192,33 @@ exported as JSON:
       "branches": ["main", "release/*"],
       "events": ["workflow_dispatch", "push"],
       "maxRuns": 5,
-      "emptyFilter": { "enabled": false, "by": "no_runs", "minArtifactKB": 0, "jobName": "", "jobState": "skipped" }
+      "emptyFilter": { "enabled": false, "mode": "hide", "by": "no_runs", "minArtifactKB": 0, "jobName": "", "jobState": "skipped" },
+      "match": { "pattern": "", "by": "name", "caseSensitive": false, "maxMatches": 12 }
+    },
+    {
+      "id": "uuid-2",
+      "name": "nightly",
+      "branches": ["main"],
+      "events": [],
+      "maxRuns": 5,
+      "match": { "pattern": "^nightly-", "by": "file", "caseSensitive": false, "maxMatches": 12 }
     }
-  ]
+  ],
+  "groups": [{ "id": "g1", "name": "Nightly", "flowIds": ["uuid-2"], "collapsed": false }],
+  "ungroupedOrder": []
 }
 ```
 
 Flow `owner`/`repo` default to upstream when omitted. Empty `events` means any event.
+
+`match.pattern` turns a flow into a **regex flow**: `workflowFile` is then unused, and the flow is
+expanded into one flow per matching workflow of the repo (`match.by` selects what the regex is
+tested against: `name`, `file` or `any`). The expansion is virtual — derived flows are never
+persisted — but their ids are stable (`<flowId>::<workflow file>`), so `groups[].flowIds`,
+`ungroupedOrder`, the run cache and expand state all stick to them. A `flowIds` entry that names the
+*regex flow itself* means "every match that isn't placed by hand", which is how a pattern's matches
+(including ones that appear later) share a group. `ungroupedOrder` records the Ungrouped section's
+order; it's also what marks a match as deliberately taken out of its pattern's group.
 
 ## Security / deployment notes
 

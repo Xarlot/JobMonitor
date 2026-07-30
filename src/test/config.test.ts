@@ -54,6 +54,51 @@ describe('configStore', () => {
     });
   });
 
+  it('defaults the regex match to disabled', () => {
+    const cfg = monitorConfigSchema.parse({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'f' },
+      flows: [{ id: '1', name: 'CI', workflowFile: 'ci.yml', branches: ['main'] }],
+    });
+    expect(cfg.flows[0].match).toEqual({
+      pattern: '',
+      by: 'name',
+      caseSensitive: false,
+      maxMatches: 12,
+    });
+    expect(cfg.ungroupedOrder).toEqual([]);
+  });
+
+  it('accepts a regex flow without a workflow file', () => {
+    const cfg = monitorConfigSchema.parse({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'f' },
+      flows: [{ id: '1', name: 'nightly', branches: ['main'], match: { pattern: '^nightly-', by: 'file' } }],
+    });
+    expect(cfg.flows[0].workflowFile).toBe('');
+    expect(cfg.flows[0].match.pattern).toBe('^nightly-');
+  });
+
+  it('requires a workflow file when there is no regex', () => {
+    const result = safeParseConfig({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'f' },
+      flows: [{ id: '1', name: 'CI', branches: ['main'] }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/workflowFile/);
+  });
+
+  it('rejects a regex that does not compile', () => {
+    const result = safeParseConfig({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'f' },
+      flows: [{ id: '1', name: 'bad', branches: ['main'], match: { pattern: '([' } }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/invalid regex/);
+  });
+
   it('defaults flow events and maxRuns', () => {
     const cfg = monitorConfigSchema.parse({
       upstream: { owner: 'o', repo: 'r' },

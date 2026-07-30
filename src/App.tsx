@@ -16,6 +16,7 @@ import { useTheme } from './context/ThemeContext';
 import { useConfig } from './context/ConfigContext';
 import { DashboardProvider } from './context/DashboardContext';
 import { FlowsRuntimeProvider } from './context/FlowsRuntimeContext';
+import { ResolvedFlowsProvider } from './context/ResolvedFlowsContext';
 import { FlowsFilterProvider } from './context/FlowsFilterContext';
 import { ViewModeProvider } from './context/ViewModeContext';
 import { StatsBadge } from './components/StatsBadge';
@@ -123,67 +124,69 @@ export function App() {
         <ViewModeProvider>
           <FlowsFilterProvider>
             <DashboardProvider>
-              <FlowsRuntimeProvider>
-                {showSettings ? (
-                  <>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        px: 3,
-                        py: 2,
-                        borderBottom: '1px solid',
-                        borderColor: 'border.default',
-                      }}
-                    >
-                      <Octicon icon={GearIcon} size={18} sx={{ color: 'fg.muted' }} />
-                      <Heading as="h2" sx={{ fontSize: 2 }}>Settings</Heading>
-                      <Box sx={{ flex: 1 }} />
-                      {status !== 'needs-setup' && (
-                        <Button leadingVisual={ArrowLeftIcon} onClick={() => setSettingsOpen(false)}>
-                          Back to dashboard
-                        </Button>
-                      )}
-                    </Box>
-                    <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
-                      {status === 'needs-setup' && (
-                        <Flash variant="warning" sx={{ mb: 4 }}>
-                          Add a GitHub token below to start monitoring.
-                        </Flash>
-                      )}
-                      <SettingsPage />
-                    </Box>
-                  </>
-                ) : (
-                  <>
-                    <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'border.default' }}>
-                      <UnderlineNav aria-label="Main navigation">
-                        {navItems.map((item) => (
-                          <UnderlineNav.Item
-                            key={item.key}
-                            icon={item.icon}
-                            aria-current={view === item.key ? 'page' : undefined}
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              if (!navDisabled) setView(item.key);
-                            }}
-                          >
-                            {item.label}
-                          </UnderlineNav.Item>
-                        ))}
-                      </UnderlineNav>
-                    </Box>
+              <ResolvedFlowsProvider>
+                <FlowsRuntimeProvider>
+                  {showSettings ? (
+                    <>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          px: 3,
+                          py: 2,
+                          borderBottom: '1px solid',
+                          borderColor: 'border.default',
+                        }}
+                      >
+                        <Octicon icon={GearIcon} size={18} sx={{ color: 'fg.muted' }} />
+                        <Heading as="h2" sx={{ fontSize: 2 }}>Settings</Heading>
+                        <Box sx={{ flex: 1 }} />
+                        {status !== 'needs-setup' && (
+                          <Button leadingVisual={ArrowLeftIcon} onClick={() => setSettingsOpen(false)}>
+                            Back to dashboard
+                          </Button>
+                        )}
+                      </Box>
+                      <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
+                        {status === 'needs-setup' && (
+                          <Flash variant="warning" sx={{ mb: 4 }}>
+                            Add a GitHub token below to start monitoring.
+                          </Flash>
+                        )}
+                        <SettingsPage />
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'border.default' }}>
+                        <UnderlineNav aria-label="Main navigation">
+                          {navItems.map((item) => (
+                            <UnderlineNav.Item
+                              key={item.key}
+                              icon={item.icon}
+                              aria-current={view === item.key ? 'page' : undefined}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                if (!navDisabled) setView(item.key);
+                              }}
+                            >
+                              {item.label}
+                            </UnderlineNav.Item>
+                          ))}
+                        </UnderlineNav>
+                      </Box>
 
-                    <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
-                      {view === 'overview' &&
-                        (complete ? <Overview onOpenFlow={openFlow} onOpenPrs={openPrs} /> : <ConfigHint />)}
-                      {view === 'prs' && (complete ? <PrList /> : <ConfigHint />)}
-                      {view === 'flows' && (complete ? <FlowsView focusFlowId={focusFlowId} /> : <ConfigHint />)}
-                    </Box>
-                  </>
-                )}
-              </FlowsRuntimeProvider>
+                      <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
+                        {view === 'overview' &&
+                          (complete ? <Overview onOpenFlow={openFlow} onOpenPrs={openPrs} /> : <ConfigHint />)}
+                        {view === 'prs' && (complete ? <PrList /> : <ConfigHint />)}
+                        {view === 'flows' && (complete ? <FlowsView focusFlowId={focusFlowId} /> : <ConfigHint />)}
+                      </Box>
+                    </>
+                  )}
+                </FlowsRuntimeProvider>
+              </ResolvedFlowsProvider>
             </DashboardProvider>
           </FlowsFilterProvider>
         </ViewModeProvider>

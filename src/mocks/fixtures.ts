@@ -12,7 +12,8 @@ import type {
   WorkflowRunsResponse,
   WorkflowsResponse,
 } from '../api/types';
-import type { MonitorConfig } from '../storage/configStore';
+import type { Flow, MonitorConfig } from '../storage/configStore';
+import { workflowBasename } from '../lib/workflow';
 
 const BOOT = Date.now();
 /** ~20s after load, the "running" fixtures flip to a terminal state. */
@@ -24,6 +25,9 @@ const OWNER = 'devexpress';
 const REPO = 'reporting';
 const SLUG = `${OWNER}/${REPO}`;
 const BRANCH = '2026.1';
+
+/** A flow that watches one concrete workflow (no regex expansion). */
+const ONE_WORKFLOW: Flow['match'] = { pattern: '', by: 'name', caseSensitive: false, maxMatches: 12 };
 
 export const MOCK_CONFIG: MonitorConfig = {
   version: 1,
@@ -45,6 +49,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: ['workflow_dispatch', 'push'],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
     },
     {
       id: 'flow-wpf',
@@ -56,6 +61,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: ['push'],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
     },
     {
       id: 'flow-visualtests',
@@ -67,6 +73,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: ['pull_request'],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
     },
     {
       id: 'flow-java-cron',
@@ -78,6 +85,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: ['workflow_dispatch'],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
     },
     {
       id: 'flow-publish',
@@ -89,6 +97,7 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: ['workflow_dispatch'],
       maxRuns: 5,
       emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
     },
     {
       // No runs in the mock; its own filter hides it — demonstrates per-flow empty filtering.
@@ -101,6 +110,20 @@ export const MOCK_CONFIG: MonitorConfig = {
       events: [],
       maxRuns: 5,
       emptyFilter: { enabled: true, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: ONE_WORKFLOW,
+    },
+    {
+      // Regex flow: expands into one card per matching workflow (nightly-*.yml).
+      id: 'flow-nightly',
+      name: 'nightly',
+      owner: OWNER,
+      repo: REPO,
+      workflowFile: '',
+      branches: [BRANCH],
+      events: [],
+      maxRuns: 5,
+      emptyFilter: { enabled: false, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
+      match: { pattern: '^nightly-', by: 'file', caseSensitive: false, maxMatches: 12 },
     },
   ],
   groups: [
@@ -111,7 +134,10 @@ export const MOCK_CONFIG: MonitorConfig = {
       collapsed: false,
     },
     { id: 'grp-sched', name: 'Scheduled', flowIds: ['flow-java-cron'], collapsed: false },
+    // Listing the regex flow's own id puts all of its matches in this group.
+    { id: 'grp-nightly', name: 'Nightly', flowIds: ['flow-nightly'], collapsed: false },
   ],
+  ungroupedOrder: [],
 };
 
 const SHA_OK = 'aaaa111';
@@ -315,11 +341,30 @@ export function mockArtifacts(runId: number): ArtifactsResponse {
   return { total_count: 0, artifacts: [] };
 }
 
+/** The repo's workflow list — also what regex (pattern) flows are matched against. */
+export const MOCK_WORKFLOWS: WorkflowsResponse['workflows'] = [
+  { id: 42, name: 'java', path: '.github/workflows/check-pull-request-java.yml', state: 'active' },
+  { id: 43, name: 'WPF Tests', path: '.github/workflows/wpf-tests.yml', state: 'active' },
+  { id: 44, name: 'Visual Tests', path: '.github/workflows/visualtests.yml', state: 'active' },
+  { id: 45, name: 'Publish', path: '.github/workflows/publish.yml', state: 'active' },
+  { id: 46, name: 'java-cron', path: '.github/workflows/java-cron.yml', state: 'active' },
+  { id: 47, name: 'Docs', path: '.github/workflows/docs.yml', state: 'active' },
+  { id: 51, name: 'Nightly Linux', path: '.github/workflows/nightly-linux.yml', state: 'active' },
+  { id: 52, name: 'Nightly Windows', path: '.github/workflows/nightly-windows.yml', state: 'active' },
+  { id: 53, name: 'Nightly macOS', path: '.github/workflows/nightly-macos.yml', state: 'active' },
+];
+
 export function mockWorkflows(): WorkflowsResponse {
-  return {
-    total_count: 1,
-    workflows: [{ id: 42, name: 'java', path: '.github/workflows/check-pull-request-java.yml', state: 'active' }],
-  };
+  return { total_count: MOCK_WORKFLOWS.length, workflows: MOCK_WORKFLOWS };
+}
+
+/**
+ * Resolve a workflow reference (file name or numeric id) to its file name —
+ * regex-derived flows query by numeric id, so the runs fixtures need both.
+ */
+export function workflowFileFor(ref: string): string {
+  const byId = MOCK_WORKFLOWS.find((w) => String(w.id) === ref.trim());
+  return byId ? workflowBasename(byId.path) : ref;
 }
 
 /** Which terminal state the *latest* run of each flow lands in, keyed by workflow file. */
@@ -329,11 +374,14 @@ const FLOW_LATEST: Record<string, 'success' | 'failure' | 'running'> = {
   'visualtests.yml': 'failure',
   'java-cron.yml': 'failure',
   'publish.yml': 'running',
+  'nightly-linux.yml': 'success',
+  'nightly-windows.yml': 'failure',
+  'nightly-macos.yml': 'running',
 };
 
 /** True for workflows the mock serves runs for. Others stay empty (demos the empty-flow filter). */
 export function flowHasRuns(wf: string): boolean {
-  return wf === '42' || Object.prototype.hasOwnProperty.call(FLOW_LATEST, wf);
+  return Object.prototype.hasOwnProperty.call(FLOW_LATEST, workflowFileFor(wf));
 }
 
 const RUN_TITLES = [
@@ -344,8 +392,8 @@ const RUN_TITLES = [
   'add lw-tests to wpf-tests (#37960)',
 ];
 
-export function mockWorkflowRuns(wf = 'check-pull-request-java.yml'): WorkflowRunsResponse {
-  const latest = FLOW_LATEST[wf] ?? 'success';
+export function mockWorkflowRuns(ref = 'check-pull-request-java.yml'): WorkflowRunsResponse {
+  const latest = FLOW_LATEST[workflowFileFor(ref)] ?? 'success';
   const done = flipped();
   const ago = (h: number) => new Date(BOOT - h * 3600_000).toISOString();
 

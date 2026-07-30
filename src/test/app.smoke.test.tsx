@@ -35,6 +35,9 @@ describe('App smoke', () => {
     expect(await screen.findByText('Job Monitor')).toBeInTheDocument();
     expect(await screen.findByText('space handling')).toBeInTheDocument(); // PR tile
     expect(await screen.findByText('java')).toBeInTheDocument(); // flow tile
+    // The regex flow expands into one tile per matching workflow (nightly-*.yml),
+    // which exercises the whole resolve path: workflow list → match → runtime.
+    expect(await screen.findByText('Nightly Linux')).toBeInTheDocument();
 
     // Navigate to the Flows tab; cards start collapsed (accordion), so expand
     // one and confirm the master-detail run grid renders.

@@ -17,9 +17,11 @@ import {
 } from '@primer/octicons-react';
 import { useDashboard } from '../context/DashboardContext';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
+import { useResolvedFlows } from '../context/ResolvedFlowsContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import type { OverallStatus, WorkflowRun } from '../api/types';
-import type { Flow, FlowGroup } from '../storage/configStore';
+import type { ResolvedFlow } from '../lib/flowPatterns';
+import type { FlowGroup } from '../storage/configStore';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
 import { statusToOverall } from '../lib/status';
 import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
@@ -30,6 +32,7 @@ import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './Timelin
 import { GroupStatusCounts } from './GroupStatusCounts';
 import { ArtifactsButton } from './ArtifactsButton';
 import { PromptDialog } from './PromptDialog';
+import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { runIdFromUrl } from '../api/endpoints';
 
 const STATUS_BORDER: Record<OverallStatus, string> = {
@@ -163,8 +166,19 @@ export function Overview({
   onOpenFlow: (flowId: string) => void;
   onOpenPrs: () => void;
 }) {
-  const { config, sections, moveFlow, addGroup, renameGroup, deleteGroup, setCollapsed } =
-    useFlowGroups();
+  const {
+    config,
+    flows,
+    sections,
+    resolving,
+    moveFlow,
+    addGroup,
+    renameGroup,
+    deleteGroup,
+    setCollapsed,
+    describeId,
+  } = useFlowGroups();
+  const { refresh: refreshPatterns } = useResolvedFlows();
   const { owner: upOwner, repo: upRepo } = config.upstream;
   const { prs, refreshAll, isFetchingList, isFetchingChecks } = useDashboard();
   const flowStates = useFlowStates();
@@ -173,6 +187,7 @@ export function Overview({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropEdge, setDropEdge] = useState<{ id: string; after: boolean } | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null); // group id, '' = ungrouped
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   const resetDrag = () => {
     setDragId(null);
@@ -180,7 +195,7 @@ export function Overview({
     setDropGroup(null);
   };
 
-  const isVisible = (flow: Flow) => {
+  const isVisible = (flow: ResolvedFlow) => {
     const state = flowStates.get(flow.id);
     return !isFlowHidden(
       {
@@ -207,7 +222,7 @@ export function Overview({
     resetDrag();
   };
 
-  const tileDnd = (flow: Flow) => ({
+  const tileDnd = (flow: ResolvedFlow) => ({
     flowId: flow.id,
     dragging: dragId === flow.id,
     dropBefore: dropEdge?.id === flow.id && !dropEdge.after && dragId !== flow.id,
@@ -222,6 +237,7 @@ export function Overview({
 
   const refreshEverything = () => {
     refreshAll();
+    refreshPatterns(); // pick up workflows added since the last resolve
     for (const s of flowStates.values()) s.refresh();
   };
 
@@ -259,7 +275,7 @@ export function Overview({
     />
   );
 
-  const renderFlowTile = (flow: Flow) => {
+  const renderFlowTile = (flow: ResolvedFlow) => {
     const state = flowStates.get(flow.id);
     const run = latestRun(state?.runs ?? []);
     const status = run ? statusToOverall(run.status, run.conclusion) : 'unknown';
@@ -361,7 +377,7 @@ export function Overview({
       {prs.length === 0 ? (
         <Text sx={{ color: 'fg.muted' }}>No open pull requests.</Text>
       ) : (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 3, mb: 5 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2, mb: 4 }}>
           {prs.map((entry) => (
             <Tile
               key={entry.pr.number}
@@ -418,12 +434,15 @@ export function Overview({
       </Box>
       {config.flows.length === 0 ? (
         <Text sx={{ color: 'fg.muted' }}>No flows configured — add one in Settings.</Text>
+      ) : flows.length === 0 && resolving ? (
+        <Text sx={{ color: 'fg.muted' }}>Matching workflows against the configured regex…</Text>
       ) : (
         sections.map((section) => {
           const group = section.group;
           const groupKey = group ? group.id : '';
           const visible = section.flows.filter(isVisible);
-          if (!group && visible.length === 0 && config.groups.length > 0) return null;
+          if (!group && visible.length === 0 && config.groups.length > 0 && section.pinnedMissing.length === 0)
+            return null;
           const collapsed = group?.collapsed ?? false;
           const isDropTarget = Boolean(dragId) && dropGroup === groupKey;
           return (
@@ -447,8 +466,8 @@ export function Overview({
                   : undefined
               }
               sx={{
-                mb: 4,
-                py: 2,
+                mb: 2,
+                py: 1,
                 borderRadius: 2,
                 border: '1px dashed',
                 borderColor: isDropTarget ? 'accent.emphasis' : 'transparent',
@@ -458,7 +477,7 @@ export function Overview({
             >
               {/* With no groups at all, there's just one ungrouped list — skip the header. */}
               {(group || config.groups.length > 0) && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 1 }}>
                   <IconButton
                     size="small"
                     variant="invisible"
@@ -477,6 +496,18 @@ export function Overview({
                       return run ? statusToOverall(run.status, run.conclusion) : 'unknown';
                     })}
                   />
+                  {/* Placement kept for a flow that's gone or no longer matched. */}
+                  {!resolving && section.pinnedMissing.length > 0 && (
+                    <Button
+                      size="small"
+                      variant="invisible"
+                      sx={{ color: 'attention.fg', fontSize: 0 }}
+                      title={`Placed here but not available right now:\n${section.pinnedMissing.map(describeId).join('\n')}\n\nClick to review / remove.`}
+                      onClick={() => setCleanupOpen(true)}
+                    >
+                      {section.pinnedMissing.length} unmatched
+                    </Button>
+                  )}
                   <Box sx={{ flex: 1 }} />
                   {group && (
                     <>
@@ -503,7 +534,7 @@ export function Overview({
               )}
               {!collapsed &&
                 (visible.length > 0 ? (
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 3 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 2 }}>
                     {visible.map(renderFlowTile)}
                   </Box>
                 ) : (
@@ -556,6 +587,7 @@ export function Overview({
           onClose={() => setDlg(null)}
         />
       )}
+      {cleanupOpen && <UnmatchedFlowsDialog onClose={() => setCleanupOpen(false)} />}
       {groupPrompt && (
         <PromptDialog
           title={groupPrompt.mode === 'create' ? 'New group' : 'Rename group'}
