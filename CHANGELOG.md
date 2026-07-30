@@ -4,10 +4,10 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [1.0.0]
+## [1.1.0]
 
-Flows can be described by a regex instead of one workflow, and the per-flow "hide when empty"
-toggle grows up into a two-way visibility filter.
+Flows can be described by a regex instead of one workflow: one pattern, one card per matching
+workflow.
 
 ### Added
 - **Regex flows.** A flow's workflow field now has two modes: **One workflow** (as before) or
@@ -30,7 +30,13 @@ toggle grows up into a two-way visibility filter.
   touched.
 
 ### Changed
-- **Tighter spacing between groups** in the Flows board.
+- **Tighter spacing between groups** on the Flows board and the Overview.
+
+## [1.0.0]
+
+The per-flow "hide when empty" toggle grows up into a two-way visibility filter.
+
+### Changed
 - **Per-flow visibility filter — Hide when / Show when.** The flow editor's old *Hide when empty*
   checkbox is now a filter with a direction. Pick **Hide when** to drop matching flows from the board
   (the previous behavior) or **Show when** to keep *only* the matching ones and hide the rest, then
