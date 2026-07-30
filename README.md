@@ -112,6 +112,11 @@ collapsed by default — a regex flow applies them to every match.
 
 ![Settings — a flow](docs/screenshots/settings-flow.png)
 
+In regex mode the editor tells you what the pattern currently catches — `Matches 3 of 9 workflows` —
+and lists them by display name and file, so nothing is a surprise once you save:
+
+![Settings — a regex flow](docs/screenshots/settings-regex.png)
+
 **Browse…** opens a dialog listing every workflow that ran in the repo **in the last 24 hours**,
 grouped by workflow × branch × trigger, with each one's status, file, trigger event, branch and
 last‑run time. **Search** by name or file and **filter** by trigger or branch, then click a row to
@@ -157,6 +162,12 @@ expanding one collapses the rest — and you can **drag the grip** on the left t
 them between groups.
 
 ![Flows](docs/screenshots/flows.png)
+
+A **regex flow** shows up as one card per matching workflow — each with its own runs, filters and
+place in a group. The `· regex` suffix next to the workflow file marks a card that came from a
+pattern (hover it to see which one):
+
+![A regex flow expanded into a card per matching workflow](docs/screenshots/flows-regex.png)
 
 ### Groups, drag‑and‑drop and export / import
 
