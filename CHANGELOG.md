@@ -4,7 +4,7 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [1.2.0]
+## [2.0.0]
 
 **Failures stop being something you go looking for.** They get collected into one live list, written up
 as a bug report you can paste straight into Teams or a GitHub issue, and — for pull requests waiting on
@@ -13,7 +13,7 @@ what broke, why, and who broke it.
 
 Three things worth knowing before the detail:
 
-- **Job Monitor is no longer strictly read-only.** Exactly one write exists — re-running failed jobs —
+- **Job Monitor is no longer strictly read-only — the reason this is 2.0.** Exactly one write exists — re-running failed jobs —
   and it is off by default, limited to workflow files you name, and hidden entirely unless your token is
   verified as able to use it.
 - **The AI features are the only thing that leaves GitHub**, they run your local CLIs rather than any
