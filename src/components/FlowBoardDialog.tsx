@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Box, Button, Flash, Heading, Text, Textarea } from '@primer/react';
+import { useCopy } from '../hooks/useCopy';
 import { Modal } from './Modal';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import { safeParseBoard } from '../storage/configStore';
@@ -15,17 +16,9 @@ export function FlowBoardDialog({ onClose }: { onClose: () => void }) {
   const [importText, setImportText] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [done, setDone] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(1500);
 
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(json);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable */
-    }
-  };
+  const onCopy = () => copy(json);
 
   const onDownload = () => {
     const blob = new Blob([json], { type: 'application/json' });

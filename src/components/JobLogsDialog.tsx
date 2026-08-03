@@ -5,23 +5,10 @@ import type { Job } from '../api/types';
 import { fetchJobLog, logTtlMs } from '../api/logCache';
 import { statusToOverall } from '../lib/status';
 import { splitLogBySteps } from '../lib/logs';
+import { LogLines } from './LogLines';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
 import { formatDuration, formatTime } from '../lib/format';
-
-const logBoxSx = {
-  m: 0,
-  p: 2,
-  fontFamily: 'mono',
-  fontSize: 0,
-  lineHeight: 1.5,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  maxHeight: 360,
-  overflowY: 'auto',
-  bg: 'canvas.inset',
-  color: 'fg.default',
-} as const;
 
 export function JobLogsDialog({
   owner,
@@ -132,7 +119,7 @@ export function JobLogsDialog({
                         <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading logs…</Text>
                       </Box>
                     ) : stepLog ? (
-                      <Box as="pre" sx={logBoxSx}>{stepLog}</Box>
+                      <LogLines text={stepLog} maxHeight={360} />
                     ) : (
                       <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', px: 2, py: 2 }}>
                         {error ? '(logs unavailable — see note above)' : '(no log output for this step)'}

@@ -29,6 +29,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { autoUpdater } = require('electron-updater');
 const windowState = require('./windowState.cjs');
+const { registerClaudeIpc } = require('./claudeBridge.cjs');
+const { initRunLog, logEvent, runLogDir, runLogPath } = require('./runLog.cjs');
 
 const APP_ID = 'com.devexpress.javajobmonitor'; // must match electron-builder appId
 const DIST = path.join(__dirname, '..', 'dist');
@@ -73,7 +75,20 @@ if (!gotLock) {
     registerAppProtocol();
     registerSecretIpc();
     registerUpdateIpc();
+    // Before anything that might want to log. The path is printed because a diagnostics
+    // file nobody can find is no better than no diagnostics file.
+    const logFile = initRunLog(path.join(app.getPath('userData'), 'logs'));
+    console.log(`[job-monitor] diagnostics log: ${logFile}`);
+    logEvent('app', 'started', {
+      version: app.getVersion(),
+      platform: process.platform,
+      electron: process.versions.electron,
+      packaged: app.isPackaged,
+    });
+
     registerDownloadIpc();
+    registerLogIpc();
+    registerClaudeIpc(ipcMain);
     createWindow();
     createTray();
     setupAutoUpdate();
@@ -188,6 +203,24 @@ function createWindow() {
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize']) {
     mainWindow.on(ev, debouncedPersist);
   }
+
+  // DevTools on F12 (and the conventional Ctrl/Cmd+Shift+I).
+  //
+  // Needed explicitly because the app menu is removed above, and the default accelerators
+  // live on that menu — without it there is no way to open DevTools in a packaged build.
+  // Scoped to this window's input rather than a globalShortcut, which would take F12 away
+  // from every other app on the machine.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isF12 = input.key === 'F12';
+    const isInspect =
+      (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i';
+    if (!isF12 && !isInspect) return;
+    event.preventDefault();
+    const wc = mainWindow.webContents;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: 'detach' });
+  });
 
   // Open external links (GitHub, etc.) in the system browser, never in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -319,6 +352,27 @@ function registerSecretIpc() {
 // Saves already-fetched bytes to the OS Downloads folder. The renderer does the
 // network fetch + (for bundles) the zip building, then hands us the finished
 // bytes — so the in-app downloads panel owns the progress UI and we just persist.
+/**
+ * The renderer's own diagnostics, persisted alongside the main process's.
+ *
+ * Without this the file tells half the story: the log fetch, the cache hits and the API
+ * failures all happen in the renderer, and those are exactly what the last few
+ * investigations turned on.
+ */
+function registerLogIpc() {
+  ipcMain.handle('logs:path', () => ({ file: runLogPath(), dir: runLogDir() }));
+  ipcMain.handle('logs:reveal', () => {
+    const dir = runLogDir();
+    if (dir) shell.openPath(dir);
+    return dir;
+  });
+  ipcMain.on('logs:write', (_e, payload) => {
+    const { scope, message, detail } = payload ?? {};
+    if (typeof message !== 'string') return;
+    logEvent(typeof scope === 'string' ? `renderer:${scope}` : 'renderer', message, detail);
+  });
+}
+
 function registerDownloadIpc() {
   ipcMain.handle('downloads:save', (_e, payload) => {
     const { filename, data } = payload ?? {};

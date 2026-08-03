@@ -34,6 +34,7 @@ import type { FlowState } from '../hooks/useFlows';
 import { useFlowsFilter } from '../context/FlowsFilterContext';
 import { statusToOverall } from '../lib/status';
 import { filterRuns } from '../lib/flowFilter';
+import { AnalysedBadge } from './AnalysedBadge';
 import { StatusBadge } from './StatusBadge';
 import { JobsTable } from './JobsTable';
 import { ArtifactsButton } from './ArtifactsButton';
@@ -359,6 +360,7 @@ export function FlowRunsGrid({
         )}
         <StatusBadge status={overall} withText={false} size={18} />
         <Heading as="h3" sx={{ fontSize: 2 }}>{flow.name}</Heading>
+        <AnalysedBadge kind="flow" id={flow.id} />
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {flow.branches.map((b) => (
             <BranchName key={b} as="span" sx={{ fontSize: 0 }}>{b}</BranchName>

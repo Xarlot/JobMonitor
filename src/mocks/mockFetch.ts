@@ -6,7 +6,9 @@
  */
 
 import { strToU8, zipSync } from 'fflate';
+import { fnv1aHex } from '../lib/hash';
 import {
+  MOCK_MERGED_PULLS,
   MOCK_PULLS,
   flowHasRuns,
   mockAnnotations,
@@ -16,21 +18,16 @@ import {
   mockJobLog,
   mockJobs,
   mockRepoRuns,
+  mockRepository,
+  mockRunsForSha,
   mockSingleJob,
+  mockSingleRun,
   mockWorkflowRuns,
   mockWorkflows,
+  recordMockRerun,
 } from './fixtures';
 
 let callCount = 0;
-
-function weakHash(s: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(16);
-}
 
 function rateLimitHeaders(): Record<string, string> {
   callCount += 1;
@@ -40,12 +37,16 @@ function rateLimitHeaders(): Record<string, string> {
     'x-ratelimit-remaining': String(remaining),
     'x-ratelimit-used': String(callCount),
     'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 3600),
+    // Pose as a classic PAT with `repo` so the write-gated features (re-run failed
+    // jobs) are reachable offline. GitHub sends this on every status, including
+    // the 304 branch below — hence putting it here rather than at each route.
+    'x-oauth-scopes': 'repo, workflow',
   };
 }
 
 function json(body: unknown, ifNoneMatch: string | null): Response {
   const text = JSON.stringify(body);
-  const etag = `W/"${weakHash(text)}"`;
+  const etag = `W/"${fnv1aHex(text)}"`;
   const headers = { ...rateLimitHeaders(), etag, 'content-type': 'application/json' };
   if (ifNoneMatch && ifNoneMatch === etag) {
     return new Response(null, { status: 304, headers });
@@ -64,6 +65,22 @@ export async function mockFetch(
   // Simulate a little latency so the UI's loading states are observable.
   await new Promise((r) => setTimeout(r, 120));
 
+  // Writes come first: this is the only route that cares about the method, and it
+  // must not be shadowed by a GET route further down.
+  const rerunMatch = path.match(/\/actions\/runs\/(\d+)\/rerun-failed-jobs$/);
+  if (rerunMatch) {
+    if ((init?.method ?? 'GET').toUpperCase() !== 'POST') {
+      return new Response(JSON.stringify({ message: 'Method Not Allowed (mock)' }), {
+        status: 405,
+        headers: { ...rateLimitHeaders(), 'content-type': 'application/json' },
+      });
+    }
+    recordMockRerun(Number(rerunMatch[1]));
+    // GitHub answers 201 with an empty body — deliberately not via json(), which
+    // always returns a body and a 200.
+    return new Response(null, { status: 201, headers: rateLimitHeaders() });
+  }
+
   const jobLogsMatch = path.match(/\/actions\/jobs\/(\d+)\/logs$/);
   if (jobLogsMatch) {
     return new Response(mockJobLog(Number(jobLogsMatch[1])), {
@@ -77,6 +94,11 @@ export async function mockFetch(
 
   const jobsMatch = path.match(/\/actions\/runs\/(\d+)\/jobs$/);
   if (jobsMatch) return json(mockJobs(Number(jobsMatch[1])), inm);
+
+  // A single run — read for its workflow file and attempt when building a failure
+  // report. Must come after the /runs/{id}/… routes above.
+  const singleRunMatch = path.match(/\/actions\/runs\/(\d+)$/);
+  if (singleRunMatch) return json(mockSingleRun(Number(singleRunMatch[1])), inm);
 
   const artifactsMatch = path.match(/\/actions\/runs\/(\d+)\/artifacts$/);
   if (artifactsMatch) return json(mockArtifacts(Number(artifactsMatch[1])), inm);
@@ -111,12 +133,19 @@ export async function mockFetch(
   // from the per-workflow `/actions/workflows/{file}/runs` route above. Honors the
   // `created` window and paginates (page > 1 is past our small fixture set).
   if (/\/actions\/runs$/.test(path)) {
+    // head_sha narrows to one commit — how a PR is mapped to its workflow runs.
+    const headSha = url.searchParams.get('head_sha');
+    if (headSha) return json(mockRunsForSha(headSha), inm);
     const page = Number(url.searchParams.get('page') ?? '1');
     if (page > 1) return json({ total_count: 0, workflow_runs: [] }, inm);
     return json(mockRepoRuns(url.searchParams.get('created')), inm);
   }
 
+  // The workflow list paginates (the real one caps at 100 per page); the whole
+  // fixture set fits on page 1, so anything beyond it is empty.
   if (/\/actions\/workflows$/.test(path)) {
+    const page = Number(url.searchParams.get('page') ?? '1');
+    if (page > 1) return json({ total_count: 0, workflows: [] }, inm);
     return json(mockWorkflows(), inm);
   }
 
@@ -126,7 +155,18 @@ export async function mockFetch(
   const statusMatch = path.match(/\/commits\/([^/]+)\/status$/);
   if (statusMatch) return json(mockCombinedStatus(statusMatch[1]), inm);
 
-  if (/\/pulls$/.test(path)) return json(MOCK_PULLS, inm);
+  if (/\/pulls$/.test(path)) {
+    // state=closed feeds the merged-PR list (which then filters on merged_at).
+    return url.searchParams.get('state') === 'closed'
+      ? json(MOCK_MERGED_PULLS, inm)
+      : json(MOCK_PULLS, inm);
+  }
+
+  // The repository itself — read for `permissions.push` (the Write-role half of
+  // the token-capability check). Anchored to exactly two path segments, so it
+  // can't shadow any of the /repos/{o}/{r}/… routes above.
+  const repoMatch = path.match(/^\/repos\/([^/]+)\/([^/]+)$/);
+  if (repoMatch) return json(mockRepository(repoMatch[1], repoMatch[2]), inm);
 
   return new Response(JSON.stringify({ message: 'Not Found (mock)' }), {
     status: 404,

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Box, Button, Flash, Label, Link, Octicon, Spinner, Text } from '@primer/react';
 import { AlertIcon, InfoIcon, LinkExternalIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { Annotation, Job } from '../api/types';
-import { ghGet } from '../api/githubClient';
-import { checkRunAnnotationsPath, checkRunIdFromUrl } from '../api/endpoints';
+import { checkRunIdFromUrl } from '../api/endpoints';
+import { fetchAnnotations } from '../api/annotations';
 import { statusToOverall } from '../lib/status';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
@@ -46,8 +46,8 @@ export function JobSummaryDialog({
     let active = true;
     setLoading(true);
     setError(null);
-    ghGet<Annotation[]>(checkRunAnnotationsPath(owner, repo, checkRunId))
-      .then(({ data }) => active && setAnnotations(data))
+    fetchAnnotations(owner, repo, checkRunId)
+      .then((data) => active && setAnnotations(data))
       .catch((e) => active && setError(e instanceof Error ? e.message : String(e)))
       .finally(() => active && setLoading(false));
     return () => {

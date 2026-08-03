@@ -44,5 +44,27 @@ describe('App smoke', () => {
     fireEvent.click(screen.getByRole('link', { name: /Flows/ }));
     fireEvent.click(await screen.findByText('java-cron'));
     expect(await screen.findByText('workflow_dispatch')).toBeInTheDocument();
-  });
+
+    // The Failures tab derives from the same PR and flow state, and its report
+    // builder touches the annotation/log plumbing — worth a mount to catch wiring
+    // breaks.
+    fireEvent.click(screen.getByRole('link', { name: /Failures/ }));
+    // Groups start collapsed, so nothing is focused and no report is shown yet.
+    expect(await screen.findByText(/\d+ failing jobs?/)).toBeInTheDocument();
+    expect(screen.getByText(/Open a group and pick a failing job/)).toBeInTheDocument();
+
+    // Expanding a group reveals its rows; picking one renders that job's report.
+    const group = await screen.findByRole('button', { name: /visual tests refactoring/ });
+    fireEvent.click(group);
+    fireEvent.click(await screen.findByText('compare-exporttopdf-pdfs'));
+    // The report renders as Markdown, so the heading arrives as text rather than `####`.
+    expect(await screen.findByText('Failed tests')).toBeInTheDocument();
+
+    // …and the raw Markdown is still reachable, because it is what Copy puts on the
+    // clipboard — a preview you cannot check against the copied text is worth less.
+    fireEvent.click(screen.getByRole('button', { name: /Raw Markdown/ }));
+    expect(await screen.findByText(/#### Failed tests/)).toBeInTheDocument();
+    // Mounts the whole tree and walks four tabs, each step waiting on mock-latency
+    // requests — comfortably past vitest's 5s default.
+  }, 30_000);
 });

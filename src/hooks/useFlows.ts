@@ -7,15 +7,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ghGet, evictFromCache } from '../api/githubClient';
-import { runArtifactsPath, runJobsPath, workflowRunsPath, workflowsPath } from '../api/endpoints';
+import { runArtifactsPath, runJobsPath, workflowRunsPath } from '../api/endpoints';
 import { fetchAllRunJobs } from '../api/jobs';
+import { fetchWorkflows } from '../api/workflows';
 import type {
   ArtifactsResponse,
   Job,
   OverallStatus,
+  Workflow,
   WorkflowRun,
   WorkflowRunsResponse,
-  WorkflowsResponse,
 } from '../api/types';
 import { emptyFilterNeedsArtifacts, emptyFilterNeedsLatestJobs } from '../lib/flowEmptiness';
 import { detectNewlyCompleted, runConclusionLabel, runPhase } from '../lib/completion';
@@ -109,10 +110,9 @@ export function useFlow(flow: Flow): FlowState {
     const key = `${owner}/${repo}/${raw}`;
     if (resolvedRef.current?.key === key) return resolvedRef.current.ref;
 
-    let workflows: WorkflowsResponse['workflows'] | null = null;
+    let workflows: Workflow[] | null = null;
     try {
-      const { data } = await ghGet<WorkflowsResponse>(workflowsPath(owner, repo));
-      workflows = data.workflows;
+      workflows = await fetchWorkflows(owner, repo);
     } catch {
       workflows = null; // Actions list unavailable; fall back below.
     }

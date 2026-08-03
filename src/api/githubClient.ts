@@ -2,11 +2,15 @@
  * Thin fetch wrapper around api.github.com.
  *
  *  - Always targets the hardcoded GitHub host (the token is never sent elsewhere).
- *  - Sends `If-None-Match` using a per-path in-memory ETag cache; a 304 returns
- *    the cached body with `notModified: true` so callers can skip state updates
- *    (and 304s don't count against the rate limit).
- *  - Feeds rate-limit headers into the rateLimit store; surfaces 403/429 secondary
- *    limits as a typed, retry-aware error.
+ *  - Reads (`ghGet`/`ghGetText`/`ghGetBlob`) send `If-None-Match` using a per-path
+ *    in-memory ETag cache; a 304 returns the cached body with `notModified: true`
+ *    so callers can skip state updates (and 304s don't count against the rate limit).
+ *  - `ghPost` is the one write path — uncached, unconditional, and used only to
+ *    re-run failed Actions jobs. It is gated by tokenCapability, so it is never
+ *    reached unless the token is known to permit it.
+ *  - Feeds rate-limit headers into the rateLimit store and token scopes into the
+ *    tokenCapability store; surfaces 403/429 secondary limits as a typed,
+ *    retry-aware error.
  *  - The fetch implementation and token provider are injectable for tests/mock mode.
  */
 
@@ -16,11 +20,29 @@ import {
   updateRateLimitFromHeaders,
 } from './rateLimit';
 import { recordRequest } from './requestStats';
+import { getTokenCapability, recordTokenScopes } from './tokenCapability';
+import { devWarn } from '../lib/devLog';
 
 const API_BASE = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Separate budget for reading a response *body*, which the request timeout cannot cover.
+ *
+ * Twenty minutes, not two. A job log from a large repository is tens of megabytes served
+ * from blob storage, and two minutes was cutting healthy downloads short — reported as
+ * "the response started but never finished", which is what a slow transfer looks like from
+ * the inside. This bound exists to stop an indefinite hang, not to police how long a big
+ * file may legitimately take.
+ *
+ * The request timer has to be released once headers arrive — otherwise a large but
+ * healthy download would be killed mid-transfer. That left every body read unbounded: a
+ * response whose headers came back fine and whose body then stalled hung **forever**,
+ * with nothing in the app able to give up on it. Job logs and artifacts are where this
+ * bites, since both 302-redirect to blob storage, so the body is the slow part by design.
+ */
+export const BODY_TIMEOUT_MS = 20 * 60_000;
 /** Artifact zips can be large, so downloads get a more generous timeout. */
-const DOWNLOAD_TIMEOUT_MS = 120_000;
+const DOWNLOAD_TIMEOUT_MS = 20 * 60_000;
 
 export interface GhResult<T> {
   data: T;
@@ -29,11 +51,32 @@ export interface GhResult<T> {
   notModified: boolean;
 }
 
+/**
+ * Why a write was refused. GitHub documents only the success code for the Actions
+ * re-run endpoints, so these are classified from observed status + message text —
+ * always by substring, never exact equality (the permission message has been seen
+ * with a trailing `[]`).
+ */
+export type WriteRefusal =
+  /** Primary or secondary rate limit — retryable. */
+  | 'rate-limit'
+  /** The token definitively lacks permission; the caller should stop offering writes. */
+  | 'permission'
+  /** Refused, but token-grant vs repo-role is indistinguishable in the response. */
+  | 'forbidden'
+  /** Outside GitHub's 30-day retry window — permanent for this run only. */
+  | 'too-old'
+  /** The run isn't in a re-runnable state right now. */
+  | 'conflict'
+  | 'other';
+
 export class GitHubApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly isRateLimit: boolean = false,
+    /** Set on failed writes; absent for reads. */
+    readonly refusal?: WriteRefusal,
   ) {
     super(message);
     this.name = 'GitHubApiError';
@@ -146,6 +189,25 @@ export function clearEtagCache(): void {
   etagCache.clear();
   clearPersisted();
 }
+
+/**
+ * Shared 403/429 handling for reads and writes: decide whether this is a rate
+ * limit (primary or secondary) or a plain refusal, and keep the rate-limit store
+ * accurate either way. Kept in one place so a write can't drift from a read.
+ */
+function classifyForbidden(res: Response): { isRateLimit: boolean } {
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const isSecondary =
+    res.status === 429 ||
+    remaining === '0' ||
+    res.headers.has('retry-after');
+  if (isSecondary) {
+    recordRateLimitHit(res.headers);
+    return { isRateLimit: true };
+  }
+  updateRateLimitFromHeaders(res.headers);
+  return { isRateLimit: false };
+}
 /** Drop a single cached entry (e.g. when a flow run is invalidated). */
 export function evictFromCache(path: string): void {
   etagCache.delete(path);
@@ -155,6 +217,23 @@ export function evictFromCache(path: string): void {
 /**
  * Perform a conditional GET. `path` is a GitHub-relative path and also the cache key.
  */
+/**
+ * Read a response body under its own abort deadline. See {@link BODY_TIMEOUT_MS} for why
+ * this can't just ride on the request timer.
+ */
+async function readBody<T>(
+  read: () => Promise<T>,
+  controller: AbortController,
+  ms: number = BODY_TIMEOUT_MS,
+): Promise<T> {
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await read();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   loadPersistedCache();
   const token = tokenProvider();
@@ -188,6 +267,9 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
     clearTimeout(timer);
   }
 
+  // The scope header rides along on every status, including 304 and errors.
+  recordTokenScopes(res.headers);
+
   if (res.status === 304) {
     updateRateLimitFromHeaders(res.headers);
     recordRequest('cached');
@@ -200,16 +282,9 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
 
   if (res.status === 403 || res.status === 429) {
     recordRequest('error');
-    const remaining = res.headers.get('x-ratelimit-remaining');
-    const isSecondary =
-      res.status === 429 ||
-      remaining === '0' ||
-      res.headers.has('retry-after');
-    if (isSecondary) {
-      recordRateLimitHit(res.headers);
+    if (classifyForbidden(res).isRateLimit) {
       throw new GitHubApiError('GitHub rate limit reached.', res.status, true);
     }
-    updateRateLimitFromHeaders(res.headers);
     throw new GitHubApiError('Forbidden — check token scopes.', 403);
   }
 
@@ -220,8 +295,14 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   }
 
   updateRateLimitFromHeaders(res.headers);
+  let data: T;
+  try {
+    data = await readBody(() => res.json() as Promise<T>, controller);
+  } catch {
+    recordRequest('error');
+    throw new GitHubApiError('The GitHub response body could not be read.', 0);
+  }
   recordRequest('fresh');
-  const data = (await res.json()) as T;
   const etag = res.headers.get('etag');
   if (etag) {
     const entry = { etag, data, ts: Date.now() };
@@ -230,6 +311,141 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   }
 
   return { data, status: res.status, notModified: false };
+}
+
+/** Lift GitHub's `message` out of an error body. Never throws. */
+async function readErrorMessage(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as { message?: unknown };
+    return typeof body?.message === 'string' ? body.message : null;
+  } catch {
+    return null;
+  }
+}
+
+function classifyRefusal(status: number, message: string | null): WriteRefusal {
+  const m = (message ?? '').toLowerCase();
+  if (m.includes('secondary rate limit')) return 'rate-limit';
+  if (m.startsWith('resource not accessible by')) return 'permission';
+  if (m.includes('created over a month ago')) return 'too-old';
+  // A private repo answers 404 rather than 403 when the token can't reach it, so
+  // as not to confirm the repo exists. For a run we listed moments ago that is a
+  // permission problem, NOT a vanished run — treating it as "gone" would retry
+  // forever against a wall.
+  if (status === 404) return 'forbidden';
+  if (status === 409) return 'conflict';
+  if (status === 403) return 'forbidden';
+  return 'other';
+}
+
+function refusalMessage(
+  refusal: WriteRefusal,
+  message: string | null,
+  status: number,
+): string {
+  switch (refusal) {
+    case 'rate-limit':
+      return 'GitHub rate limit reached.';
+    case 'permission':
+      return `Your token isn't allowed to re-run jobs${message ? ` (${message})` : ''}.`;
+    case 'too-old':
+      return message ?? 'This run is too old to re-run (GitHub allows 30 days).';
+    case 'conflict':
+      return message ?? "GitHub can't re-run this run in its current state.";
+    case 'forbidden':
+      return status === 404
+        ? 'Run not reachable — most likely the token lacks write access to this repository.'
+        : (message ?? 'GitHub refused the re-run.');
+    default:
+      return message ?? `GitHub API error (HTTP ${status}).`;
+  }
+}
+
+/**
+ * Perform a write. Deliberately separate from {@link ghGet}:
+ *
+ *  - never conditional and never cached — the ETag cache is keyed by path and a
+ *    write has no cacheable representation;
+ *  - the response body is never parsed on success, because the Actions re-run
+ *    endpoints answer 201 with an empty body and `res.json()` would throw a bare
+ *    SyntaxError outside the GitHubApiError contract callers rely on;
+ *  - failures are classified into {@link WriteRefusal} so callers can tell
+ *    "retry later" from "this run is a lost cause" from "hide the feature".
+ *
+ * Returns the HTTP status on success.
+ */
+export async function ghPost(path: string, body?: unknown): Promise<number> {
+  const token = tokenProvider();
+  if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
+
+  // Enforced here, not just asserted in prose: three callers currently check
+  // capability before offering a write, and a fourth must inherit the guarantee
+  // rather than have to remember it.
+  if (!getTokenCapability().canRerun) {
+    throw new GitHubApiError(
+      "This token isn't allowed to re-run jobs.",
+      403,
+      false,
+      'permission',
+    );
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+      referrerPolicy: 'no-referrer',
+    });
+  } catch {
+    recordRequest('error');
+    if (controller.signal.aborted) throw new GitHubApiError('Request timed out.', 0);
+    throw new GitHubApiError('Network request to GitHub failed.', 0);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  recordTokenScopes(res.headers);
+
+  if (res.ok) {
+    updateRateLimitFromHeaders(res.headers);
+    // A write costs quota, so it belongs in the same bucket as a fresh read.
+    // Adding a new RequestKind would land it in requestStats' catch-all `else`
+    // and be reported as an error.
+    recordRequest('fresh');
+    return res.status;
+  }
+
+  recordRequest('error');
+  const message = await readErrorMessage(res);
+
+  if (res.status === 403 || res.status === 429) {
+    if (classifyForbidden(res).isRateLimit) {
+      throw new GitHubApiError('GitHub rate limit reached.', res.status, true, 'rate-limit');
+    }
+  } else {
+    updateRateLimitFromHeaders(res.headers);
+  }
+
+  const refusal = classifyRefusal(res.status, message);
+  throw new GitHubApiError(
+    refusalMessage(refusal, message, res.status),
+    res.status,
+    refusal === 'rate-limit',
+    refusal,
+  );
 }
 
 /**
@@ -263,10 +479,30 @@ export async function ghGetText(path: string): Promise<string> {
   }
   if (!res.ok) {
     recordRequest('error');
+    // The status is the whole diagnosis here: 403 is usually a token without `repo`,
+    // 404 a job whose log has aged out or a private repo hiding itself. The thrown
+    // message reaches the UI, but the path is what identifies which job it was.
+    devWarn('api', `log request failed: HTTP ${res.status}`, { path });
     throw new GitHubApiError(`Failed to load logs (HTTP ${res.status}).`, res.status);
   }
+  let text: string;
+  try {
+    text = await readBody(() => res.text(), controller);
+  } catch {
+    recordRequest('error');
+    devWarn('api', 'log body stalled or failed after headers arrived', {
+      path,
+      aborted: controller.signal.aborted,
+    });
+    throw new GitHubApiError(
+      controller.signal.aborted
+        ? 'Timed out downloading the log body (the response started but never finished).'
+        : 'The log download failed partway through.',
+      0,
+    );
+  }
   recordRequest('fresh');
-  return res.text();
+  return text;
 }
 
 /**
@@ -300,6 +536,18 @@ export async function ghGetBlob(path: string): Promise<Blob> {
     recordRequest('error');
     throw new GitHubApiError(`Failed to download (HTTP ${res.status}).`, res.status);
   }
+  let blob: Blob;
+  try {
+    blob = await readBody(() => res.blob(), controller);
+  } catch {
+    recordRequest('error');
+    throw new GitHubApiError(
+      controller.signal.aborted
+        ? 'Timed out downloading the file (the response started but never finished).'
+        : 'The download failed partway through.',
+      0,
+    );
+  }
   recordRequest('fresh');
-  return res.blob();
+  return blob;
 }

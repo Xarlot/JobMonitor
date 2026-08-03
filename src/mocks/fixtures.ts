@@ -8,6 +8,7 @@ import type {
   Job,
   JobsResponse,
   PullRequest,
+  Repository,
   WorkflowRun,
   WorkflowRunsResponse,
   WorkflowsResponse,
@@ -35,7 +36,26 @@ export const MOCK_CONFIG: MonitorConfig = {
   fork: { owner: OWNER, branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
-  notifications: { pr: false, flow: false },
+  notifications: { pr: false, flow: false, autoRerun: false },
+  // Armed for the workflow behind PR #37977's failing check, so mock mode
+  // exercises the whole auto-rerun loop offline.
+  prAutoRerun: {
+    enabled: true,
+    workflowFiles: ['check-pull-request-java.yml'],
+    maxAttempts: 10,
+    stopOnIdenticalFailure: true,
+    maxRunAgeHours: 72,
+  },
+  mergedPrs: { count: 10 },
+  failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
+  ai: {
+    enabled: true,
+    extraInstructions: '',
+    quick: { model: 'sonnet', effort: 'medium', prompt: '' },
+    deep: { model: 'opus', effort: 'high', prompt: '' },
+    log: { model: 'sonnet', effort: 'low', prompt: '' },
+    blame: { model: 'opus', effort: 'medium', prompt: '' },
+  },
   autoUpdate: true,
   rateLimitWarnAt: 50,
   flows: [
@@ -152,6 +172,14 @@ function user(login: string): PullRequest['user'] {
   };
 }
 
+/** Auto-merge armed, as GitHub reports it on the list endpoint. */
+const AUTO_MERGE: PullRequest['auto_merge'] = {
+  enabled_by: user('a-petrova'),
+  merge_method: 'squash',
+  commit_title: null,
+  commit_message: null,
+};
+
 export const MOCK_PULLS: PullRequest[] = [
   {
     id: 1,
@@ -162,6 +190,10 @@ export const MOCK_PULLS: PullRequest[] = [
     draft: false,
     user: user('a-petrova'),
     created_at: new Date(BOOT - 3 * 86400_000).toISOString(),
+    // Failing checks *and* auto-merge armed: the exact shape the auto-rerun
+    // engine acts on, so mock mode exercises it without a real PR.
+    auto_merge: AUTO_MERGE,
+    merged_at: null,
     updated_at: new Date(BOOT - 3600_000).toISOString(),
     head: { sha: SHA_FAIL, ref: 'visualtests-refactoring', label: `${OWNER}:visualtests-refactoring`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
@@ -175,6 +207,8 @@ export const MOCK_PULLS: PullRequest[] = [
     draft: false,
     user: user('m-litvinov'),
     created_at: new Date(BOOT - 2 * 86400_000).toISOString(),
+    auto_merge: null,
+    merged_at: null,
     updated_at: new Date(BOOT - 1800_000).toISOString(),
     head: { sha: SHA_RUN, ref: 'space-handling', label: `${OWNER}:space-handling`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
@@ -188,6 +222,8 @@ export const MOCK_PULLS: PullRequest[] = [
     draft: false,
     user: user('jbr-team'),
     created_at: new Date(BOOT - 86400_000).toISOString(),
+    auto_merge: null,
+    merged_at: null,
     updated_at: new Date(BOOT - 300_000).toISOString(),
     head: { sha: SHA_OK, ref: 'jbr-combobox-property-grid', label: `${OWNER}:jbr-combobox-property-grid`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
@@ -299,6 +335,142 @@ export function mockRepoRuns(created?: string | null): WorkflowRunsResponse {
   return { total_count: filtered.length, workflow_runs: filtered };
 }
 
+/**
+ * Runs that a POST to rerun-failed-jobs has already been accepted for.
+ *
+ * GitHub answers a re-run by bumping `run_attempt` and putting the run back
+ * in_progress. Mirroring that here is what makes the auto-rerun loop observable
+ * offline — and what stops it looping, since the engine keys idempotency on the
+ * attempt number.
+ */
+const mockRerunAttempts = new Map<number, number>();
+
+export function recordMockRerun(runId: number): void {
+  mockRerunAttempts.set(runId, (mockRerunAttempts.get(runId) ?? 1) + 1);
+}
+
+/** Apply any re-run that has been requested for this run. */
+function withRerun(r: WorkflowRun): WorkflowRun {
+  const attempt = mockRerunAttempts.get(r.id);
+  if (attempt === undefined) return r;
+  return {
+    ...r,
+    run_attempt: attempt,
+    status: 'in_progress',
+    conclusion: null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Workflow runs for one commit — how a PR is mapped to its runs (the `head_sha`
+ * query). PR #37977's head has a failing `check-pull-request-java.yml` run, which
+ * is what the auto-rerun engine is armed for in MOCK_CONFIG.
+ */
+export function mockRunsForSha(sha: string): WorkflowRunsResponse {
+  const at = (h: number) => {
+    const iso = new Date(BOOT - h * 3600_000).toISOString();
+    return { created_at: iso, run_started_at: iso } as const;
+  };
+  const bySha: Record<string, WorkflowRun[]> = {
+    [SHA_FAIL]: [
+      run({
+        id: 1002, name: 'java', display_title: 'visual tests refactoring',
+        path: '.github/workflows/check-pull-request-java.yml', workflow_id: 42,
+        event: 'pull_request', head_branch: 'visualtests-refactoring', head_sha: SHA_FAIL,
+        status: 'completed', conclusion: 'failure', ...at(1),
+      }),
+      run({
+        id: 1005, name: 'Visual Tests', display_title: 'visual tests refactoring',
+        path: '.github/workflows/visualtests.yml', workflow_id: 44,
+        event: 'pull_request', head_branch: 'visualtests-refactoring', head_sha: SHA_FAIL,
+        status: 'completed', conclusion: 'success', ...at(1),
+      }),
+    ],
+    [SHA_RUN]: [
+      run({
+        id: 1003, name: 'java', display_title: 'space handling',
+        path: '.github/workflows/check-pull-request-java.yml', workflow_id: 42,
+        event: 'pull_request', head_branch: 'space-handling', head_sha: SHA_RUN,
+        status: 'in_progress', conclusion: null, ...at(0.3),
+      }),
+    ],
+    [SHA_OK]: [
+      run({
+        id: 1004, name: 'java', display_title: 'JBR: ComboBox support',
+        path: '.github/workflows/check-pull-request-java.yml', workflow_id: 42,
+        event: 'pull_request', head_branch: 'jbr-combobox-property-grid', head_sha: SHA_OK,
+        status: 'completed', conclusion: 'success', ...at(2),
+      }),
+    ],
+  };
+  const runs = (bySha[sha] ?? []).map(withRerun);
+  return { total_count: runs.length, workflow_runs: runs };
+}
+
+/** One run by id, across every fixture set that defines runs. */
+export function mockSingleRun(runId: number): WorkflowRun {
+  for (const sha of [SHA_FAIL, SHA_RUN, SHA_OK]) {
+    const hit = mockRunsForSha(sha).workflow_runs.find((r) => r.id === runId);
+    if (hit) return hit;
+  }
+  const fromRepo = mockRepoRuns().workflow_runs.find((r) => r.id === runId);
+  return fromRepo ?? withRerun(run({ id: runId }));
+}
+
+/**
+ * Recently-merged PRs. The first one merged with a failing check, so the Failures
+ * tab has a merged example to show alongside the open ones.
+ */
+export const MOCK_MERGED_PULLS: PullRequest[] = [
+  {
+    id: 11,
+    number: 37820,
+    title: 'fix font metrics on Linux',
+    html_url: `https://github.com/${SLUG}/pull/37820`,
+    state: 'closed',
+    draft: false,
+    user: user('a-petrova'),
+    created_at: new Date(BOOT - 6 * 86400_000).toISOString(),
+    auto_merge: null,
+    merged_at: new Date(BOOT - 2 * 3600_000).toISOString(),
+    updated_at: new Date(BOOT - 2 * 3600_000).toISOString(),
+    head: { sha: SHA_FAIL, ref: 'font-metrics-linux', label: `${OWNER}:font-metrics-linux`, user: user(OWNER) },
+    base: { ref: BRANCH, repo: { full_name: SLUG } },
+  },
+  {
+    id: 12,
+    number: 37744,
+    title: 'bump toolchain to 21',
+    html_url: `https://github.com/${SLUG}/pull/37744`,
+    state: 'closed',
+    draft: false,
+    user: user('m-litvinov'),
+    created_at: new Date(BOOT - 8 * 86400_000).toISOString(),
+    auto_merge: null,
+    merged_at: new Date(BOOT - 26 * 3600_000).toISOString(),
+    updated_at: new Date(BOOT - 26 * 3600_000).toISOString(),
+    head: { sha: SHA_OK, ref: 'toolchain-21', label: `${OWNER}:toolchain-21`, user: user(OWNER) },
+    base: { ref: BRANCH, repo: { full_name: SLUG } },
+  },
+  // Closed without merging — must be filtered out by `merged_at`.
+  {
+    id: 13,
+    number: 37700,
+    title: 'abandoned experiment',
+    html_url: `https://github.com/${SLUG}/pull/37700`,
+    state: 'closed',
+    draft: false,
+    user: user('jbr-team'),
+    created_at: new Date(BOOT - 9 * 86400_000).toISOString(),
+    auto_merge: null,
+    merged_at: null,
+    updated_at: new Date(BOOT - 48 * 3600_000).toISOString(),
+    head: { sha: SHA_RUN, ref: 'experiment', label: `${OWNER}:experiment`, user: user(OWNER) },
+    base: { ref: BRANCH, repo: { full_name: SLUG } },
+  },
+];
+
 export function mockArtifacts(runId: number): ArtifactsResponse {
   if (runId === 1001) {
     return {
@@ -339,6 +511,20 @@ export function mockArtifacts(runId: number): ArtifactsResponse {
     };
   }
   return { total_count: 0, artifacts: [] };
+}
+
+/**
+ * The repository itself. `permissions.push` is the Write-role half of the
+ * token-capability check, so it is `true` here to keep the write-gated features
+ * (re-run failed jobs) reachable in mock mode.
+ */
+export function mockRepository(owner: string, repo: string): Repository {
+  return {
+    name: repo,
+    full_name: `${owner}/${repo}`,
+    private: true,
+    permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+  };
 }
 
 /** The repo's workflow list — also what regex (pattern) flows are matched against. */
@@ -393,14 +579,23 @@ const RUN_TITLES = [
 ];
 
 export function mockWorkflowRuns(ref = 'check-pull-request-java.yml'): WorkflowRunsResponse {
-  const latest = FLOW_LATEST[workflowFileFor(ref)] ?? 'success';
+  const file = workflowFileFor(ref);
+  const latest = FLOW_LATEST[file] ?? 'success';
   const done = flipped();
   const ago = (h: number) => new Date(BOOT - h * 3600_000).toISOString();
+  // Each flow's runs must carry *their own* workflow path: it names the workflow in
+  // a failure report and prefixes the job name in the Failures list, so inheriting
+  // the builder's default would attribute every flow's jobs to one workflow.
+  const wf = MOCK_WORKFLOWS.find((w) => workflowBasename(w.path) === file);
+  const path = wf?.path ?? `.github/workflows/${file}`;
+  const workflow_id = wf?.id;
 
   const latestRun =
     latest === 'running'
       ? run({
           id: 1001,
+          path,
+          workflow_id,
           display_title: RUN_TITLES[0],
           event: 'workflow_dispatch',
           head_sha: SHA_RUN,
@@ -410,8 +605,8 @@ export function mockWorkflowRuns(ref = 'check-pull-request-java.yml'): WorkflowR
           updated_at: new Date().toISOString(),
         })
       : latest === 'failure'
-        ? run({ id: 1003, display_title: RUN_TITLES[0], event: 'workflow_dispatch', head_sha: SHA_FAIL, conclusion: 'failure', run_started_at: ago(3) })
-        : run({ id: 1002, display_title: RUN_TITLES[0], head_sha: SHA_OK, conclusion: 'success', run_started_at: ago(3) });
+        ? run({ id: 1003, path, workflow_id, display_title: RUN_TITLES[0], event: 'workflow_dispatch', head_sha: SHA_FAIL, conclusion: 'failure', run_started_at: ago(3) })
+        : run({ id: 1002, path, workflow_id, display_title: RUN_TITLES[0], head_sha: SHA_OK, conclusion: 'success', run_started_at: ago(3) });
 
   // For a failing flow the recent history is mostly red (mirrors a broken cron);
   // otherwise it's green.
@@ -421,6 +616,8 @@ export function mockWorkflowRuns(ref = 'check-pull-request-java.yml'): WorkflowR
   const rest = restConclusions.map((conclusion, i) =>
     run({
       id: 1010 + i,
+      path,
+      workflow_id,
       display_title: RUN_TITLES[i + 1] ?? RUN_TITLES[1],
       conclusion,
       run_started_at: ago(7 + i * 4),

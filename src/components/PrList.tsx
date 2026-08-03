@@ -27,11 +27,13 @@ import { useConfig } from '../context/ConfigContext';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
 import type { OverallStatus } from '../api/types';
 import { statusToOverall } from '../lib/status';
+import { AnalysedBadge } from './AnalysedBadge';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
 import { TimelineDialog, type GanttItem } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { ArtifactsButton } from './ArtifactsButton';
+import { RerunFailedJobsButton } from './RerunFailedJobsButton';
 import { runIdFromUrl } from '../api/endpoints';
 import { formatRelative } from '../lib/format';
 
@@ -56,6 +58,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const { config } = useConfig();
+  const { invalidateChecks } = useDashboard();
   const { owner, repo } = config.upstream;
   const { pr, overall } = entry;
   // Artifacts are per-run; derive the PR's CI run id from its check-run URLs.
@@ -94,6 +97,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
           <StatusBadge status={overall} />
         </Box>
         <StateLabel status={pr.draft ? 'draft' : 'pullOpened'} variant="small" />
+        <AnalysedBadge kind="pr" id={pr.number} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Link
             href={pr.html_url}
@@ -144,6 +148,13 @@ function PrRow({ entry }: { entry: PrEntry }) {
               bundleName={`pr-${pr.number}-artifacts`}
             />
           )}
+          <RerunFailedJobsButton
+            owner={owner}
+            repo={repo}
+            headSha={pr.head.sha}
+            subtitle={`${pr.title} · #${pr.number}`}
+            onRerun={() => invalidateChecks(pr.number)}
+          />
           <IconButton
             size="small"
             variant="invisible"

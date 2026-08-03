@@ -145,6 +145,56 @@ export const notificationsSchema = z
     pr: z.boolean().default(false),
     /** Notify when a tracked flow run completes. */
     flow: z.boolean().default(false),
+    /** Notify when failed jobs were re-run automatically (or a re-run failed). */
+    autoRerun: z.boolean().default(false),
+  })
+  .prefault({});
+
+/**
+ * Automatic re-run of failed jobs for pull requests waiting on auto-merge.
+ *
+ * The only feature that writes to GitHub, so it is off by default and inert until
+ * the user names workflow files. Two independent brakes stop a genuinely broken
+ * PR from burning CI forever: a hard attempt ceiling, and giving up as soon as the
+ * failure repeats identically.
+ */
+export const prAutoRerunSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    /**
+     * Exact workflow file names (e.g. "ci.yml"). A run qualifies when the basename
+     * of its `path` is listed — never a pattern, so this can't widen by accident.
+     */
+    workflowFiles: z.array(z.string().trim().min(1)).default([]),
+    /** Ceiling on GitHub's `run_attempt`; 1 disables retrying outright. */
+    maxAttempts: z.number().int().min(1).max(20).default(10),
+    /** Give up when the failure fingerprint matches the previous attempt's. */
+    stopOnIdenticalFailure: z.boolean().default(true),
+    /** Ignore older runs. GitHub itself refuses re-runs after 30 days (720 h). */
+    maxRunAgeHours: z.number().int().min(1).max(720).default(72),
+  })
+  .prefault({});
+
+/** Recently-merged PRs, polled so their failures stay reviewable after merge. */
+export const mergedPrsSchema = z
+  .object({
+    /** How many of the most recently updated merged PRs to track; 0 disables. */
+    count: z.number().int().min(0).max(50).default(10),
+  })
+  .prefault({});
+
+/** Markdown failure reports (one per failed job) for filing bugs. */
+export const failureReportsSchema = z
+  .object({
+    /**
+     * Fetch annotations for newly-failed jobs without waiting for a click, so the
+     * list shows test names immediately. One request per failed job.
+     */
+    prefetchAnnotations: z.boolean().default(true),
+    /** Log lines from the failed step appended to a report; 0 omits the log. */
+    logTailLines: z.number().int().min(0).max(500).default(80),
+    /** Teams renders no <details>, so the report is flattened for it. */
+    format: z.enum(['github', 'teams']).default('github'),
   })
   .prefault({});
 
@@ -161,6 +211,71 @@ export const flowGroupSchema = z.object({
   collapsed: z.boolean().default(false),
 });
 
+/**
+ * Model aliases offered for the AI tasks.
+ *
+ * Aliases rather than pinned ids, so the CLI resolves whatever its current Sonnet/Opus is
+ * and a retired model id can't strand the feature. A closed set, because the value becomes
+ * a `--model` argument: the bridge re-checks it against the same list, since anything the
+ * renderer supplies is untrusted there.
+ */
+export const AI_MODELS = ['sonnet', 'opus', 'haiku'] as const;
+/** What `claude --effort` accepts. */
+export const AI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+const aiTaskSchema = (model: (typeof AI_MODELS)[number], effort: (typeof AI_EFFORTS)[number]) =>
+  z
+    .object({
+      model: z.enum(AI_MODELS).default(model),
+      effort: z.enum(AI_EFFORTS).default(effort),
+      /**
+       * Replaces the built-in brief entirely when non-empty.
+       *
+       * The verified facts, the annotations and the log are still appended, and the
+       * output contract still applies — an override that dropped those would produce a
+       * reply the app cannot parse. Blank means "use the built-in brief", which is what
+       * almost everyone should leave it as.
+       */
+      prompt: z.string().default(''),
+    })
+    .prefault({});
+
+/**
+ * Local AI integration (the `claude` CLI). The one feature that sends anything outside
+ * GitHub, so it has a single switch that hides all of it.
+ */
+export const aiSchema = z
+  .object({
+    /**
+     * Master switch. Defaults **on** so that upgrading doesn't silently remove a feature
+     * someone is using — it was already gated on `claude` being installed and on an
+     * explicit click. Off hides every AI control outright.
+     */
+    enabled: z.boolean().default(true),
+    /**
+     * Appended to whichever brief runs, for standing context the model can't infer —
+     * "our integration tests are flaky on Windows", "ignore the deprecation warnings".
+     * Additive rather than replacing, so it can't quietly break the output contract.
+     */
+    extraInstructions: z.string().default(''),
+    /** The fast read: a single-turn summary of a log already in hand. */
+    quick: aiTaskSchema('sonnet', 'medium'),
+    /** The investigation: fetches artifacts, the workflow and the diff. */
+    deep: aiTaskSchema('opus', 'high'),
+    /**
+     * The log rewrite: a transformation with checkable output, so effort buys nothing.
+     * Benchmarked — low was the fastest and passed every structural check.
+     */
+    log: aiTaskSchema('sonnet', 'low'),
+    /**
+     * Blame: which commit broke the flow. Reads run history across a branch and weighs a
+     * flake against a real break — judgement, so Opus; but breadth rather than depth, so
+     * medium effort rather than the deep pass's high.
+     */
+    blame: aiTaskSchema('opus', 'medium'),
+  })
+  .prefault({});
+
 export const monitorConfigSchema = z.object({
   version: z.literal(1).default(1),
   upstream: ownerRepoSchema,
@@ -172,6 +287,14 @@ export const monitorConfigSchema = z.object({
   prAuthor: z.string().trim().default(''),
   polling: pollingSchema.prefault({}),
   notifications: notificationsSchema,
+  /** Auto-rerun of failed jobs (the only write). Off until configured. */
+  prAutoRerun: prAutoRerunSchema,
+  /** Track recently-merged PRs so their failures stay reviewable. */
+  mergedPrs: mergedPrsSchema,
+  /** Markdown failure-report generation. */
+  failureReports: failureReportsSchema,
+  /** Local AI integration via the `claude` CLI. */
+  ai: aiSchema,
   /** Desktop app: auto-download & install updates. Ignored where unsupported. */
   autoUpdate: z.boolean().default(true),
   rateLimitWarnAt: z.number().int().min(0).max(5000).default(50),
@@ -192,6 +315,11 @@ export type FlowMatch = z.infer<typeof flowMatchSchema>;
 export type FlowGroup = z.infer<typeof flowGroupSchema>;
 export type PollingConfig = z.infer<typeof pollingSchema>;
 export type NotificationPrefs = z.infer<typeof notificationsSchema>;
+export type AiConfig = z.infer<typeof aiSchema>;
+export type AiTaskConfig = z.infer<ReturnType<typeof aiTaskSchema>>;
+export type PrAutoRerunConfig = z.infer<typeof prAutoRerunSchema>;
+export type MergedPrsConfig = z.infer<typeof mergedPrsSchema>;
+export type FailureReportsConfig = z.infer<typeof failureReportsSchema>;
 export type EmptyFlowFilter = z.infer<typeof emptyFlowFilterSchema>;
 export type MonitorConfig = z.infer<typeof monitorConfigSchema>;
 
@@ -208,7 +336,24 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   fork: { owner: '', branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
-  notifications: { pr: false, flow: false },
+  notifications: { pr: false, flow: false, autoRerun: false },
+  prAutoRerun: {
+    enabled: false,
+    workflowFiles: [],
+    maxAttempts: 10,
+    stopOnIdenticalFailure: true,
+    maxRunAgeHours: 72,
+  },
+  mergedPrs: { count: 10 },
+  failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
+  ai: {
+    enabled: true,
+    extraInstructions: '',
+    quick: { model: 'sonnet', effort: 'medium', prompt: '' },
+    deep: { model: 'opus', effort: 'high', prompt: '' },
+    log: { model: 'sonnet', effort: 'low', prompt: '' },
+    blame: { model: 'opus', effort: 'medium', prompt: '' },
+  },
   autoUpdate: true,
   rateLimitWarnAt: 50,
   flows: [],

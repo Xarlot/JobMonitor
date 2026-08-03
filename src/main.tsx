@@ -8,6 +8,8 @@ import { DownloadsProvider } from './context/DownloadsContext';
 import { isMockMode } from './mocks/mockMode';
 import { setFetchImpl } from './api/githubClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { devLog, installDevLogControls } from './lib/devLog';
+import { forwardClaudeLogsToConsole } from './storage/desktopClaude';
 
 // Clickjacking guard: GitHub Pages can't send frame-ancestors/X-Frame-Options,
 // and a <meta> CSP frame-ancestors is ignored. Bust out of any framing.
@@ -20,6 +22,11 @@ if (window.self !== window.top) {
 }
 
 async function bootstrap() {
+  // Before anything else, so the console says how to turn diagnostics on and the
+  // main process's own lines land there too (DevTools: F12).
+  installDevLogControls();
+  forwardClaudeLogsToConsole((message, detail) => devLog('desktop', message, detail));
+
   // In mock mode, route the GitHub client through fixtures instead of the network.
   if (isMockMode()) {
     const { mockFetch } = await import('./mocks/mockFetch');

@@ -28,27 +28,47 @@ import {
   PlusIcon,
   SearchIcon,
   ShieldLockIcon,
+  AlertFillIcon,
+  CheckCircleFillIcon,
+  ChecklistIcon,
+  CopyIcon,
+  SparkleFillIcon,
+  XCircleFillIcon,
+  SyncIcon,
   TrashIcon,
   WorkflowIcon,
 } from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
 import { WorkflowBrowserDialog, type FlowPick } from './WorkflowBrowserDialog';
+import { WorkflowFilesField } from './WorkflowFilesField';
 import { useAuth } from '../context/AuthContext';
 import {
+  AI_EFFORTS,
+  AI_MODELS,
   MAX_FLOW_MATCHES,
   monitorConfigSchema,
   newFlowId,
   safeParseConfig,
+  type AiConfig,
+  type AiTaskConfig,
   type EmptyFlowFilter,
+  type FailureReportsConfig,
   type Flow,
   type FlowMatch,
+  type MergedPrsConfig,
   type MonitorConfig,
   type NotificationPrefs,
+  type PrAutoRerunConfig,
 } from '../storage/configStore';
-import { compileFlowPattern, isPatternFlow, matchWorkflows } from '../lib/flowPatterns';
-import { fetchWorkflows } from '../api/workflows';
+import {
+  claudeBridgeAvailable,
+  diagnosticsLogPath,
+  probeClaudeTools,
+  revealDiagnosticsLog,
+  type ClaudeToolStatus,
+} from '../storage/desktopClaude';
+import { compileFlowPattern, isPatternFlow, matchWorkflowsUncapped } from '../lib/flowPatterns';
 import { workflowBasename } from '../lib/workflow';
-import type { Workflow } from '../api/types';
 import {
   ensureNotificationPermission,
   notificationPermission,
@@ -57,6 +77,9 @@ import {
 import { canRememberSecret, isDesktop } from '../storage/desktopSecret';
 import { autoUpdateSupported } from '../storage/desktopUpdates';
 import { isMockMode } from '../mocks/mockMode';
+import { useTokenCapability } from '../hooks/useTokenCapability';
+import { useWorkflowList } from '../hooks/useWorkflowList';
+import type { TokenCapability } from '../api/tokenCapability';
 
 const sectionSx = {
   border: '1px solid',
@@ -66,6 +89,39 @@ const sectionSx = {
   mb: 4,
 } as const;
 
+/**
+ * Plain-language summary of what the token may do, so that re-run controls being
+ * absent is explained rather than mysterious. Re-running failed jobs needs a
+ * classic PAT with `repo` *and* the Write role on the repository; a fine-grained
+ * token's Actions permission can't be verified through the API at all, so it is
+ * treated as read-only.
+ */
+function capabilityReadout(cap: TokenCapability): { text: string; variant: 'success' | 'attention' } {
+  if (cap.canRerun) {
+    return { text: 'can re-run failed jobs', variant: 'success' };
+  }
+  switch (cap.reason) {
+    case 'pending':
+      return { text: 'checking permissions…', variant: 'attention' };
+    case 'no-repo-scope':
+      return { text: 'read-only (no repo scope) — re-run features hidden', variant: 'attention' };
+    case 'no-push-access':
+      return { text: 'read-only on this repository — re-run features hidden', variant: 'attention' };
+    case 'refused':
+      return { text: 'GitHub refused a re-run — re-run features hidden', variant: 'attention' };
+    case 'not-classic':
+      return {
+        text:
+          cap.kind === 'fine-grained'
+            ? "fine-grained — Actions permission can't be verified, so re-run features are hidden; use a classic repo token"
+            : 're-run features hidden — use a classic token with the repo scope',
+        variant: 'attention',
+      };
+    default:
+      return { text: 're-run features hidden', variant: 'attention' };
+  }
+}
+
 function clone(config: MonitorConfig): MonitorConfig {
   return JSON.parse(JSON.stringify(config)) as MonitorConfig;
 }
@@ -73,6 +129,7 @@ function clone(config: MonitorConfig): MonitorConfig {
 /** Token credentials: encrypt + store a PAT, or forget an active one. */
 function TokenSection() {
   const { status, saveToken, forget, error } = useAuth();
+  const readout = capabilityReadout(useTokenCapability());
   const [token, setToken] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -137,6 +194,7 @@ function TokenSection() {
         <Octicon icon={ShieldLockIcon} size={20} sx={{ color: 'accent.fg' }} />
         <Heading as="h2" sx={{ fontSize: 3 }}>GitHub token</Heading>
         {status === 'unlocked' && <Label variant="success">loaded in memory</Label>}
+        {status === 'unlocked' && <Label variant={readout.variant}>{readout.text}</Label>}
       </Box>
       <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
         Use a{' '}
@@ -147,10 +205,11 @@ function TokenSection() {
         >
           classic token
         </Link>{' '}
-        with the <strong>repo</strong> scope (for a public-only repo, <strong>public_repo</strong>
-        {' '}is enough). A read-only fine-grained PAT also works
-        for most data but <strong>can’t download Actions logs</strong> (GitHub returns 404), so a
-        classic <code>repo</code> token is recommended.
+        with the <strong>repo</strong> scope. A fine-grained PAT covers most data but
+        {' '}<strong>can’t download Actions logs</strong> (GitHub returns 404), and its Actions
+        permission can’t be verified through the API — so <strong>re-running failed jobs is only
+        offered with a classic <code>repo</code> token</strong> on a repository you can write to.
+        {' '}<code>public_repo</code> is enough to read a public repo, but not to re-run anything.
       </Text>
 
       {isMockMode() ? (
@@ -307,30 +366,7 @@ function PatternPreview({
   repo: string;
   match: FlowMatch;
 }) {
-  const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!owner || !repo) return;
-    let active = true;
-    setLoading(true);
-    fetchWorkflows(owner, repo)
-      .then((list) => {
-        if (!active) return;
-        setWorkflows(list);
-        setError(null);
-      })
-      .catch((e: unknown) => {
-        if (active) setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [owner, repo]);
+  const { workflows, loading, error } = useWorkflowList(owner, repo);
 
   const patternError = compileFlowPattern(match).error;
   if (patternError) {
@@ -371,14 +407,17 @@ function PatternPreview({
   }
 
   // Uncapped first, so we can tell the user when `maxMatches` is what's limiting them.
-  const matched = matchWorkflows(workflows, { ...match, maxMatches: MAX_FLOW_MATCHES });
+  const matched = matchWorkflowsUncapped(workflows, match);
   const shown = matched.slice(0, match.maxMatches);
 
   return (
     <Box sx={{ mt: 2 }}>
       <Text sx={{ fontSize: 0, color: matched.length === 0 ? 'attention.fg' : 'fg.muted' }}>
         Matches <strong>{matched.length}</strong> of {workflows.length} workflows
-        {matched.length > shown.length && ` · showing ${shown.length} (raise “Max matches”)`}
+        {matched.length > shown.length &&
+          (matched.length > MAX_FLOW_MATCHES
+            ? ` · showing ${shown.length}; past the ${MAX_FLOW_MATCHES}-flow cap — tighten the regex`
+            : ` · showing ${shown.length} (raise “Max matches”)`)}
       </Text>
       {shown.length > 0 && (
         <Box
@@ -794,7 +833,8 @@ function NotificationsSection({
     if (on && supported) setPerm(await ensureNotificationPermission());
   };
 
-  const anyOn = prefs.pr || prefs.flow;
+  const anyOn = prefs.pr || prefs.flow || prefs.autoRerun;
+  const { canRerun } = useTokenCapability();
 
   return (
     <Box sx={sectionSx}>
@@ -815,10 +855,23 @@ function NotificationsSection({
         <Checkbox checked={prefs.pr} onChange={(e) => void toggle('pr', e.target.checked)} />
         <FormControl.Label>Notify when a PR’s checks finish</FormControl.Label>
       </FormControl>
-      <FormControl disabled={!supported}>
+      <FormControl sx={{ mb: 2 }} disabled={!supported}>
         <Checkbox checked={prefs.flow} onChange={(e) => void toggle('flow', e.target.checked)} />
         <FormControl.Label>Notify when a flow run finishes</FormControl.Label>
       </FormControl>
+      {/* Only meaningful where auto-rerun can actually run. */}
+      {canRerun && (
+        <FormControl disabled={!supported}>
+          <Checkbox
+            checked={prefs.autoRerun}
+            onChange={(e) => void toggle('autoRerun', e.target.checked)}
+          />
+          <FormControl.Label>Notify when failed jobs are re-run automatically</FormControl.Label>
+          <FormControl.Caption>
+            Also tells you when a re-run was refused, so a silent failure can’t go unnoticed.
+          </FormControl.Caption>
+        </FormControl>
+      )}
     </Box>
   );
 }
@@ -864,6 +917,615 @@ function UpdatesSection({
   );
 }
 
+/**
+ * Auto-rerun of failed jobs — the only setting in the app that arms a write, so it
+ * is hidden outright when the token can't do it, with the reason spelled out
+ * (a section that simply isn't there is confusing).
+ */
+function AutoRerunSection({
+  upstream,
+  settings,
+  onChange,
+}: {
+  upstream: MonitorConfig['upstream'];
+  settings: PrAutoRerunConfig;
+  onChange: (patch: Partial<PrAutoRerunConfig>) => void;
+}) {
+  const capability = useTokenCapability();
+
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Auto-rerun failed jobs
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        When a workflow below finishes badly on a pull request that has{' '}
+        <strong>auto-merge enabled</strong>, Job Monitor asks GitHub to re-run its failed
+        jobs. This is the only thing the app changes on GitHub, and it costs CI minutes —
+        it stays off until you list at least one workflow.
+      </Text>
+
+      {!capability.canRerun ? (
+        <Flash variant="warning" sx={{ fontSize: 1 }}>
+          This token can’t re-run jobs, so auto-rerun is unavailable:{' '}
+          {capabilityReadout(capability).text}. Add a classic token with the{' '}
+          <code>repo</code> scope on <strong>Token &amp; login</strong>, for a repository you
+          have write access to.
+        </Flash>
+      ) : (
+        <>
+          <FormControl sx={{ mb: 3 }}>
+            <Checkbox
+              checked={settings.enabled}
+              onChange={(e) => onChange({ enabled: e.target.checked })}
+            />
+            <FormControl.Label>Re-run failed jobs automatically</FormControl.Label>
+            <FormControl.Caption>
+              Only for pull requests waiting on auto-merge. Never for cancelled runs, and
+              never for runs waiting on a human approval.
+            </FormControl.Caption>
+          </FormControl>
+
+          {/*
+            Laid out by hand rather than with FormControl: the field is a custom
+            component, which FormControl doesn't recognise as its input and so
+            renders the caption after it instead of above.
+          */}
+          <Box sx={{ mb: 3 }}>
+            <Text as="label" sx={{ display: 'block', fontWeight: 'bold', fontSize: 1 }}>
+              Workflows
+            </Text>
+            <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mt: 1, mb: 2 }}>
+              Exact file names. A run is only re-run when its workflow file is listed here.
+            </Text>
+            <WorkflowFilesField
+              owner={upstream.owner}
+              repo={upstream.repo}
+              value={settings.workflowFiles}
+              onChange={(next) => onChange({ workflowFiles: next })}
+            />
+          </Box>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: ['1fr', '1fr 1fr'],
+              columnGap: 3,
+              rowGap: 3,
+            }}
+          >
+            <FormControl>
+              <FormControl.Label>Max attempts</FormControl.Label>
+              <TextInput
+                type="number"
+                min={1}
+                max={20}
+                value={settings.maxAttempts}
+                onChange={(e) => onChange({ maxAttempts: Number(e.target.value) || 1 })}
+                block
+              />
+              <FormControl.Caption>
+                Counts GitHub’s own attempt number, so it survives restarts. 1 means never
+                retry.
+              </FormControl.Caption>
+            </FormControl>
+
+            <FormControl>
+              <FormControl.Label>Ignore runs older than (hours)</FormControl.Label>
+              <TextInput
+                type="number"
+                min={1}
+                max={720}
+                value={settings.maxRunAgeHours}
+                onChange={(e) => onChange({ maxRunAgeHours: Number(e.target.value) || 1 })}
+                block
+              />
+              <FormControl.Caption>
+                GitHub itself refuses re-runs after 30 days (720 h).
+              </FormControl.Caption>
+            </FormControl>
+          </Box>
+
+          <FormControl sx={{ mt: 3 }}>
+            <Checkbox
+              checked={settings.stopOnIdenticalFailure}
+              onChange={(e) => onChange({ stopOnIdenticalFailure: e.target.checked })}
+            />
+            <FormControl.Label>Stop when the failure repeats identically</FormControl.Label>
+            <FormControl.Caption>
+              Compares the failing tests and steps against the previous attempt. An identical
+              failure means the break is real, so retrying it only wastes CI.
+            </FormControl.Caption>
+          </FormControl>
+        </>
+      )}
+    </Box>
+  );
+}
+
+/** How many recently-merged PRs to keep an eye on. */
+function MergedPrsSection({
+  settings,
+  onChange,
+}: {
+  settings: MergedPrsConfig;
+  onChange: (patch: Partial<MergedPrsConfig>) => void;
+}) {
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Merged pull requests
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        Keep recently-merged PRs in view so a failure that landed anyway is still
+        reviewable. Their checks are already finished, so each is fetched once and then
+        left alone.
+      </Text>
+      <FormControl sx={{ maxWidth: 220 }}>
+        <FormControl.Label>How many to track</FormControl.Label>
+        <TextInput
+          type="number"
+          min={0}
+          max={50}
+          value={settings.count}
+          onChange={(e) => onChange({ count: Number(e.target.value) || 0 })}
+          block
+        />
+        <FormControl.Caption>0 switches merged PRs off entirely.</FormControl.Caption>
+      </FormControl>
+    </Box>
+  );
+}
+
+/** Per-task model, effort and optional prompt override. */
+function AiTaskFields({
+  title,
+  blurb,
+  settings,
+  onChange,
+}: {
+  title: string;
+  blurb: string;
+  settings: AiTaskConfig;
+  onChange: (patch: Partial<AiTaskConfig>) => void;
+}) {
+  return (
+    <Box
+      sx={{
+        border: '1px solid',
+        borderColor: 'border.muted',
+        borderRadius: 2,
+        p: 3,
+        mb: 3,
+      }}
+    >
+      <Heading as="h3" sx={{ fontSize: 1, mb: 1 }}>
+        {title}
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mb: 3 }}>
+        {blurb}
+      </Text>
+      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 3 }}>
+        <FormControl sx={{ minWidth: 160 }}>
+          <FormControl.Label>Model</FormControl.Label>
+          <Select
+            value={settings.model}
+            onChange={(e) => onChange({ model: e.target.value as AiTaskConfig['model'] })}
+          >
+            {AI_MODELS.map((m) => (
+              <Select.Option key={m} value={m}>
+                {m}
+              </Select.Option>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl sx={{ minWidth: 160 }}>
+          <FormControl.Label>Reasoning effort</FormControl.Label>
+          <Select
+            value={settings.effort}
+            onChange={(e) => onChange({ effort: e.target.value as AiTaskConfig['effort'] })}
+          >
+            {AI_EFFORTS.map((v) => (
+              <Select.Option key={v} value={v}>
+                {v}
+              </Select.Option>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
+      <FormControl>
+        <FormControl.Label>Custom prompt</FormControl.Label>
+        <Textarea
+          rows={4}
+          resize="vertical"
+          block
+          placeholder="Leave blank to use the built-in prompt."
+          value={settings.prompt}
+          onChange={(e) => onChange({ prompt: e.target.value })}
+        />
+        <FormControl.Caption>
+          Replaces the built-in wording. The verified facts, the failing tests and the log are
+          still appended, and the required output sections are still asked for — so an override
+          can’t produce a reply the app fails to read.
+        </FormControl.Caption>
+      </FormControl>
+    </Box>
+  );
+}
+
+/**
+ * "Is the AI integration actually going to work?", answered on demand.
+ *
+ * The app already probes for the CLIs once per mount and quietly hides the feature when
+ * they are missing — which is the right default, but it leaves someone who *expected* the
+ * buttons with nothing to look at. This says which tool is missing and what to do about it.
+ *
+ * It reports presence, not health: `claude --version` succeeding does not prove it can reach
+ * the API. If the tools are found and analyses still fail, the answer is in the diagnostics
+ * log below, and the panel says so rather than implying a clean bill of health.
+ */
+function CheckAiIntegration() {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<ClaudeToolStatus | null>(null);
+
+  if (!claudeBridgeAvailable()) {
+    return (
+      <Flash sx={{ mb: 3, fontSize: 1 }}>
+        The AI features need the desktop app — a browser has no way to run your local CLIs.
+      </Flash>
+    );
+  }
+
+  const check = async () => {
+    setChecking(true);
+    try {
+      setResult(await probeClaudeTools());
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Box sx={{ mb: 4 }}>
+      <Button
+        leadingVisual={checking ? undefined : ChecklistIcon}
+        disabled={checking}
+        onClick={() => void check()}
+      >
+        {checking ? (
+          <>
+            <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+            Checking…
+          </>
+        ) : (
+          'Check AI integration'
+        )}
+      </Button>
+
+      {result && (
+        <Box
+          sx={{
+            mt: 3,
+            border: '1px solid',
+            borderColor: 'border.default',
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}
+        >
+          <CheckRow
+            state={result.claude ? 'ok' : 'bad'}
+            label="claude"
+            detail={
+              result.claudeVersion ??
+              'Not found on PATH. Install the Claude Code CLI, then reopen the app.'
+            }
+            note="Required — every AI feature runs through it."
+          />
+          <CheckRow
+            state={result.gh ? 'ok' : 'warn'}
+            label="gh"
+            detail={
+              result.ghVersion?.split('\n')[0] ??
+              'Not found on PATH. Install the GitHub CLI to enable the wider log.'
+            }
+            note="Optional — without it, analyses use the log Job Monitor fetched itself."
+          />
+          <CheckRow
+            state={!result.gh ? 'skip' : result.ghAuthenticated ? 'ok' : 'warn'}
+            label="gh auth"
+            detail={
+              !result.gh
+                ? 'Skipped — gh is not installed.'
+                : result.ghAuthenticated
+                  ? 'Signed in.'
+                  : 'Not signed in. Run `gh auth login` in a terminal.'
+            }
+            note="Needed for the whole-run log and for “Who broke it”."
+          />
+
+          <Box sx={{ px: 3, py: 2, bg: 'canvas.subtle', fontSize: 0, color: 'fg.muted' }}>
+            {result.claude
+              ? 'This checks that the tools are installed, not that they work — if an analysis still fails, the diagnostics log below says why.'
+              : 'Without claude, the AI controls stay hidden however this page is configured.'}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** One line of the check: state, what was checked, what was found, why it matters. */
+function CheckRow({
+  state,
+  label,
+  detail,
+  note,
+}: {
+  state: 'ok' | 'warn' | 'bad' | 'skip';
+  label: string;
+  detail: string;
+  note: string;
+}) {
+  const icon =
+    state === 'ok' ? CheckCircleFillIcon : state === 'bad' ? XCircleFillIcon : AlertFillIcon;
+  const colour =
+    state === 'ok'
+      ? 'success.fg'
+      : state === 'bad'
+        ? 'danger.fg'
+        : state === 'warn'
+          ? 'attention.fg'
+          : 'fg.subtle';
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        gap: 2,
+        px: 3,
+        py: 2,
+        borderBottom: '1px solid',
+        borderColor: 'border.muted',
+      }}
+    >
+      <Octicon icon={icon} size={16} sx={{ color: colour, mt: '2px', flexShrink: 0 }} />
+      <Box sx={{ minWidth: 0 }}>
+        <Text sx={{ fontFamily: 'mono', fontSize: 1, fontWeight: 'bold' }}>{label}</Text>
+        <Text as="div" sx={{ fontSize: 0, color: 'fg.default', wordBreak: 'break-word' }}>
+          {detail}
+        </Text>
+        <Text as="div" sx={{ fontSize: 0, color: 'fg.muted' }}>
+          {note}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * Where the diagnostics file lives, and how to get at it.
+ *
+ * Shown rather than merely written, because a log nobody can find is no better than no log
+ * — and the usual reason to want it is to hand it to someone else after something went
+ * wrong.
+ */
+function DiagnosticsSection() {
+  const [paths, setPaths] = useState<{ file: string; dir: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void diagnosticsLogPath().then((p) => live && setPaths(p));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!paths) return null;
+
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Diagnostics
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        The desktop app keeps a record of what it did — every analysis, the commands it ran, how each
+        one ended, and any request that failed. One JSON object per line, capped at 5 MB with one
+        previous file kept. It holds sizes and outcomes, never your token and never the contents of a
+        log.
+      </Text>
+      <Box
+        as="pre"
+        sx={{
+          m: 0,
+          mb: 2,
+          p: 2,
+          fontFamily: 'mono',
+          fontSize: 0,
+          bg: 'canvas.inset',
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'border.muted',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}
+      >
+        {paths.file}
+      </Box>
+      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+        <Button
+          leadingVisual={CopyIcon}
+          onClick={() => {
+            void navigator.clipboard?.writeText(paths.file);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy path'}
+        </Button>
+        <Button onClick={() => void revealDiagnosticsLog()}>Open folder</Button>
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * Local AI integration. One switch for the whole thing, because this is the only feature
+ * that sends anything outside GitHub.
+ */
+function AiSection({
+  settings,
+  onChange,
+}: {
+  settings: AiConfig;
+  onChange: (patch: Partial<AiConfig>) => void;
+}) {
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        AI integration
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        Runs the <code>claude</code> CLI already installed on this machine to explain a failure
+        and to rewrite its log. Desktop app only. This is the one thing Job Monitor sends
+        anywhere other than <code>api.github.com</code>, and it only ever runs when you click —
+        never in the background. Your GitHub token is never passed to it.
+      </Text>
+
+      <CheckAiIntegration />
+
+      <FormControl sx={{ mb: 3 }}>
+        <Checkbox
+          checked={settings.enabled}
+          onChange={(e) => onChange({ enabled: e.target.checked })}
+        />
+        <FormControl.Label>Enable AI integration</FormControl.Label>
+        <FormControl.Caption>
+          Off hides every AI control — the analysis buttons and the Claude log view — whether or
+          not <code>claude</code> is installed.
+        </FormControl.Caption>
+      </FormControl>
+
+      {settings.enabled && (
+        <>
+          <FormControl sx={{ mb: 4 }}>
+            <FormControl.Label>Additional instructions</FormControl.Label>
+            <Textarea
+              rows={3}
+              resize="vertical"
+              block
+              placeholder="e.g. Our Windows integration tests are known to be flaky — say so rather than blaming the diff."
+              value={settings.extraInstructions}
+              onChange={(e) => onChange({ extraInstructions: e.target.value })}
+            />
+            <FormControl.Caption>
+              Added to every request, for standing context the model can’t work out for itself.
+              Additive, so unlike a custom prompt it can’t break anything.
+            </FormControl.Caption>
+          </FormControl>
+
+          <AiTaskFields
+            title="Quick read"
+            blurb="A one-minute answer to “what failed”, from the log already fetched. One turn, no tools — so it wants a fast model, not a thorough one."
+            settings={settings.quick}
+            onChange={(patch) => onChange({ quick: { ...settings.quick, ...patch } })}
+          />
+          <AiTaskFields
+            title="Deep analysis"
+            blurb="Answers “why”. Downloads the run’s artifacts, reads the workflow file and the PR diff, then reasons across them — the one task that earns a stronger model."
+            settings={settings.deep}
+            onChange={(patch) => onChange({ deep: { ...settings.deep, ...patch } })}
+          />
+          <AiTaskFields
+            title="Readable log"
+            blurb="Rewrites the log: decisive lines first, noise cut, a short note where a line needs one. Mechanical work on a large input, so speed matters more than depth."
+            settings={settings.log}
+            onChange={(patch) => onChange({ log: { ...settings.log, ...patch } })}
+          />
+          <AiTaskFields
+            title="Who broke it"
+            blurb="Reads the branch’s run history and the diffs between runs to name the commit and its author. Judgement across many small facts, so it earns a strong model — but breadth rather than depth, so medium effort."
+            settings={settings.blame}
+            onChange={(patch) => onChange({ blame: { ...settings.blame, ...patch } })}
+          />
+        </>
+      )}
+    </Box>
+  );
+}
+
+/** How the Failures tab builds its Markdown bug reports. */
+function FailureReportsSection({
+  settings,
+  onChange,
+}: {
+  settings: FailureReportsConfig;
+  onChange: (patch: Partial<FailureReportsConfig>) => void;
+}) {
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Failure reports
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        The <strong>Failures</strong> tab writes a Markdown report per failing job, ready to
+        paste into Teams or a GitHub issue.
+      </Text>
+
+      <FormControl sx={{ mb: 3 }}>
+        <Checkbox
+          checked={settings.prefetchAnnotations}
+          onChange={(e) => onChange({ prefetchAnnotations: e.target.checked })}
+        />
+        <FormControl.Label>Load test names as failures appear</FormControl.Label>
+        <FormControl.Caption>
+          One extra request per failing job, so the list names the broken tests without you
+          opening anything. Switch off to fetch them only when you open a report.
+        </FormControl.Caption>
+      </FormControl>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: ['1fr', '1fr 1fr'],
+          columnGap: 3,
+          rowGap: 3,
+        }}
+      >
+        <FormControl>
+          <FormControl.Label>Log lines to include</FormControl.Label>
+          <TextInput
+            type="number"
+            min={0}
+            max={500}
+            value={settings.logTailLines}
+            onChange={(e) => onChange({ logTailLines: Number(e.target.value) || 0 })}
+            block
+          />
+          <FormControl.Caption>
+            Tail of the failing step’s log. 0 leaves the log out.
+          </FormControl.Caption>
+        </FormControl>
+
+        <FormControl>
+          <FormControl.Label>Default format</FormControl.Label>
+          <Select
+            value={settings.format}
+            onChange={(e) => onChange({ format: e.target.value as FailureReportsConfig['format'] })}
+            block
+          >
+            <Select.Option value="github">GitHub issue</Select.Option>
+            <Select.Option value="teams">Teams message</Select.Option>
+          </Select>
+          <FormControl.Caption>
+            Teams can’t render collapsible blocks, so its log is laid out flat.
+          </FormControl.Caption>
+        </FormControl>
+      </Box>
+    </Box>
+  );
+}
+
 export function SettingsPage() {
   const { config, setConfig } = useConfig();
   const [draft, setDraft] = useState<MonitorConfig>(() => clone(config));
@@ -871,7 +1533,9 @@ export function SettingsPage() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
-  const [tab, setTab] = useState<'repo' | 'polling' | 'flows' | 'token' | 'notifications' | 'updates'>('token');
+  const [tab, setTab] = useState<
+    'repo' | 'polling' | 'flows' | 'token' | 'prauto' | 'ai' | 'notifications' | 'updates'
+  >('token');
 
   const exportJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
 
@@ -955,6 +1619,8 @@ export function SettingsPage() {
     ['repo', 'Repository', GearIcon],
     ['polling', 'Polling', ClockIcon],
     ['flows', 'Flows', WorkflowIcon],
+    ['prauto', 'PR automation', SyncIcon],
+    ['ai', 'AI integration', SparkleFillIcon],
     ['notifications', 'Notifications', BellIcon],
   ];
   // Auto-update is a desktop-only feature, so its tab only appears there.
@@ -1144,6 +1810,33 @@ export function SettingsPage() {
           Import &amp; apply
         </Button>
       </Box>
+        </>
+      )}
+
+      {tab === 'prauto' && (
+        <>
+          <AutoRerunSection
+            upstream={draft.upstream}
+            settings={draft.prAutoRerun}
+            onChange={(patch) => updateNested('prAutoRerun', patch)}
+          />
+          <MergedPrsSection
+            settings={draft.mergedPrs}
+            onChange={(patch) => updateNested('mergedPrs', patch)}
+          />
+          <FailureReportsSection
+            settings={draft.failureReports}
+            onChange={(patch) => updateNested('failureReports', patch)}
+          />
+          {draftFooter}
+        </>
+      )}
+
+      {tab === 'ai' && (
+        <>
+          <AiSection settings={draft.ai} onChange={(patch) => updateNested('ai', patch)} />
+          {draftFooter}
+          <DiagnosticsSection />
         </>
       )}
 

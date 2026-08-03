@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Box, Button, Flash, Label, Octicon, Spinner, Text } from '@primer/react';
 import { AlertIcon, InfoIcon, LinkExternalIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { Annotation, OverallStatus, WorkflowRun } from '../api/types';
-import { ghGet } from '../api/githubClient';
-import { checkRunAnnotationsPath, checkRunIdFromUrl } from '../api/endpoints';
+import { checkRunIdFromUrl } from '../api/endpoints';
+import { fetchAnnotationsOrEmpty } from '../api/annotations';
 import { fetchAllRunJobs } from '../api/jobs';
 import { statusToOverall } from '../lib/status';
 import { StatusBadge } from './StatusBadge';
@@ -51,16 +51,13 @@ function SummaryBody({ owner, repo, items }: { owner: string; repo: string; item
     setAnnLoading(true);
     const targets = attention.filter((i) => i.checkRunId != null).slice(0, MAX_ANNOTATION_FETCH);
     Promise.all(
-      targets.map(async (t) => {
-        try {
-          const { data } = await ghGet<Annotation[]>(
-            checkRunAnnotationsPath(owner, repo, t.checkRunId as number),
-          );
-          return [String(t.id), data] as const;
-        } catch {
-          return [String(t.id), [] as Annotation[]] as const;
-        }
-      }),
+      targets.map(
+        async (t) =>
+          [
+            String(t.id),
+            await fetchAnnotationsOrEmpty(owner, repo, t.checkRunId as number),
+          ] as const,
+      ),
     ).then((pairs) => {
       if (!active) return;
       const map: Record<string, Annotation[]> = {};

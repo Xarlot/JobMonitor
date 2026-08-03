@@ -31,6 +31,7 @@ import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryD
 import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
 import { GroupStatusCounts } from './GroupStatusCounts';
 import { ArtifactsButton } from './ArtifactsButton';
+import { RerunFailedJobsButton } from './RerunFailedJobsButton';
 import { PromptDialog } from './PromptDialog';
 import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { runIdFromUrl } from '../api/endpoints';
@@ -180,7 +181,7 @@ export function Overview({
   } = useFlowGroups();
   const { refresh: refreshPatterns } = useResolvedFlows();
   const { owner: upOwner, repo: upRepo } = config.upstream;
-  const { prs, refreshAll, isFetchingList, isFetchingChecks } = useDashboard();
+  const { prs, refreshAll, isFetchingList, isFetchingChecks, invalidateChecks } = useDashboard();
   const flowStates = useFlowStates();
   const [dlg, setDlg] = useState<Dlg | null>(null);
   const [groupPrompt, setGroupPrompt] = useState<{ mode: 'create' | 'rename'; group?: FlowGroup } | null>(null);
@@ -400,6 +401,13 @@ export function Overview({
                       />
                     ) : null;
                   })()}
+                  <RerunFailedJobsButton
+                    owner={upOwner}
+                    repo={upRepo}
+                    headSha={entry.pr.head.sha}
+                    subtitle={`${entry.pr.title} · #${entry.pr.number}`}
+                    onRerun={() => invalidateChecks(entry.pr.number)}
+                  />
                   {iconBtn(LinkExternalIcon, 'Open PR on GitHub', () => open(entry.pr.html_url))}
                 </>
               }

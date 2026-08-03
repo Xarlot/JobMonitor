@@ -29,6 +29,7 @@ import {
 } from '../storage/secureTokenStore';
 import { clearEtagCache } from '../api/githubClient';
 import { clearLogCache } from '../api/logCache';
+import { recordTokenKind, resetTokenCapability, tokenKindFromValue } from '../api/tokenCapability';
 import { forgetSecret, recallSecret, rememberSecret } from '../storage/desktopSecret';
 import { setUpdateToken } from '../storage/desktopUpdates';
 import { isMockMode } from '../mocks/mockMode';
@@ -57,6 +58,17 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Unexpected error.';
 }
 
+/**
+ * Start capability determination over for whatever token is now in memory.
+ * Called on every token change — including replacing a token while already
+ * unlocked, where `status` doesn't change and an effect wouldn't fire. The
+ * scopes themselves arrive from the next response's headers.
+ */
+function syncCapabilityForCurrentToken(): void {
+  resetTokenCapability();
+  recordTokenKind(tokenKindFromValue(getTokenInMemory()));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isMockMode()) {
       setTokenInMemory('mock-token');
+      syncCapabilityForCurrentToken();
       setStatus('unlocked');
       return;
     }
@@ -80,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (active && remembered) {
         try {
           await unlockToken(remembered);
-          if (active) setStatus('unlocked');
+          if (active) {
+            syncCapabilityForCurrentToken();
+            setStatus('unlocked');
+          }
           return;
         } catch {
           await forgetSecret().catch(() => {}); // stale/invalid -> drop it
@@ -99,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await persistToken(token, passphrase);
       await syncRemembered(passphrase, remember);
       clearEtagCache();
+      syncCapabilityForCurrentToken();
       setStatus('unlocked');
     } catch (e) {
       setError(errorMessage(e));
@@ -111,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await unlockToken(passphrase);
       await syncRemembered(passphrase, remember);
+      syncCapabilityForCurrentToken();
       setStatus('unlocked');
     } catch (e) {
       setError(errorMessage(e));
@@ -124,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await forgetSecret();
     clearEtagCache();
     clearLogCache();
+    resetTokenCapability();
     setStatus('needs-setup');
   }, []);
 
@@ -131,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lockToken();
     clearEtagCache();
     clearLogCache();
+    resetTokenCapability();
     setStatus('locked');
   }, []);
 

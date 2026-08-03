@@ -24,6 +24,46 @@ contextBridge.exposeInMainWorld('desktop', {
     setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
     setToken: (token) => ipcRenderer.invoke('updates:setToken', token),
   },
+  // Local `gh` + `claude` CLIs, for triaging a failed job (see claudeBridge.cjs).
+  // Desktop only, and only ever on an explicit click — it sends log text to the
+  // user's own Claude CLI.
+  claude: {
+    probe: () => ipcRenderer.invoke('claude:probe'),
+    analyze: (payload) => ipcRenderer.invoke('claude:analyze', payload),
+    cancel: (requestId) => ipcRenderer.invoke('claude:cancel', requestId),
+    /** The whole run's failed-step log via `gh`, for the log viewer (see runLog). */
+    runLog: (payload) => ipcRenderer.invoke('claude:runLog', payload),
+    /**
+     * Phase + streaming-output events for the progress dialog. Returns an
+     * unsubscribe; only the payload is forwarded, never the IpcRendererEvent, so no
+     * privileged object crosses the bridge.
+     */
+    onProgress: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('claude:progress', handler);
+      return () => ipcRenderer.removeListener('claude:progress', handler);
+    },
+    /**
+     * Main-process diagnostics — the argv it spawned, exit codes, stderr — so what `gh`
+     * and `claude` actually did is readable in the renderer's DevTools console instead of
+     * only in the terminal that launched the app. Same shape as onProgress: payload only,
+     * returns an unsubscribe.
+     */
+    onLog: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('claude:log', handler);
+      return () => ipcRenderer.removeListener('claude:log', handler);
+    },
+  },
+  /**
+   * The on-disk diagnostics log (see electron/runLog.cjs). `write` is fire-and-forget so a
+   * log line can never delay or fail the thing it is describing.
+   */
+  logs: {
+    path: () => ipcRenderer.invoke('logs:path'),
+    reveal: () => ipcRenderer.invoke('logs:reveal'),
+    write: (scope, message, detail) => ipcRenderer.send('logs:write', { scope, message, detail }),
+  },
   // Save already-fetched bytes to the Downloads folder (see registerDownloadIpc).
   downloads: {
     save: (filename, data) => ipcRenderer.invoke('downloads:save', { filename, data }),

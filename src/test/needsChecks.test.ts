@@ -24,6 +24,7 @@ function entry(over: Partial<PrEntry>): PrEntry {
     combined: null,
     checksUpdatedAt: Date.now(),
     checksError: null,
+    watchUntil: null,
     ...over,
   };
 }
@@ -35,6 +36,42 @@ describe('needsChecks', () => {
 
   it('keeps watching when no checks have appeared yet (unknown)', () => {
     expect(needsChecks(entry({ overall: 'unknown', checkRuns: [] }))).toBe(true);
+  });
+
+  /**
+   * Plenty of PRs never get checks — docs-only changes, `paths` filters, checks
+   * aged out. Watching those forever costs two requests per cycle each, for good.
+   */
+  it('gives up on a PR that never grew any checks', () => {
+    const stale = entry({
+      overall: 'unknown',
+      checkRuns: [],
+      checksUpdatedAt: Date.now() - 30 * 60_000,
+    });
+    expect(needsChecks(stale)).toBe(false);
+  });
+
+  /**
+   * After a re-run request GitHub takes a few seconds to flip the checks back to
+   * queued, so a finished-looking PR must stay watched through the window —
+   * otherwise it re-reads as complete and freezes on the stale failure.
+   */
+  it('keeps polling a finished PR while its re-run watch window is open', () => {
+    const rerunning = entry({
+      overall: 'failure',
+      checkRuns: [check('completed'), check('completed')],
+      watchUntil: Date.now() + 60_000,
+    });
+    expect(needsChecks(rerunning)).toBe(true);
+  });
+
+  it('stops again once the watch window has expired', () => {
+    const done = entry({
+      overall: 'failure',
+      checkRuns: [check('completed')],
+      watchUntil: Date.now() - 1000,
+    });
+    expect(needsChecks(done)).toBe(false);
   });
 
   // Regression: a failed check sets the aggregate to `failure`, but other checks

@@ -42,6 +42,32 @@ export interface GitHubUser {
   html_url: string;
 }
 
+/**
+ * Minimal repository shape. `permissions` is only present on authenticated
+ * requests and reflects the **authenticated account's role**, not the token's
+ * own grants — see tokenCapability.ts for why that distinction matters.
+ */
+export interface Repository {
+  name: string;
+  full_name: string;
+  private: boolean;
+  permissions?: {
+    admin: boolean;
+    maintain?: boolean;
+    push: boolean;
+    triage?: boolean;
+    pull: boolean;
+  };
+}
+
+/** Present (non-null) on a pull request that is queued behind auto-merge. */
+export interface AutoMerge {
+  enabled_by: GitHubUser | null;
+  merge_method: 'merge' | 'squash' | 'rebase';
+  commit_title: string | null;
+  commit_message: string | null;
+}
+
 export interface PullRequest {
   id: number;
   number: number;
@@ -52,6 +78,10 @@ export interface PullRequest {
   user: GitHubUser | null;
   created_at: string;
   updated_at: string;
+  /** Non-null when auto-merge is armed. Returned by the list endpoint too. */
+  auto_merge: AutoMerge | null;
+  /** Set once the PR has been merged; null for open and closed-unmerged PRs. */
+  merged_at: string | null;
   head: {
     sha: string;
     ref: string;

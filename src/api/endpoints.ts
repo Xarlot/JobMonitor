@@ -9,11 +9,25 @@ const enc = encodeURIComponent;
 export function pullsPath(
   owner: string,
   repo: string,
-  opts: { head?: string | null } = {},
+  opts: { head?: string | null; state?: 'open' | 'closed'; perPage?: number } = {},
 ): string {
-  const params = new URLSearchParams({ state: 'open', per_page: '100', sort: 'updated', direction: 'desc' });
+  const params = new URLSearchParams({
+    state: opts.state ?? 'open',
+    per_page: String(opts.perPage ?? 100),
+    sort: 'updated',
+    direction: 'desc',
+  });
   if (opts.head) params.set('head', opts.head);
   return `/repos/${enc(owner)}/${enc(repo)}/pulls?${params.toString()}`;
+}
+
+/**
+ * The repository itself. Read for `permissions.push` — whether the authenticated
+ * account has the Write role, which re-running workflows requires on top of the
+ * token's own scope.
+ */
+export function repoPath(owner: string, repo: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}`;
 }
 
 export function checkRunsPath(owner: string, repo: string, ref: string): string {
@@ -24,8 +38,15 @@ export function combinedStatusPath(owner: string, repo: string, ref: string): st
   return `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(ref)}/status`;
 }
 
-export function workflowsPath(owner: string, repo: string): string {
-  return `/repos/${enc(owner)}/${enc(repo)}/actions/workflows?per_page=100`;
+/**
+ * One page of the repo's workflow list (100 is GitHub's cap). `page` is left out
+ * of the query when 1, so the first page's path — which doubles as its ETag cache
+ * key — stays byte-identical to what earlier versions requested.
+ */
+export function workflowsPath(owner: string, repo: string, page = 1): string {
+  const params = new URLSearchParams({ per_page: '100' });
+  if (page > 1) params.set('page', String(page));
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/workflows?${params.toString()}`;
 }
 
 export function workflowRunsPath(
@@ -43,16 +64,36 @@ export function workflowRunsPath(
 /**
  * Repo-wide workflow runs across all workflows, most-recent first. `created`
  * accepts a GitHub date filter (e.g. ">=2024-01-01T00:00:00Z") to bound the window.
+ *
+ * `headSha` narrows to one commit, which is how a pull request is mapped to the
+ * workflow runs it triggered: a single request yields every run for the PR head,
+ * each with its `path` (workflow file), `run_attempt`, `status` and `conclusion`.
+ * Options left unset don't appear in the query, so existing callers keep their
+ * exact path — which doubles as the ETag cache key.
  */
 export function repoRunsPath(
   owner: string,
   repo: string,
-  opts: { created?: string; perPage?: number; page?: number } = {},
+  opts: { created?: string; perPage?: number; page?: number; headSha?: string } = {},
 ): string {
   const params = new URLSearchParams({ per_page: String(opts.perPage ?? 100) });
   if (opts.created) params.set('created', opts.created);
   if (opts.page && opts.page > 1) params.set('page', String(opts.page));
+  if (opts.headSha) params.set('head_sha', opts.headSha);
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs?${params.toString()}`;
+}
+
+/**
+ * POST target: re-run only the failed jobs (and their dependents) of a run.
+ * Answers 201 with an empty body. Requires Actions write — see tokenCapability.
+ */
+export function rerunFailedJobsPath(owner: string, repo: string, runId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/rerun-failed-jobs`;
+}
+
+/** A single workflow run — the authoritative source of its workflow file + attempt. */
+export function singleRunPath(owner: string, repo: string, runId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}`;
 }
 
 export function runJobsPath(owner: string, repo: string, runId: number, page = 1): string {

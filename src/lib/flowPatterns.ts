@@ -84,10 +84,11 @@ function watchable(w: Workflow): boolean {
 }
 
 /**
- * Workflows matching the pattern, sorted by display name and capped at
- * `maxMatches` (each match polls on its own, so the cap is a rate-limit guard).
+ * Every workflow the pattern matches, sorted by display name and *not* capped —
+ * for telling the user how many workflows their regex really hits, which a capped
+ * count cannot do (it tops out at the cap and looks like the true total).
  */
-export function matchWorkflows(workflows: Workflow[], match: FlowMatch): Workflow[] {
+export function matchWorkflowsUncapped(workflows: Workflow[], match: FlowMatch): Workflow[] {
   const { re } = compileFlowPattern(match);
   if (!re) return [];
   const hits = workflows.filter((w) => {
@@ -102,7 +103,15 @@ export function matchWorkflows(workflows: Workflow[], match: FlowMatch): Workflo
       a.name.localeCompare(b.name) ||
       workflowBasename(a.path).localeCompare(workflowBasename(b.path)),
   );
-  return hits.slice(0, match.maxMatches);
+  return hits;
+}
+
+/**
+ * The matches a pattern flow actually expands into: as above, capped at
+ * `maxMatches` (each match polls on its own, so the cap is a rate-limit guard).
+ */
+export function matchWorkflows(workflows: Workflow[], match: FlowMatch): Workflow[] {
+  return matchWorkflowsUncapped(workflows, match).slice(0, match.maxMatches);
 }
 
 function derivedFlow(flow: Flow, w: Workflow): ResolvedFlow {

@@ -2,8 +2,11 @@
 
 **Job Monitor** is a dashboard for keeping an eye on your GitHub Actions — your pull‑request
 checks and your workflow “flows” — in one place. It reads everything straight from GitHub with
-your own read‑only token; there’s no server, no account, nothing leaves your machine except
-requests to `api.github.com`.
+your own token; there’s no server, no account, nothing leaves your machine except requests to
+`api.github.com`.
+
+It only ever *reads*, with one opt‑in exception: it can **re‑run the failed jobs** of a run — on
+demand, or automatically for pull requests that are waiting on auto‑merge.
 
 Use it in the **browser** (a static web page) or as a **desktop app** (Windows / macOS / Linux)
 that lives in the tray and pops a notification when something finishes.
@@ -30,8 +33,15 @@ that lives in the tray and pops a notification when something finishes.
 - **Logs, summaries and timelines** for any job, right inside the app.
 - **Artifact downloads** — grab a run's artifacts as a single `.zip` or bundle several into one
   (in the desktop app, via a downloads panel with progress and a Save button).
-- **Desktop notifications** when a PR’s checks or a flow run finish.
-- Everything is **read‑only** — Job Monitor never triggers or changes anything on GitHub.
+- **Desktop notifications** when a PR’s checks or a flow run finish — and, optionally, when jobs
+  get re‑run for you.
+- **A Failures list** with a ready‑to‑paste bug report for every failing job — across open and
+  recently‑merged PRs *and* your flows — in collapsible groups.
+- **Auto‑rerun of failed jobs** for PRs waiting on auto‑merge — opt‑in, limited to workflows you
+  name, and the only thing Job Monitor ever changes on GitHub.
+- **Explain with Claude** (desktop app) — turn a failed job's log into a readable problem statement
+  and a suggested fix, using the `gh` and `claude` CLIs already on your machine. Two depths: a
+  **quick read** in about a minute, or a **deep analysis** that goes and investigates.
 
 ---
 
@@ -65,8 +75,8 @@ keep checking in the background, and show native notifications.
 
 When you first open Job Monitor you’ll be taken to **Settings** (it opens automatically until a
 token is set). You can reopen it any time from the **gear icon in the top‑right corner** — it opens
-as a full‑screen page with tabs for **Token & login**, **Repository**, **Polling**, **Flows** and
-**Notifications** (plus **Updates** in the desktop app). Three things to do:
+as a full‑screen page with tabs for **Token & login**, **Repository**, **Polling**, **Flows**,
+**PR automation** and **Notifications** (plus **Updates** in the desktop app). Three things to do:
 
 ### 1. Add your GitHub token (Settings → **Token & login**)
 
@@ -74,6 +84,13 @@ Job Monitor needs a personal access token to read your data. Create a
 [**classic token**](https://github.com/settings/tokens/new?scopes=repo&description=Job%20Monitor)
 with the **`repo`** scope (or `public_repo` if you only watch public repositories), paste it in,
 and choose a **passphrase**.
+
+Next to “loaded in memory” you’ll see what the token can do — for example *classic · `repo` — can
+re‑run failed jobs*, or *read‑only — re‑run features hidden*. If it says the re‑run features are
+hidden, that’s why the **PR automation** tab has no auto‑rerun controls: the re‑run feature only
+appears for a **classic `repo` token on a repository you can write to**. A fine‑grained token never
+gets it, even with `actions: write` — GitHub gives a browser no way to check that, so Job Monitor
+assumes it can’t rather than showing you a button that fails.
 
 - The token is **encrypted** with your passphrase and stored only in this browser; the plain token
   lives only in memory and is sent only to `api.github.com`.
@@ -151,7 +168,188 @@ Every open PR from your fork into upstream, with an overall status. Expand a PR 
 check‑runs and commit statuses. Filter by **All / Active / Failed / Success**, and use **Compact**
 to hide the green noise and show only what needs attention.
 
+If your token can write, each PR also gets a **re‑run** button (the circular arrows). It lists the
+failed workflow runs for that commit and lets you re‑run any one’s failed jobs — no need to go to
+GitHub and find the run yourself. The PR’s checks start being watched again straight away, so you
+see it go back to running.
+
 ![Pull requests](docs/screenshots/pull-requests.png)
+
+### Failures
+
+The **Failures** tab collects every failing job across your open pull requests *and* the recently
+merged ones, so a break is visible the moment a check reports it — the tab title carries a count.
+It refreshes on the normal polling cycle; you don’t have to go hunting through PRs.
+
+Pick a failure and you get a **Markdown report** for it, one per job (so one per matrix worker):
+the PR and branch, the workflow and run, the step that failed, the **failing tests** with
+`file:line` and message, and a tail of that step’s log. Switch between **GitHub** and **Teams**
+formatting (Teams can’t render collapsible blocks, so its log is laid out flat), then hit
+**Copy markdown** and paste it into an issue or a chat.
+
+Tick several failures to **copy them all at once**, separated by rules. Each report ends with a
+short **fingerprint** of the failure, so you can tell at a glance whether two reports are about the
+same break — it’s the same value the auto‑rerun uses to decide a failure is deterministic.
+
+The test names are loaded as failures appear, so you don’t have to click anything first. If you’d
+rather not spend the extra requests, switch that off under **PR automation → Failure reports**.
+
+![Failures](docs/screenshots/failures.png)
+
+Each row shows what already exists for it — ⚡ a quick read, ✦ a deep analysis, 📄 a rewritten log,
+⎇ a traced verdict — so you can see which failures have been looked at without opening them.
+
+![Settings — AI integration](docs/screenshots/settings-ai.png)
+
+AI is configured under **Settings → AI integration**: one switch for the whole feature, then a model,
+a reasoning effort and an optional custom prompt for each of the three tasks, plus **additional
+instructions** appended to every request for standing context ("our Windows integration tests are
+flaky"). A custom prompt replaces the built-in wording but not the structure — the verified facts, the
+failing tests, the log and the required output sections are still added — so it can't produce something
+the app fails to read. Turning the switch off hides every AI control; fetching the whole run's log with
+`gh` is not an AI feature and keeps working.
+
+**Check AI integration** on that page reports whether `claude` and `gh` are on PATH, their versions and
+whether `gh` is signed in — with what each is for and what to do when it's missing. `claude` is
+required; `gh` is optional, and without it an analysis uses the log Job Monitor fetched itself.
+
+When something goes wrong, the desktop app keeps a record of it: **Settings → AI integration →
+Diagnostics** shows the path to a log of every analysis — the commands run, how long each took, and how
+it ended. It holds sizes and outcomes, never your token and never the contents of a CI log.
+
+### Reading the log
+
+Each failure has a **Report** view (what you paste into a bug) and a **Log** view (what you read to
+understand it), and the log comes three ways:
+
+- **Job log** — the failing job's own output. No `gh` needed and usually already fetched, so it's the
+  default.
+- **Whole run** — every failed step of the run, via your local `gh`. This is the one that shows an
+  **upstream** job's output, which matters more often than it sounds: a job like `publish-test-summary`
+  exits 1 only because a job it `needs:` failed, so its own log can never tell you what broke. Fetched
+  when you ask for it and kept for a week.
+- **Claude** — the same log rewritten: the decisive lines first, the noise cut (it says how many lines
+  it dropped), a short note where a line needs one, and a closing list of what the log *doesn't* show.
+
+![The log, coloured](docs/screenshots/failures-log.png)
+
+The first two are **coloured** — workflow commands, the command each step ran, failing tests, stack
+frames, build sections, success lines — and that colouring is local, so it's instant and costs nothing.
+Prose that merely mentions "error" is left plain on purpose: a log where everything is tinted is no
+easier to read than one with no colour, and it teaches you to ignore it. Markdown renders properly in
+this pane too, and a log quoted inside Claude's explanation is coloured like the log.
+
+![Claude's rewrite of the log](docs/screenshots/failures-claude-log.png)
+
+### Explain with Claude (desktop app)
+
+If you're running the **desktop app** with the
+[`claude`](https://docs.claude.com/en/docs/claude-code/overview) CLI installed, a failure gets two
+buttons next to *Copy markdown*. Having [`gh`](https://cli.github.com/) installed and signed in makes
+the deep one better but isn't required — see below.
+
+**Two depths, because the two questions are different.** Triaging a red board, you mostly want to know
+*which* failures are yours; occasionally you want to know *why* one of them broke. One button answered
+both badly — either too slow to run five times, or too shallow to be worth running once.
+
+| | **Quick read** | **Deep analysis** | **Who broke it** |
+|---|---|---|---|
+| Answers | what failed | why it failed | **which commit, and whose** |
+| Time | about a minute | a few minutes | a few minutes |
+| Model | Sonnet, medium | Opus, high | Opus, medium |
+| Reads | the log already fetched | the run's log, artifacts, workflow, diff | the branch's run history |
+| Tools | none | read-only `gh` and file access | read-only `gh` and file access |
+
+![Who broke it](docs/screenshots/who-broke-it.png)
+
+**Who broke it** names the commit and its author. Several commits usually land between two runs, so it
+weighs them by what each one changed against the failing test — the code under test, the test's own
+fixtures, something the failure text names, a dependency bump — and gives each a likelihood with the
+evidence behind it. Arrival order counts for little, and under 40% it says it doesn't know rather than
+picking the least-bad guess.
+
+It rules out a flaky test and then infrastructure *before* naming anyone. On a
+branch written only through a merge gate, the code has already passed the workflow that is now failing,
+so both are likelier than a bad commit — and blaming a developer for someone else's flake is the mistake
+worth designing against. It also builds flaky-test evidence by scanning failures of
+`check-pull-request.yml` on `main` and the release branches, and reports them as a table of test,
+failure count, branches and **links to the runs they failed in**.
+
+The quick read is told it has a **one-minute budget** and must answer from the log in front of it —
+no fetching, no asking for more. If the log doesn't say what broke, it says exactly that and names the
+one thing worth looking at next, which is a useful answer in a minute and the honest one.
+
+The deep analysis follows a **skill** — `.claude/skills/failure-triage/` — rather than an ad-hoc prompt.
+It stays on the job you asked about instead of surveying the pull request, opens a neighbouring job only
+when this one structurally can't answer (an aggregator that failed because a `needs:` job did) and says
+so when it does, retries a failed artifact download once before falling back, and aims to answer in two
+to four tool calls rather than reading everything first. The same skill is checked into the repo, so you
+can run the identical procedure by hand in a `claude` session.
+
+The deep analysis **investigates**. A workflow's annotation for a failing test
+suite usually says little more than "the step failed", so on its own a model can only reply that there
+isn't enough evidence and list what it would need. It has the means to fetch all of that, so it's told
+to: grep the raw log for the runner's own `FAILED` lines and stack traces, **download the run's
+artifacts** and read the JUnit XML or HTML test report for the failing test names and assertion diffs,
+read the workflow file to learn the exact command and how a shard picks its subset, and read the PR's
+diff to tell "a test this PR touches" from an unrelated regression.
+
+The progress dialog shows that happening: the phase it's on, the log size fetched, an elapsed counter,
+**what Claude is doing** (each `gh`, `grep` and file read as it happens) and **what it's writing** as
+the answer streams in, one sentence per line and scrolling to follow the newest — scroll up and it
+stops following, so it never yanks the view away mid-read. **Stop** actually kills the local processes
+rather than just hiding the dialog.
+
+Under the hood it prefers the **full** failed‑step log for the whole run, via
+`gh run view --log-failed` — far more than the tail the report shows. If `gh` isn't there, isn't
+signed in, or fails (its log download aborts on large runs with a
+`stream error: … CANCEL; received from peer`), it falls back to the failing job's own log, which
+Job Monitor has already fetched through the GitHub API. The dialog says which log was used, so a
+narrower analysis is never silent. Then your local `claude` reads it, and the report changes shape:
+
+1. **The problem, in prose, at the top** — what broke and where, quoting the decisive log lines, so
+   whoever reads the bug report understands it before meeting any metadata. If the log points at
+   infrastructure (a dead runner, a registry timeout, a rate limit) rather than the code, it says so,
+   because that changes who should pick it up.
+2. **The verified links and facts**, exactly as before — the PR or flow, the workflow, the run, the
+   job log, the failing tests.
+3. **The suggested fix, last and collapsed**, labelled as generated. It's a suggestion sitting next
+   to evidence, and the layout keeps that distinction obvious.
+
+Only the prose is written by Claude. Every link, SHA, workflow name and test name in the report comes
+from data Job Monitor already fetched, and the prompt tells the model in as many words not to invent
+any — a bug report with a confident wrong link is worse than one with no link.
+
+Both analyses feed the report, and the deep one wins when you've run both. The buttons appear when
+`claude` is available; if they're missing, check `claude --version`. A finished analysis is marked ✓
+and reopening it costs nothing — **Re‑analyse** is there when you do want a fresh one.
+
+Each failure row shows what already exists for it — ⚡ a quick read, ✦ a deep analysis, 📄 a rewritten
+log — so you can see which ones have been looked at without opening them. Pull requests and flows carry
+a **✦ analysed** badge when one of their failures already has a stored
+result, so a week-old red board shows at a glance which parts have been looked at. The quick read, deep
+analysis and log rewrite are independent — each shows a spinner in its own button, and all three can run
+at once.
+
+Analyses are **kept for a week**, so reopening a failure you looked at yesterday doesn't spend another
+call. That's safe because the cache key includes the job id, and re-running failed jobs mints new
+ones: a new attempt can never be shown a previous attempt's verdict — it simply has none yet. The two
+depths are stored separately, so a quick read never overwrites a deep one.
+
+**What it's allowed to do.** Read-only, and narrowly: read and search files in a throwaway scratch
+directory, and run a fixed set of commands — `gh run view`, `gh run download`, `gh api`, `gh pr
+view/diff`, plus `unzip`/`grep`/`cat` and friends for looking inside what it downloaded. It has no
+write or edit tool and no general shell, it can't touch your working copy, and it never sees your
+GitHub token (`gh` uses its own). Downloads land in a temp directory that's deleted when the run ends.
+
+> This is the one feature that sends data outside GitHub — see [Privacy](#privacy).
+
+### Merged pull requests
+
+A failure that landed anyway is easy to lose track of once the PR closes, so Job Monitor keeps the
+last few **merged** PRs in view (10 by default; set it to 0 to switch this off under
+**PR automation → Merged pull requests**). Their checks are already finished, so they’re fetched
+once and then left alone.
 
 ### Flows
 
@@ -240,13 +438,52 @@ browser handles the download as usual.
 
 ![Download artifacts](docs/screenshots/artifacts.png)
 
+### Auto‑rerun failed jobs (Settings → **PR automation**)
+
+Flaky CI blocking an auto‑merge PR is pure waiting: somebody has to notice the failure and click
+“Re‑run failed jobs”. Job Monitor sees it first, so it can do the clicking.
+
+Turn on **Re‑run failed jobs automatically** and name the workflows it applies to. The field is a
+combobox over your repo’s actual workflows — start typing and pick one, so you can’t arm a
+misspelled file name (you *can* still type one by hand for a workflow that hasn’t run yet).
+
+![Settings — auto-rerun](docs/screenshots/settings-prauto.png)
+
+A run is only re‑run when **all** of this holds:
+
+- the pull request has **auto‑merge enabled** — someone has already said “land this when it’s green”;
+- the run’s workflow file is one you listed;
+- the run has **finished**, and finished as **failed** or **timed out**. A **cancelled** run is left
+  alone (a cancel is normally deliberate), and so is one waiting on a human approval.
+
+Two brakes stop a genuinely broken PR from burning CI forever:
+
+- **Max attempts** (10 by default) counts GitHub’s own attempt number, so the limit holds across
+  restarts and even if you re‑run something by hand.
+- **Stop when the failure repeats identically** (on by default) compares the failing tests and steps
+  against the previous attempt. The same failure twice means the break is real, so retrying it is
+  just waste.
+
+Unlike the notifications, this doesn’t only react to failures that happen while you watch: a run
+that failed while the app was closed is picked up when you next open it. Job Monitor remembers what
+it has already asked for, so reopening the app never re‑runs the same thing twice.
+
+What it has done shows up at the top of the **Failures** tab, with the run linked, so a re‑run is
+never silent.
+
+> The re‑run controls are **hidden** unless your token is verified as able to use them — see
+> [First‑time setup](#1-add-your-github-token-settings--token--login).
+
 ### Notifications (Settings → **Notifications**)
 
-Opt in — separately for **PRs** and **Flows** — to get a desktop notification the moment a tracked
-PR’s checks finish or a flow run completes. You’ll only be notified about things that finish while
-you’re watching, never about items that were already done.
+Opt in — separately for **PRs**, **Flows** and **auto‑reruns** — to get a desktop notification the
+moment a tracked PR’s checks finish, a flow run completes, or failed jobs get re‑run for you. For
+PRs and flows you’ll only be notified about things that finish while you’re watching, never about
+items that were already done. The auto‑rerun notification also fires when a re‑run was **refused**,
+so a silent failure can’t slip past.
 
-In the **desktop app**, notifications keep working even when the window is hidden in the tray.
+In the **desktop app**, notifications keep working even when the window is hidden in the tray — and
+so does the auto‑rerun, at the slower background polling rate.
 
 ---
 
@@ -261,9 +498,15 @@ In the **desktop app**, notifications keep working even when the window is hidde
 
 ## Privacy
 
-Job Monitor is **read‑only** and **backend‑less**. Your token is encrypted locally, and the app
-talks only to `api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no
-third‑party servers.
+Job Monitor is **backend‑less**. Your token is encrypted locally, and the app talks only to
+`api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no third‑party
+servers.
+
+Every request is a read, with exactly one exception: **re‑running failed jobs**. That feature is off
+until you switch it on, applies only to workflow files you list by name, and is hidden entirely
+unless your token is verified as able to do it. Job Monitor cannot start a workflow, cancel a run,
+push code, comment, merge, or change any setting on GitHub — the re‑run endpoint is the only write
+in the codebase.
 
 ---
 
