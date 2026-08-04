@@ -43,11 +43,14 @@ export const MOCK_CONFIG: MonitorConfig = {
     enabled: true,
     workflowFiles: ['check-pull-request-java.yml'],
     maxAttempts: 10,
-    stopOnIdenticalFailure: true,
+    maxIdenticalFailures: 5,
     maxRunAgeHours: 72,
   },
   mergedPrs: { count: 10 },
   failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
+  autoMerge: { mergeMethod: 'squash' },
+  // On in mock mode: the tab is one of the things worth being able to look at offline.
+  diagnostics: { showLogTab: true, tailKB: 512, followSeconds: 3 },
   ai: {
     enabled: true,
     extraInstructions: '',
@@ -183,6 +186,7 @@ const AUTO_MERGE: PullRequest['auto_merge'] = {
 export const MOCK_PULLS: PullRequest[] = [
   {
     id: 1,
+    node_id: 'PR_kwDOmock1',
     number: 37977,
     title: 'visual tests refactoring',
     html_url: `https://github.com/${SLUG}/pull/37977`,
@@ -200,6 +204,7 @@ export const MOCK_PULLS: PullRequest[] = [
   },
   {
     id: 2,
+    node_id: 'PR_kwDOmock2',
     number: 37663,
     title: 'space handling',
     html_url: `https://github.com/${SLUG}/pull/37663`,
@@ -215,6 +220,7 @@ export const MOCK_PULLS: PullRequest[] = [
   },
   {
     id: 3,
+    node_id: 'PR_kwDOmock3',
     number: 37901,
     title: 'JBR: Implement ComboBox Support in Report Designer Property Grid',
     html_url: `https://github.com/${SLUG}/pull/37901`,
@@ -425,6 +431,7 @@ export function mockSingleRun(runId: number): WorkflowRun {
 export const MOCK_MERGED_PULLS: PullRequest[] = [
   {
     id: 11,
+    node_id: 'PR_kwDOmock11',
     number: 37820,
     title: 'fix font metrics on Linux',
     html_url: `https://github.com/${SLUG}/pull/37820`,
@@ -440,6 +447,7 @@ export const MOCK_MERGED_PULLS: PullRequest[] = [
   },
   {
     id: 12,
+    node_id: 'PR_kwDOmock12',
     number: 37744,
     title: 'bump toolchain to 21',
     html_url: `https://github.com/${SLUG}/pull/37744`,
@@ -456,6 +464,7 @@ export const MOCK_MERGED_PULLS: PullRequest[] = [
   // Closed without merging — must be filtered out by `merged_at`.
   {
     id: 13,
+    node_id: 'PR_kwDOmock13',
     number: 37700,
     title: 'abandoned experiment',
     html_url: `https://github.com/${SLUG}/pull/37700`,

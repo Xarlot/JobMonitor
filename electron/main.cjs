@@ -30,7 +30,7 @@ const fs = require('node:fs');
 const { autoUpdater } = require('electron-updater');
 const windowState = require('./windowState.cjs');
 const { registerClaudeIpc } = require('./claudeBridge.cjs');
-const { initRunLog, logEvent, runLogDir, runLogPath } = require('./runLog.cjs');
+const { initRunLog, logEvent, readRunLogTail, runLogDir, runLogPath } = require('./runLog.cjs');
 
 const APP_ID = 'com.devexpress.javajobmonitor'; // must match electron-builder appId
 const DIST = path.join(__dirname, '..', 'dist');
@@ -40,6 +40,8 @@ const isDev = !app.isPackaged;
 // unset the app loads the bundled build over app://.
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const REPO_URL = 'https://github.com/DevExpress/JavaJobMonitor';
+/** Tail handed to the in-app log viewer when it doesn't ask for a specific size. */
+const DEFAULT_LOG_TAIL_BYTES = 512 * 1024;
 // The app's own repo (for auto-update). It's an internal/private repo, so the
 // updater must authenticate with the user's token (see configureUpdaterFeed).
 const UPDATE_OWNER = 'DevExpress';
@@ -371,6 +373,8 @@ function registerLogIpc() {
     if (typeof message !== 'string') return;
     logEvent(typeof scope === 'string' ? `renderer:${scope}` : 'renderer', message, detail);
   });
+  // Read-only, and only ever the app's own log file — the path is not a parameter.
+  ipcMain.handle('logs:read', (_e, maxBytes) => readRunLogTail(maxBytes ?? DEFAULT_LOG_TAIL_BYTES));
 }
 
 function registerDownloadIpc() {

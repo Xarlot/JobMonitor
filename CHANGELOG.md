@@ -4,6 +4,79 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [2.1.0]
+
+**The auto-rerun engine stops being a black box.** It used to work out a precise reason for every run it
+passed over and then throw it away, so a pull request that quietly stopped being retried looked
+identical to one with nothing to do. Every decision is now recorded — including the decisions *not* to
+act — and readable inside the app. Three real bugs were hiding behind that silence, and all three are
+fixed here. Pull requests also gain a **merge** button that clears the description and hands the PR to
+GitHub to merge once its checks pass.
+
+### Added
+- **A Diagnostics tab** (desktop, opt-in under **Settings → Diagnostics**) that reads Job Monitor's own
+  log inside the app: the tail of the file, newest first, following live. Filter by scope, or search —
+  the search covers each record's attached details, so a run id, PR number or failure fingerprint finds
+  its own lines even when the sentence never mentions them. Every line expands into the facts behind it.
+  It reads a bounded tail rather than the whole 5 MB, says so (`the last 512 KB of 4.1 MB`) instead of
+  implying it has everything, and shows a line that failed to parse rather than leaving a silent gap
+  where a crash mid-write happened. Off by default: it is a window on the app rather than on the work.
+- **Every auto-rerun decision is logged**, with the facts needed to act on it — the age against the
+  configured window for a run judged too old, the fingerprint and the streak for a repeated failure, the
+  record that settled it for one already handled. The engine's own state is logged whenever it changes,
+  since `off`, `no-permission` and `no-workflows` stop the poll entirely and a tick-side log would go
+  quiet exactly when someone asks why nothing happened. A verdict is written when it *changes* rather
+  than on every poll, so a size-capped file cannot fill with one repeated sentence.
+- **An arm auto-merge button** on every open pull request. It clears the PR's description and asks GitHub
+  to merge as soon as the required checks pass. It confirms first and shows you the description it is
+  about to delete, because that text cannot be recovered — a pull request body has no edit history for
+  this app or the API to restore from. Clearing happens *before* arming, deliberately: a PR that is
+  already green merges within seconds of being armed, so clearing afterwards would race the merge and
+  lose. Pick the strategy — squash, merge commit or rebase — under **Settings → PR automation**.
+- **An `auto-merge` badge** on pull requests that already have it armed, naming the strategy and who
+  armed it. It is also how you tell at a glance which PRs the auto-rerun engine will act on at all,
+  which the list previously gave no way to see.
+- **Auto-rerun activity now shows on the pull request itself**, as a `re-run ×3` badge with the detail in
+  a hint: every attempt with its workflow and time, and, if the engine has since gone idle, why.
+
+### Changed
+- **A second write exists.** Arming auto-merge writes twice — `PATCH .../pulls/{n}` to clear the
+  description, and the `enablePullRequestAutoMerge` GraphQL mutation, which has no REST equivalent and is
+  the only GraphQL call in the app. Both go through the same gate as re-running jobs: every write in the
+  codebase funnels through one function that refuses to run unless the token has been proven able, and
+  the controls stay hidden otherwise. Nothing else is written — no dispatching, cancelling, pushing,
+  commenting, or merging a PR directly.
+- **"Stop when the failure repeats identically" is now a count**, not a switch: *Allow the same failure
+  this many times*, **5 by default**. The old behaviour was this same rule with the count fixed at 2 —
+  which gave a flaky test that fails identically twice and passes on the third go no chance. A
+  *different* failure in between starts the count over, and `0` switches the brake off.
+- **Auto-rerun activity moved out of the Failures tab.** One shared list there put it in the wrong place
+  twice: you had to be on that tab, and with more than one PR being retried it said nothing about which.
+- **The diagnostics log path moved into its own Settings tab**, out of **AI integration** — the log
+  covers the whole app, not just the analyses.
+
+### Fixed
+- **A pull request being actively retried would silently stop being retried.** The "ignore runs older
+  than" window was measured from the run's `created_at`, which GitHub never moves — so a run re-run for
+  three days still reported itself as three days old and fell out of a 72-hour window while its last
+  attempt was minutes ago. It is now measured from `run_started_at`, which resets with each attempt.
+  GitHub's own refusal to re-run anything more than 30 days after its first run is enforced separately,
+  from `created_at`, because that is the clock GitHub uses; conflating the two is what caused this.
+- **The engine reported "this attempt was already re-run" about attempts it had never re-run**, and the
+  number of re-runs could not be read from its own records. A decision *not* to re-run was filed among
+  the re-run requests, which both overstated the count by one and hid the real reason behind a false one.
+  Requests and declined verdicts are now separate, the stored verdict is reported as itself, and existing
+  records are migrated on read so nothing has to be cleared.
+- **The identical-failure limit lapsed whenever a failure could not be fingerprinted.** An uncomputable
+  fingerprint was treated as permission to proceed, so an intermittently failing lookup let a run climb
+  to the attempt ceiling on a failure nobody had ever compared — observed doing exactly that. Now: if it
+  can't check, it doesn't re-run, and it says why, on the PR and in the log. It retries on the next poll.
+- **A stored "gave up" verdict is reconsidered when the limit is raised.** A stopped run's attempt number
+  never changes again, so a verdict cached under a tighter limit would otherwise stand forever and make
+  the new setting look inert.
+- **A pull request whose runs couldn't be listed no longer looks like one with nothing to do** — that
+  failure was swallowed silently, and the two want different fixes.
+
 ## [2.0.0]
 
 **Failures stop being something you go looking for.** They get collected into one live list, written up

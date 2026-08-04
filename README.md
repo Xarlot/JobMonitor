@@ -5,8 +5,10 @@ checks and your workflow “flows” — in one place. It reads everything strai
 your own token; there’s no server, no account, nothing leaves your machine except requests to
 `api.github.com`.
 
-It only ever *reads*, with one opt‑in exception: it can **re‑run the failed jobs** of a run — on
-demand, or automatically for pull requests that are waiting on auto‑merge.
+It reads, with two exceptions you have to ask for: it can **re‑run the failed jobs** of a run — on
+demand, or automatically for pull requests waiting on auto‑merge — and it can **arm auto‑merge** on a
+pull request, clearing its description on the way. Both are hidden unless your token is verified as
+able to use them.
 
 Use it in the **browser** (a static web page) or as a **desktop app** (Windows / macOS / Linux)
 that lives in the tray and pops a notification when something finishes.
@@ -38,10 +40,15 @@ that lives in the tray and pops a notification when something finishes.
 - **A Failures list** with a ready‑to‑paste bug report for every failing job — across open and
   recently‑merged PRs *and* your flows — in collapsible groups.
 - **Auto‑rerun of failed jobs** for PRs waiting on auto‑merge — opt‑in, limited to workflows you
-  name, and the only thing Job Monitor ever changes on GitHub.
+  name.
+- **An arm auto‑merge button** on every open PR — clears the description and hands the PR to GitHub
+  to merge once its checks pass, after confirming.
 - **Explain with Claude** (desktop app) — turn a failed job's log into a readable problem statement
   and a suggested fix, using the `gh` and `claude` CLIs already on your machine. Two depths: a
   **quick read** in about a minute, or a **deep analysis** that goes and investigates.
+- **A Diagnostics tab** (desktop app, opt‑in) — read Job Monitor's own log live, to see why it did
+  what it did: every auto‑rerun decision including the ones that chose *not* to fire, every analysis,
+  and every request that failed.
 
 ---
 
@@ -76,7 +83,8 @@ keep checking in the background, and show native notifications.
 When you first open Job Monitor you’ll be taken to **Settings** (it opens automatically until a
 token is set). You can reopen it any time from the **gear icon in the top‑right corner** — it opens
 as a full‑screen page with tabs for **Token & login**, **Repository**, **Polling**, **Flows**,
-**PR automation** and **Notifications** (plus **Updates** in the desktop app). Three things to do:
+**PR automation**, **AI integration** and **Notifications** (plus **Diagnostics** and **Updates** in
+the desktop app). Three things to do:
 
 ### 1. Add your GitHub token (Settings → **Token & login**)
 
@@ -213,9 +221,16 @@ the app fails to read. Turning the switch off hides every AI control; fetching t
 whether `gh` is signed in — with what each is for and what to do when it's missing. `claude` is
 required; `gh` is optional, and without it an analysis uses the log Job Monitor fetched itself.
 
-When something goes wrong, the desktop app keeps a record of it: **Settings → AI integration →
-Diagnostics** shows the path to a log of every analysis — the commands run, how long each took, and how
-it ended. It holds sizes and outcomes, never your token and never the contents of a CI log.
+When something goes wrong, the desktop app keeps a record of it: **Settings → Diagnostics** shows the
+path to a log of every analysis — the commands run, how long each took, and how it ended — alongside
+every auto‑rerun decision and any request that failed. It holds sizes and outcomes, never your token
+and never the contents of a CI log.
+
+Tick **Read the log in a Diagnostics tab** there and the main navigation grows a **Diagnostics** tab
+that follows that log live — newest first, filtered by scope, searchable (the search covers the
+attached details, so a run id or PR number finds its own records), and each line expandable into the
+facts behind it. Handy for “why didn’t auto‑rerun fire?”, which is otherwise invisible from the UI.
+Off by default, and desktop‑only.
 
 ### Reading the log
 
@@ -454,25 +469,66 @@ A run is only re‑run when **all** of this holds:
 - the pull request has **auto‑merge enabled** — someone has already said “land this when it’s green”;
 - the run’s workflow file is one you listed;
 - the run has **finished**, and finished as **failed** or **timed out**. A **cancelled** run is left
-  alone (a cancel is normally deliberate), and so is one waiting on a human approval.
+  alone (a cancel is normally deliberate), and so is one waiting on a human approval;
+- the failure is **recent** — within 72 hours by default. That's measured from the **last attempt**,
+  not from the commit: a PR that is actively being retried is as fresh as its most recent try, so a
+  long‑lived branch doesn't quietly age out while its last run was an hour ago. (GitHub separately
+  refuses any re‑run more than 30 days after a run first started; nothing can reopen that.)
 
 Two brakes stop a genuinely broken PR from burning CI forever:
 
 - **Max attempts** (10 by default) counts GitHub’s own attempt number, so the limit holds across
   restarts and even if you re‑run something by hand.
-- **Stop when the failure repeats identically** (on by default) compares the failing tests and steps
-  against the previous attempt. The same failure twice means the break is real, so retrying it is
-  just waste.
+- **Allow the same failure this many times** (5 by default) compares the failing tests and steps
+  between attempts. A flaky test can fail the same way twice and pass on the third go, so identical
+  failures are tolerated — but only up to this count, because past it the break is real and retrying
+  is just waste. A *different* failure in between starts the count over; **0** switches the brake off
+  and retries up to the attempt limit.
+
+If Job Monitor **can't** compare a failure — GitHub wouldn't list the run's jobs, or the run claims to
+have failed with no failed job in it — it does **not** re-run. Retrying blind would quietly suspend
+the limit above at the worst possible moment. It says so on the PR badge and in the diagnostics log,
+with the reason, and tries again on the next poll.
 
 Unlike the notifications, this doesn’t only react to failures that happen while you watch: a run
 that failed while the app was closed is picked up when you next open it. Job Monitor remembers what
 it has already asked for, so reopening the app never re‑runs the same thing twice.
 
-What it has done shows up at the top of the **Failures** tab, with the run linked, so a re‑run is
-never silent.
+What it has done shows up as a badge **on the pull request itself** in the **Pull requests** tab —
+`re-run ×3` — so a re‑run is never silent and you can see which PR it happened to while scanning the
+list. Hover it for the detail: every attempt with its workflow and time, and, if the engine has since
+gone idle, why. The badge covers the current session; the full history, including every decision *not*
+to re‑run, is in the diagnostics log.
 
 > The re‑run controls are **hidden** unless your token is verified as able to use them — see
 > [First‑time setup](#1-add-your-github-token-settings--token--login).
+
+### Arm auto‑merge (Settings → **PR automation**)
+
+Every open pull request carries a **merge** button that does two things at once:
+
+1. **Deletes the PR description.**
+2. **Arms auto‑merge**, so GitHub merges the PR as soon as its required checks pass — immediately, if
+   they already do.
+
+It always confirms first, and shows you the description it is about to delete, because that text
+**cannot be recovered**: a pull request body has no edit history for this app or the API to restore
+it from.
+
+Clearing happens *before* arming, deliberately — a PR that is already green merges within seconds of
+being armed, so clearing afterwards would race the merge and lose. The consequence is stated where it
+matters: if arming then fails (the repository forbids auto‑merge, or the branch has no required
+checks), the dialog tells you the description is already gone rather than implying nothing happened.
+
+Pick the **merge strategy** in Settings → PR automation — squash (the default), merge commit, or
+rebase. It has to be one the repository allows, or GitHub refuses to arm it and says so in the dialog.
+
+A PR that **already** has auto‑merge armed shows an `auto-merge` badge instead of the button — GitHub
+errors on arming those, so there is no action to offer, and the badge says why the button isn't there.
+Hover it for the strategy and who armed it. That badge shows whatever your token can do, since it is
+also how you tell at a glance which PRs the auto‑rerun engine will act on.
+
+The button itself is absent for anything that isn't open, and whenever the token can't write.
 
 ### Notifications (Settings → **Notifications**)
 
@@ -502,11 +558,18 @@ Job Monitor is **backend‑less**. Your token is encrypted locally, and the app 
 `api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no third‑party
 servers.
 
-Every request is a read, with exactly one exception: **re‑running failed jobs**. That feature is off
-until you switch it on, applies only to workflow files you list by name, and is hidden entirely
-unless your token is verified as able to do it. Job Monitor cannot start a workflow, cancel a run,
-push code, comment, merge, or change any setting on GitHub — the re‑run endpoint is the only write
-in the codebase.
+Every request is a read, with exactly two exceptions, and both are hidden entirely unless your token
+is verified as able to perform them:
+
+- **Re‑running failed jobs.** Off until you switch it on, and limited to workflow files you list by
+  name.
+- **Arming auto‑merge on a pull request**, which also clears that PR's description. Only ever from an
+  explicit click, and only after a dialog that shows you the description it is about to delete.
+
+Nothing else is written. Job Monitor cannot start a workflow, cancel a run, push code, comment,
+merge a PR itself, or change any repository setting — those two endpoints are the only writes in the
+codebase, and every write in the app goes through a single function that refuses to run at all unless
+the token has been proven capable.
 
 ---
 

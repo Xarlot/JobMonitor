@@ -21,6 +21,19 @@ export function pullsPath(
   return `/repos/${enc(owner)}/${enc(repo)}/pulls?${params.toString()}`;
 }
 
+/** One pull request. PATCHed to edit it (the only PR field this app ever writes: `body`). */
+export function pullPath(owner: string, repo: string, number: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`;
+}
+
+/**
+ * GitHub's GraphQL endpoint.
+ *
+ * Needed because enabling auto-merge has no REST equivalent — `enablePullRequestAutoMerge`
+ * is a GraphQL mutation and nothing else offers it. Everything the app *reads* stays REST.
+ */
+export const GRAPHQL_PATH = '/graphql';
+
 /**
  * The repository itself. Read for `permissions.push` — whether the authenticated
  * account has the Write role, which re-running workflows requires on top of the

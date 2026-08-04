@@ -168,9 +168,22 @@ export const prAutoRerunSchema = z
     workflowFiles: z.array(z.string().trim().min(1)).default([]),
     /** Ceiling on GitHub's `run_attempt`; 1 disables retrying outright. */
     maxAttempts: z.number().int().min(1).max(20).default(10),
-    /** Give up when the failure fingerprint matches the previous attempt's. */
-    stopOnIdenticalFailure: z.boolean().default(true),
-    /** Ignore older runs. GitHub itself refuses re-runs after 30 days (720 h). */
+    /**
+     * How many times the *same* failure may be seen before the engine stops retrying
+     * it — counted as a consecutive streak of matching failure fingerprints, so a
+     * different failure in between starts the count over.
+     *
+     * `0` switches the brake off entirely (retry until `maxAttempts`). `1` follows from
+     * the same rule rather than being a special case: the first failure is already one
+     * occurrence, so nothing identical is ever retried.
+     */
+    maxIdenticalFailures: z.number().int().min(0).max(20).default(5),
+    /**
+     * Ignore a failure older than this. Measured from the *latest attempt* — a run
+     * that is actively being retried is as fresh as its last try, not as old as the
+     * commit. GitHub's own 30-day refusal is enforced separately, from the run's
+     * creation, and is not this setting.
+     */
     maxRunAgeHours: z.number().int().min(1).max(720).default(72),
   })
   .prefault({});
@@ -180,6 +193,40 @@ export const mergedPrsSchema = z
   .object({
     /** How many of the most recently updated merged PRs to track; 0 disables. */
     count: z.number().int().min(0).max(50).default(10),
+  })
+  .prefault({});
+
+/**
+ * The manual "arm auto-merge" button.
+ *
+ * No `enabled` flag: the button is gated on the token being able to write, which is the
+ * same gate every other write control uses, and an explicit click is its own authority.
+ * Only the strategy needs configuring, because a repository can disallow any of the three
+ * and GitHub refuses the mutation rather than picking another.
+ */
+export const autoMergeSchema = z
+  .object({
+    /** Strategy for auto-merge. Must be one the repository actually allows. */
+    mergeMethod: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+  })
+  .prefault({});
+
+/**
+ * The in-app diagnostics log viewer.
+ *
+ * Off by default and opt-in per machine: it is a developer's window on the app's own
+ * behaviour, so it earns a place in the main navigation only for someone who has gone
+ * looking for it. The log file is written either way — this switch only decides whether
+ * there is a tab for reading it without leaving the app.
+ */
+export const diagnosticsSchema = z
+  .object({
+    /** Show a "Diagnostics" tab in the main navigation. Desktop only. */
+    showLogTab: z.boolean().default(false),
+    /** How much of the end of the log to read per refresh. */
+    tailKB: z.number().int().min(16).max(5120).default(512),
+    /** Seconds between refreshes while "Live" is on. */
+    followSeconds: z.number().int().min(1).max(60).default(3),
   })
   .prefault({});
 
@@ -287,12 +334,16 @@ export const monitorConfigSchema = z.object({
   prAuthor: z.string().trim().default(''),
   polling: pollingSchema.prefault({}),
   notifications: notificationsSchema,
-  /** Auto-rerun of failed jobs (the only write). Off until configured. */
+  /** Auto-rerun of failed jobs. Off until configured. */
   prAutoRerun: prAutoRerunSchema,
+  /** The manual arm-auto-merge action. */
+  autoMerge: autoMergeSchema,
   /** Track recently-merged PRs so their failures stay reviewable. */
   mergedPrs: mergedPrsSchema,
   /** Markdown failure-report generation. */
   failureReports: failureReportsSchema,
+  /** The in-app diagnostics log viewer (desktop, opt-in). */
+  diagnostics: diagnosticsSchema,
   /** Local AI integration via the `claude` CLI. */
   ai: aiSchema,
   /** Desktop app: auto-download & install updates. Ignored where unsupported. */
@@ -320,6 +371,8 @@ export type AiTaskConfig = z.infer<ReturnType<typeof aiTaskSchema>>;
 export type PrAutoRerunConfig = z.infer<typeof prAutoRerunSchema>;
 export type MergedPrsConfig = z.infer<typeof mergedPrsSchema>;
 export type FailureReportsConfig = z.infer<typeof failureReportsSchema>;
+export type DiagnosticsConfig = z.infer<typeof diagnosticsSchema>;
+export type AutoMergeConfig = z.infer<typeof autoMergeSchema>;
 export type EmptyFlowFilter = z.infer<typeof emptyFlowFilterSchema>;
 export type MonitorConfig = z.infer<typeof monitorConfigSchema>;
 
@@ -341,11 +394,13 @@ export const DEFAULT_CONFIG: MonitorConfig = {
     enabled: false,
     workflowFiles: [],
     maxAttempts: 10,
-    stopOnIdenticalFailure: true,
+    maxIdenticalFailures: 5,
     maxRunAgeHours: 72,
   },
   mergedPrs: { count: 10 },
   failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
+  autoMerge: { mergeMethod: 'squash' },
+  diagnostics: { showLogTab: false, tailKB: 512, followSeconds: 3 },
   ai: {
     enabled: true,
     extraInstructions: '',

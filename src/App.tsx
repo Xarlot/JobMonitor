@@ -10,6 +10,7 @@ import {
   MarkGithubIcon,
   MoonIcon,
   SunIcon,
+  TerminalIcon,
   WorkflowIcon,
 } from '@primer/octicons-react';
 import { useAuth } from './context/AuthContext';
@@ -30,10 +31,12 @@ import { Overview } from './components/Overview';
 import { PrList } from './components/PrList';
 import { FlowsView } from './components/FlowsView';
 import { FailuresView } from './components/FailuresView';
+import { DiagnosticsView } from './components/DiagnosticsView';
 import { SettingsPage } from './components/SettingsPage';
 import { setAutoUpdateEnabled } from './storage/desktopUpdates';
+import { isDesktop } from './storage/desktopSecret';
 
-type View = 'overview' | 'prs' | 'flows' | 'failures';
+type View = 'overview' | 'prs' | 'flows' | 'failures' | 'diagnostics';
 
 const THEME_ICON = { auto: DeviceDesktopIcon, light: SunIcon, dark: MoonIcon } as const;
 
@@ -91,10 +94,19 @@ export function App() {
   const [focusFlowId, setFocusFlowId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Opt-in, and only where the log exists: a browser tab has no file to read.
+  const showDiagnostics = isDesktop() && config.diagnostics.showLogTab;
+
   // Keep the desktop shell's auto-updater in sync with the user's setting.
   useEffect(() => {
     void setAutoUpdateEnabled(config.autoUpdate);
   }, [config.autoUpdate]);
+
+  // Switching the tab off while standing on it would otherwise leave the content area
+  // blank with no nav item to leave by.
+  useEffect(() => {
+    if (!showDiagnostics && view === 'diagnostics') setView('overview');
+  }, [showDiagnostics, view]);
 
   if (status === 'loading') {
     return (
@@ -159,6 +171,7 @@ export function App() {
               <MainNav
                 view={view}
                 disabled={navDisabled}
+                showDiagnostics={showDiagnostics}
                 onSelect={setView}
               />
 
@@ -175,6 +188,11 @@ export function App() {
                 {view === 'prs' && (complete ? <PrList /> : <ConfigHint />)}
                 {view === 'flows' && (complete ? <FlowsView focusFlowId={focusFlowId} /> : <ConfigHint />)}
                 {view === 'failures' && (complete ? <FailuresView /> : <ConfigHint />)}
+                {/*
+                  No `complete` gate: this one reads a local file rather than GitHub, and
+                  an unconfigured app is a state you might well be diagnosing.
+                */}
+                {view === 'diagnostics' && showDiagnostics && <DiagnosticsView />}
               </Box>
             </>
           )}
@@ -192,10 +210,12 @@ export function App() {
 function MainNav({
   view,
   disabled,
+  showDiagnostics,
   onSelect,
 }: {
   view: View;
   disabled: boolean;
+  showDiagnostics: boolean;
   onSelect: (view: View) => void;
 }) {
   const failureCount = useFailures().failures.length;
@@ -206,6 +226,10 @@ function MainNav({
     { key: 'flows', label: 'Flows', icon: WorkflowIcon },
     { key: 'failures', label: 'Failures', icon: BugIcon, counter: failureCount || undefined },
   ];
+  // Last, and only when asked for: it is about the app rather than about the work.
+  if (showDiagnostics) {
+    navItems.push({ key: 'diagnostics', label: 'Diagnostics', icon: TerminalIcon });
+  }
 
   return (
     <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'border.default' }}>

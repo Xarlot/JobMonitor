@@ -15,6 +15,7 @@ const SLUG = 'o/r';
 function pr(number: number, over: Partial<PullRequest> = {}): PullRequest {
   return {
     id: number,
+    node_id: `PR_kwDOtest${number}`,
     number,
     title: `PR ${number}`,
     html_url: `https://github.com/${SLUG}/pull/${number}`,

@@ -243,6 +243,35 @@ export async function diagnosticsLogPath(): Promise<{ file: string; dir: string 
   }
 }
 
+export interface DiagnosticsLogTail {
+  /** Raw NDJSON, oldest line first. */
+  text: string;
+  /** The file was longer than the window read, so earlier records are not here. */
+  truncated: boolean;
+  /** Full size of the file on disk, for "showing the last N of M". */
+  size: number;
+}
+
+/**
+ * The tail of the diagnostics log, for the in-app viewer.
+ *
+ * Null off desktop and null on failure, both meaning "there is nothing to show" — a
+ * viewer for a file that may legitimately not exist should render an explanation, not an
+ * error. An older preload without `logs.read` lands in the same branch, which is why the
+ * method is probed rather than assumed.
+ */
+export async function readDiagnosticsLog(maxBytes?: number): Promise<DiagnosticsLogTail | null> {
+  const logs = (globalThis as unknown as {
+    desktop?: { logs?: { read?: (maxBytes?: number) => Promise<DiagnosticsLogTail> } };
+  }).desktop?.logs;
+  if (!logs?.read) return null;
+  try {
+    return await logs.read(maxBytes);
+  } catch {
+    return null;
+  }
+}
+
 /** Open the log folder in the OS file manager. */
 export async function revealDiagnosticsLog(): Promise<void> {
   const logs = (globalThis as unknown as { desktop?: { logs?: { reveal?: () => Promise<unknown> } } })

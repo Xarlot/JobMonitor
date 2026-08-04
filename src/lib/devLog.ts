@@ -99,6 +99,41 @@ export function devWarn(scope: LogScope, message: string, detail?: unknown): voi
 }
 
 /**
+ * A {@link devLog} that speaks only when the verdict for a key *changes*.
+ *
+ * For anything on a poll, the same conclusion is re-derived every few seconds — an
+ * auto-rerun that decides not to fire will decide it again all day. Writing each pass
+ * would fill the size-capped log file with one repeated sentence and evict everything
+ * worth keeping, so a caller on a timer needs a gate rather than restraint. The
+ * transition is also the more informative line: the moment a verdict was first reached
+ * is what explains the silence that follows it.
+ *
+ * `key` identifies the subject (a run, a PR, the engine); `verdict` is what is true of
+ * it now. A repeat is dropped; a change is logged.
+ *
+ * Returns whether it wrote, so a caller that wants to do something *else* once per change
+ * — raise a notification, add a row to a UI list — can hang it off the same gate instead of
+ * keeping a second copy of the same bookkeeping.
+ *
+ * @param maxKeys Bound on remembered subjects. Once past it the memory is cleared
+ *   wholesale, which costs one repeated line per still-current verdict — cheaper than
+ *   growing forever, and self-correcting.
+ */
+export function createVerdictLog(
+  scope: LogScope,
+  maxKeys = 500,
+): (key: string, verdict: string, message: string, detail?: unknown) => boolean {
+  const seen = new Map<string, string>();
+  return (key, verdict, message, detail) => {
+    if (seen.get(key) === verdict) return false;
+    if (seen.size >= maxKeys) seen.clear();
+    seen.set(key, verdict);
+    devLog(scope, message, detail);
+    return true;
+  };
+}
+
+/**
  * Expose the switch on `window` and say it exists.
  *
  * Without the hint, a diagnostic channel that defaults to off is one nobody finds when

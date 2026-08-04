@@ -33,7 +33,7 @@ describe('configStore', () => {
       enabled: false,
       workflowFiles: [],
       maxAttempts: 10,
-      stopOnIdenticalFailure: true,
+      maxIdenticalFailures: 5,
       maxRunAgeHours: 72,
     });
     expect(cfg.mergedPrs).toEqual({ count: 10 });
@@ -67,6 +67,8 @@ describe('configStore', () => {
     expect(result.config.notifications).toEqual({ pr: true, flow: false, autoRerun: false });
     expect(result.config.prAutoRerun.enabled).toBe(false);
     expect(result.config.mergedPrs.count).toBe(10);
+    // A config saved before the log viewer existed must not gain a tab on upgrade.
+    expect(result.config.diagnostics).toEqual({ showLogTab: false, tailKB: 512, followSeconds: 3 });
   });
 
   it('rejects an out-of-range attempt ceiling', () => {
@@ -76,6 +78,29 @@ describe('configStore', () => {
       prAutoRerun: { maxAttempts: 0 },
     });
     expect(bad.ok).toBe(false);
+  });
+
+  it('accepts 0 identical failures as "no brake" but rejects a negative limit', () => {
+    const base = { upstream: { owner: 'o', repo: 'r' }, fork: { owner: 'f' } };
+    expect(safeParseConfig({ ...base, prAutoRerun: { maxIdenticalFailures: 0 } }).ok).toBe(true);
+    expect(safeParseConfig({ ...base, prAutoRerun: { maxIdenticalFailures: -1 } }).ok).toBe(false);
+    expect(safeParseConfig({ ...base, prAutoRerun: { maxIdenticalFailures: 21 } }).ok).toBe(false);
+  });
+
+  /**
+   * The identical-failure brake used to be a boolean. A config saved with it lands on the
+   * current default rather than being rejected — the old key simply has no counterpart.
+   */
+  it('loads a config that still carries the old stopOnIdenticalFailure flag', () => {
+    const result = safeParseConfig({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'f' },
+      prAutoRerun: { enabled: true, workflowFiles: ['ci.yml'], stopOnIdenticalFailure: true },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.prAutoRerun.maxIdenticalFailures).toBe(5);
+    expect(result.config.prAutoRerun).not.toHaveProperty('stopOnIdenticalFailure');
   });
 
   it('keeps DEFAULT_CONFIG in step with the schema', () => {

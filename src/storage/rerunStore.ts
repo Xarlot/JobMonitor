@@ -11,6 +11,8 @@
  * previous attempt's requires remembering the previous one.
  */
 
+import type { RerunSkipReason } from '../lib/autoRerun';
+
 export interface RerunAttempt {
   /** GitHub's `run_attempt` that we asked to re-run (1-based). */
   attempt: number;
@@ -24,9 +26,34 @@ export interface RerunAttempt {
   error?: string;
 }
 
+/**
+ * A terminal verdict reached *without* asking GitHub for anything.
+ *
+ * Kept apart from `attempts` because the two are different facts and conflating them
+ * costs twice. Once in truth: every row in `attempts` is a request we made, so a decision
+ * filed among them makes the engine report "this attempt was already re-run" about an
+ * attempt it never re-ran. Once in arithmetic: the number of re-runs is then unreadable
+ * from the record, which is the one question anyone asks of it.
+ *
+ * It is still persisted, because the point is not to re-derive the verdict — and for
+ * `identical_failure` that would mean re-fetching every failed job's annotations on every
+ * tick, forever.
+ */
+export interface RerunDecline {
+  /** GitHub's `run_attempt` this verdict is about. */
+  attempt: number;
+  /** The policy's own reason, so the engine can report what it actually concluded. */
+  reason: RerunSkipReason;
+  fingerprint: string | null;
+  at: number;
+}
+
 export interface RerunRecord {
   runId: number;
+  /** Re-runs we asked GitHub for. `attempts.length` is the number of requests made. */
   attempts: RerunAttempt[];
+  /** The latest "decided not to", when there is one. */
+  declined?: RerunDecline;
   updatedAt: number;
 }
 
@@ -69,18 +96,58 @@ function prune(records: Stored, now: number): Stored {
   return kept;
 }
 
+/**
+ * The exact text the identical-failure latch used to write into `attempts` before
+ * declines were separated out. Frozen deliberately: a migration must match the literal
+ * that was actually stored, not a label that may be reworded later.
+ */
+const LEGACY_DECLINE_ERROR = 'the failure repeated identically';
+
+/**
+ * Lift a legacy decline out of `attempts`.
+ *
+ * Records written before {@link RerunDecline} existed filed "gave up, identical failure"
+ * as a failed *request*, which both overstates the re-run count and makes the engine
+ * report the wrong reason for ever after. Migrating on read fixes existing installs
+ * without anyone having to clear their storage.
+ */
+function migrateLegacyDecline(record: RerunRecord): RerunRecord {
+  if (record.declined) return record;
+  const legacy = record.attempts.find((a) => a.ok === false && a.error === LEGACY_DECLINE_ERROR);
+  if (!legacy) return record;
+  return {
+    ...record,
+    attempts: record.attempts.filter((a) => a !== legacy),
+    declined: {
+      attempt: legacy.attempt,
+      reason: 'identical_failure',
+      fingerprint: legacy.fingerprint,
+      at: legacy.at,
+    },
+  };
+}
+
 /** Every remembered run, as a map for cheap lookup by run id. */
 export function loadRerunRecords(now: number = Date.now()): Map<number, RerunRecord> {
   const pruned = prune(readAll(), now);
   const map = new Map<number, RerunRecord>();
   for (const r of Object.values(pruned)) {
-    map.set(r.runId, {
-      runId: r.runId,
-      attempts: Array.isArray(r.attempts) ? r.attempts : [],
-      updatedAt: r.updatedAt,
-    });
+    map.set(
+      r.runId,
+      migrateLegacyDecline({
+        runId: r.runId,
+        attempts: Array.isArray(r.attempts) ? r.attempts : [],
+        declined: r.declined,
+        updatedAt: r.updatedAt,
+      }),
+    );
   }
   return map;
+}
+
+/** How many re-runs we have actually asked GitHub for, across every attempt. */
+export function rerunRequestCount(record: RerunRecord | undefined): number {
+  return record?.attempts.length ?? 0;
 }
 
 /**
@@ -98,7 +165,31 @@ export function recordRerun(
   const attempts = (existing?.attempts ?? []).filter((a) => a.attempt !== attempt.attempt);
   attempts.push(attempt);
   attempts.sort((a, b) => a.attempt - b.attempt);
-  records[key] = { runId, attempts, updatedAt: now };
+  records[key] = { runId, attempts, declined: existing?.declined, updatedAt: now };
+  writeAll(records);
+}
+
+/**
+ * Remember a verdict reached without asking GitHub anything, so the engine neither
+ * re-derives it nor pays for the annotations behind it on every tick.
+ *
+ * One per run rather than a list: the only question ever asked of it is "did we already
+ * settle *this* attempt", and a newer verdict always supersedes an older one.
+ */
+export function recordDecline(
+  runId: number,
+  decline: RerunDecline,
+  now: number = Date.now(),
+): void {
+  const records = prune(readAll(), now);
+  const key = String(runId);
+  const existing = records[key];
+  records[key] = {
+    runId,
+    attempts: existing?.attempts ?? [],
+    declined: decline,
+    updatedAt: now,
+  };
   writeAll(records);
 }
 

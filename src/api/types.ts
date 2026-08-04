@@ -70,11 +70,22 @@ export interface AutoMerge {
 
 export interface PullRequest {
   id: number;
+  /**
+   * GraphQL global id. Present on every REST PR payload, and the only way to name a PR
+   * to `enablePullRequestAutoMerge` — the mutation takes a node id, not owner/repo/number.
+   */
+  node_id: string;
   number: number;
   title: string;
   html_url: string;
   state: 'open' | 'closed';
   draft: boolean;
+  /**
+   * The description. Optional here rather than `string | null`: the list endpoint does
+   * return it, but nothing in the dashboard depends on it being present — only the
+   * arm-auto-merge dialog reads it, to show what it is about to delete.
+   */
+  body?: string | null;
   user: GitHubUser | null;
   created_at: string;
   updated_at: string;

@@ -79,11 +79,15 @@ ever makes that isn't a `GET`, it is off by default, and it is hidden outright u
   **auto-reruns**. A system notification fires when a tracked PR's checks finish or a flow run
   completes — only on an observed *in-progress → finished* transition, so reloads and already-done
   items never spam you. Uses the browser's Web Notification permission; nothing leaves the browser.
-- **Auto-rerun failed jobs** (opt-in, the only write) — for a PR with **auto-merge armed**, when a
+- **Arm auto-merge** (manual, a write) — clears a PR's description, then enables auto-merge. The one
+  place the app speaks **GraphQL**: `enablePullRequestAutoMerge` has no REST equivalent. See
+  `src/api/autoMerge.ts`.
+- **Auto-rerun failed jobs** (opt-in, a write) — for a PR with **auto-merge armed**, when a
   run of a listed workflow file finishes as `failure`/`timed_out`, its failed jobs are re-run.
   Never for `cancelled` (usually deliberate) or `action_required` (needs a human). Two brakes:
-  `maxAttempts` against GitHub's own `run_attempt`, and giving up once the failure fingerprint
-  repeats. Unlike the notification path the trigger is **state-based**, so a run that failed while
+  `maxAttempts` against GitHub's own `run_attempt`, and `maxIdenticalFailures` — how many times in a
+  row the same failure fingerprint may come back before it counts as real rather than flaky. Unlike
+  the notification path the trigger is **state-based**, so a run that failed while
   the app was closed is still picked up — which is why the attempt log is persisted
   (`src/storage/rerunStore.ts`), or every reload would re-POST.
 - **Failures tab** — every failing job across open **and** recently-merged PRs **and** the latest run
@@ -283,7 +287,7 @@ exported as JSON:
     "enabled": false,
     "workflowFiles": ["check-pull-request-java.yml"],
     "maxAttempts": 10,
-    "stopOnIdenticalFailure": true,
+    "maxIdenticalFailures": 5,
     "maxRunAgeHours": 72
   },
   "mergedPrs": { "count": 10 },
@@ -325,9 +329,23 @@ or an existing user's stored config would fail to parse and be silently wiped. `
 `MOCK_CONFIG` are hand-written literals typed `MonitorConfig`, so `tsc` flags them when a field is
 added; `config.test.ts` also asserts they match the schema's own defaults.
 
+`autoMerge.mergeMethod` is stored lower-case and upper-cased at the call site, because the GraphQL
+`PullRequestMergeMethod` enum is upper-case and a mismatch is a 400 rather than a helpful error. There
+is no `enabled` flag: the button is gated on write capability like every other write control, and a
+click is its own authority. Arming is *not* idempotent — GitHub errors on an already-armed PR — which
+is why the button is absent rather than disabled for those.
+
 `prAutoRerun.workflowFiles` holds **exact file names** — never patterns, so the allow-list cannot
 widen by accident. `maxAttempts` is compared against GitHub's `run_attempt`, which is why the limit
 survives restarts without any local bookkeeping.
+
+`maxIdenticalFailures` replaced a `stopOnIdenticalFailure` boolean, which was the same rule with the
+count hard-wired to 2. It is a **consecutive** streak of matching fingerprints, so one different
+failure starts it over, and it spans `attempts` *and* `declined` — otherwise re-running by hand would
+reset the count and the tolerance would never run out. `0` disables the brake (and with it the
+annotation fetches behind each fingerprint); `1` needs no special case, since the first failure is
+already one occurrence. A config still holding the old boolean parses fine and takes the current
+default: the key has no counterpart to migrate to, and zod strips it.
 
 `match.pattern` turns a flow into a **regex flow**: `workflowFile` is then unused, and the flow is
 expanded into one flow per matching workflow of the repo (`match.by` selects what the regex is
@@ -620,9 +638,29 @@ few minutes — pass shot names to regenerate only some.
 | macOS | `~/Library/Application Support/Job Monitor/logs/job-monitor.ndjson` |
 | Windows | `%APPDATA%\Job Monitor\logs\job-monitor.ndjson` |
 
-The exact path is printed to stdout at startup and shown under **Settings → AI integration →
-Diagnostics**, with buttons to copy it or open the folder. Capped at 5 MB with one previous file kept
-as `.ndjson.1`.
+`<userData>` is named after the app, and the app is named differently in development: `electron .`
+takes `name` from `package.json`, so a dev run writes to `job-monitor/logs/` (lower case, hyphen)
+while a packaged build uses the `productName` `Job Monitor`. Two separate files — check which one you
+are reading before concluding that nothing was logged.
+
+The exact path is printed to stdout at startup and shown under **Settings → Diagnostics** (desktop
+only — there is no on-disk log in a browser tab), with buttons to copy it or open the folder. Capped
+at 5 MB with one previous file kept as `.ndjson.1`.
+
+**Reading it in the app.** Ticking *Read the log in a Diagnostics tab* there adds a **Diagnostics**
+tab to the main navigation that follows the tail live, filtered by scope and searchable — the search
+covers `detail`, since the id being chased (a run id, a PR number, a fingerprint) is in there rather
+than in the sentence. Opt-in because it is a window on the app rather than on the work, and the
+file is written either way.
+
+The split is the usual one: `logs:read` in `electron/main.cjs` hands over a bounded *tail* (default
+512 KB of a possible 5 MB — 5 MB of NDJSON is more than anyone reads and more than is sensible to
+re-parse every few seconds), `readRunLogTail` drops the partial line the byte offset cuts into and
+reports `truncated` so the viewer can say "showing the last N of M", `lib/diagnosticsLog.ts` parses
+and filters as pure functions, and `components/DiagnosticsView.tsx` renders. Unparseable lines are
+shown rather than dropped: one is usually a crash mid-write, and knowing it is there beats a silent
+gap. Parsing is memoised on the text alone, so typing in the search box doesn't re-parse half a
+megabyte per keystroke.
 
 One JSON object per line: `{ at, scope, message, detail? }`. `scope` is `app`, `claude`, or
 `renderer:<devLog scope>`; anything belonging to an analysis carries `detail.requestId`, so a whole run
@@ -638,6 +676,9 @@ jq -c 'select(.message | startswith("WARN") or contains("failed"))' job-monitor.
 # how each analysis ended, with the numbers that explain it
 jq -c 'select(.message | startswith("claude ok") or startswith("claude failed")) | .detail' \
   job-monitor.ndjson
+
+# why auto-rerun did or didn't fire — the whole engine, in order
+jq -r 'select(.scope == "renderer:auto-rerun") | "\(.at[11:19]) \(.message)"' job-monitor.ndjson
 ```
 
 That last one carries what every post-mortem so far has needed: `ms`, `answerChars`, `toolCalls`,
@@ -931,6 +972,56 @@ The write path is deliberately split so the policy is testable without a network
 is a pure `decideRerun` (every skip reason unit-tested), and `hooks/usePrAutoRerun.ts` does the I/O.
 The engine re-checks token capability itself rather than trusting the UI, because `prAutoRerun.enabled`
 persists and the token can be swapped for a read-only one at any time.
+
+**Staleness is measured from the latest attempt, not from `created_at`.** GitHub never moves
+`created_at`, but `run_started_at` resets on every re-run — so judging age by the former means a PR
+that is actively being retried ages out of `maxRunAgeHours` while its last attempt was minutes ago,
+which is exactly the silent stall this engine is supposed to avoid. `runAgeBasis` is
+`run_started_at ?? created_at` (a first attempt has only the one stamp). GitHub's own 30-day refusal
+is a *separate* check against `created_at`, since that is the clock GitHub uses and re-running cannot
+hold a run open past it; conflating the two is what produced the bug.
+
+**A decline is not an attempt.** `RerunRecord.attempts` means "re-runs we asked GitHub for" — so
+`attempts.length` (or `rerunRequestCount`) is the number of requests made — while a terminal verdict
+reached *without* asking sits in `declined`. Both are persisted, because the point of the latch is
+never to re-derive the verdict, and for `identical_failure` re-deriving means re-fetching every
+failed job's annotations on every tick. Filing the verdict among the attempts, as an earlier version
+did, cost twice: the re-run count was overstated by one, and `decideRerun` answered
+`already_requested` — "this attempt was already re-run" — about an attempt it had never re-run,
+hiding the real reason behind a false one. `decideRerun` now replays `declined.reason`, and
+`loadRerunRecords` migrates the old shape on read (matched on the frozen literal the latch used to
+write) so existing installs correct themselves.
+
+The replay is **conditional**, because a decline is a cached decision: raising
+`maxIdenticalFailures` must invalidate one taken under a tighter limit. A stopped run's attempt
+number never changes again, so nothing would otherwise reconsider it and the new setting would look
+inert. Re-checking costs nothing — the streak comes from fingerprints already in the record — and
+falling through to the full decision is safe because the engine computes this attempt's fingerprint
+before the decision that can act on it.
+
+**Can't check, don't retry.** A fingerprint that fails to compute leaves the brake with nothing to
+compare, and treating that as permission to re-run suspends `maxIdenticalFailures` exactly while
+something is already wrong — a run then climbs to `maxAttempts` on a failure nobody ever compared,
+which is how it was found. `fingerprintRun` therefore returns a result rather than `string | null`,
+naming which of the three things went wrong (jobs unlistable / a "failed" run with no failed job /
+nothing identifying to hash), and `decideRerun` answers `fingerprint_unavailable`. The cause reaches
+both the log sentence and a `held` event on the PR badge, because a refusal with no stated cause is
+the silence this engine has already been fixed for once. `fingerprintProblem` is deliberately
+separate from `fingerprint`: the cheap pre-pass passes no fingerprint on purpose, and mistaking that
+for a failed lookup would refuse every run before anything ever tried. Nothing is latched — the next
+tick may manage it.
+
+**Every decision is logged, including the ones to do nothing.** A skip reason that is computed and
+then dropped on the floor makes an idle engine indistinguishable from a broken one, so each verdict
+goes to the `auto-rerun` scope with the facts behind it — `ageHours` against `windowHours` for
+`too_old`, the fingerprint for `identical_failure`, the latching record for `already_requested`. Two
+things keep that affordable. `not_matched` is reported once per PR as a matched/ignored split rather
+than once per ignored run, because a repo with thirty workflows would otherwise spend the whole file
+saying so. And everything goes through `createVerdictLog` (`lib/devLog.ts`), which writes only when
+the verdict for a subject *changes*: the engine re-derives the same answer every minute forever, and
+`devLog` persists to a 5 MB file whether or not the console flag is on. The engine's own state is
+logged from an effect rather than the tick, since `off` / `no-permission` / `no-workflows` disarm the
+poll entirely — a tick-side log would go quiet exactly when someone is asking why nothing happened.
 
 One subtlety worth knowing before touching the PR dashboard: `needsChecks` goes permanently false
 once every check-run has completed, and `targetSig` only changes on PR number + head SHA. So after a

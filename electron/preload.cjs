@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('desktop', {
     path: () => ipcRenderer.invoke('logs:path'),
     reveal: () => ipcRenderer.invoke('logs:reveal'),
     write: (scope, message, detail) => ipcRenderer.send('logs:write', { scope, message, detail }),
+    read: (maxBytes) => ipcRenderer.invoke('logs:read', maxBytes),
   },
   // Save already-fetched bytes to the Downloads folder (see registerDownloadIpc).
   downloads: {

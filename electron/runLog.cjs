@@ -107,4 +107,57 @@ function logEvent(scope, message, detail) {
   }
 }
 
-module.exports = { initRunLog, logEvent, runLogPath, runLogDir };
+/**
+ * The tail of the log, for the in-app viewer.
+ *
+ * The tail rather than the file: 5MB of NDJSON is both more than anyone reads and more
+ * than is sensible to hand across IPC and re-parse every couple of seconds. Reading the
+ * *end* is also what a reader wants — the interesting record is almost always the last
+ * one.
+ *
+ * A byte-offset read lands mid-line, so the first partial line is dropped rather than
+ * shipped as something the parser would have to reject. `truncated` says that happened,
+ * so the viewer can say "showing the last N of M" instead of implying it has everything.
+ *
+ * @param {number} maxBytes How much of the end to read.
+ * @returns {{text: string, truncated: boolean, size: number}}
+ */
+function readRunLogTail(maxBytes) {
+  const limit = Math.max(1, Math.min(Number(maxBytes) || 0, MAX_BYTES));
+  if (!logPath) return { text: '', truncated: false, size: 0 };
+
+  let size = 0;
+  try {
+    size = fs.statSync(logPath).size;
+  } catch {
+    return { text: '', truncated: false, size: 0 }; // nothing written yet
+  }
+
+  const start = Math.max(0, size - limit);
+  let fd;
+  try {
+    fd = fs.openSync(logPath, 'r');
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    let text = buf.toString('utf8');
+    if (start > 0) {
+      // Drop the partial line the offset cut into. No newline at all means the tail
+      // is one very long line, and half of it is worth less than nothing.
+      const nl = text.indexOf('\n');
+      text = nl === -1 ? '' : text.slice(nl + 1);
+    }
+    return { text, truncated: start > 0, size };
+  } catch {
+    return { text: '', truncated: false, size };
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
+
+module.exports = { initRunLog, logEvent, runLogPath, runLogDir, readRunLogTail };

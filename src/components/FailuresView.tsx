@@ -17,7 +17,6 @@ import {
   Flash,
   IconButton,
   Label,
-  Link,
   Octicon,
   SegmentedControl,
   Spinner,
@@ -50,8 +49,6 @@ import { MarkdownView } from './MarkdownView';
 import { useFillHeight } from '../hooks/useFillHeight';
 import { useConfig } from '../context/ConfigContext';
 import { useDashboard } from '../context/DashboardContext';
-import { useAutoRerun } from '../context/AutoRerunContext';
-import type { AutoRerunState } from '../hooks/usePrAutoRerun';
 import { sectionFailures, type FailedJobRef, type FailureGroup } from '../lib/failures';
 import { useFailures } from '../context/FailuresContext';
 import { loadFailuresLayout, saveFailuresLayout } from '../storage/failureGroupsStore';
@@ -250,66 +247,6 @@ function FailureRow({
   );
 }
 
-/**
- * What the auto-rerun engine has done. Shown here rather than in Settings because
- * this is where someone looks when a failure appears — and "it was already
- * re-run for you" is the first thing worth knowing.
- */
-function AutoRerunActivity() {
-  const { events, idleReason } = useAutoRerun();
-  if (events.length === 0) return null;
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderRadius: 2,
-        p: 3,
-        mb: 3,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        <Octicon icon={SyncIcon} size={14} sx={{ color: 'fg.muted' }} />
-        <Text sx={{ fontWeight: 'bold', fontSize: 1 }}>Auto-rerun activity</Text>
-        {idleReason !== 'armed' && <Label variant="secondary">{IDLE_LABEL[idleReason]}</Label>}
-      </Box>
-      {events.slice(0, 6).map((event) => (
-        <Box
-          key={event.id}
-          sx={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 2,
-            fontSize: 0,
-            flexWrap: 'wrap',
-          }}
-        >
-          <Octicon
-            icon={event.outcome === 'requested' ? CheckIcon : AlertIcon}
-            size={12}
-            sx={{
-              color: event.outcome === 'requested' ? 'success.fg' : 'danger.fg',
-            }}
-          />
-          <Text sx={{ color: 'fg.muted' }}>{formatRelative(new Date(event.at).toISOString())}</Text>
-          <Text>
-            #{event.prNumber} {event.workflowFile ?? 'workflow'}
-          </Text>
-          <Text sx={{ color: 'fg.muted' }}>
-            {event.outcome === 'requested'
-              ? `re-run requested (attempt ${event.attempt + 1})`
-              : `failed — ${event.detail ?? 'unknown error'}`}
-          </Text>
-          {event.runUrl && (
-            <Link href={event.runUrl} target="_blank" rel="noreferrer" sx={{ fontSize: 0 }}>
-              run
-            </Link>
-          )}
-        </Box>
-      ))}
-    </Box>
-  );
-}
 
 /** One PR's or one flow's failures, under a header that collapses. */
 function FailureGroupBlock({
@@ -430,14 +367,6 @@ function FailureGroupBlock({
 const GROUP_BADGE_VARIANT: Record<string, 'success' | 'done' | 'secondary'> = {
   open: 'success',
   merged: 'done',
-};
-
-const IDLE_LABEL: Record<AutoRerunState['idleReason'], string> = {
-  off: 'switched off',
-  'no-workflows': 'no workflows configured',
-  'no-permission': 'token cannot re-run',
-  throttled: 'rate limited',
-  armed: 'armed',
 };
 
 export function FailuresView() {
@@ -606,7 +535,6 @@ export function FailuresView() {
   if (failures.length === 0) {
     return (
       <Box>
-        <AutoRerunActivity />
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           <Octicon icon={CheckIcon} size={16} sx={{ color: 'success.fg' }} />
           <Text sx={{ fontWeight: 'bold' }}>Nothing is failing</Text>
@@ -627,7 +555,6 @@ export function FailuresView() {
 
   return (
     <Box>
-      <AutoRerunActivity />
       <Box
         sx={{
           display: 'flex',

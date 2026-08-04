@@ -28,6 +28,8 @@ import type { PrEntry } from '../hooks/useGitHubDashboard';
 import type { OverallStatus } from '../api/types';
 import { statusToOverall } from '../lib/status';
 import { AnalysedBadge } from './AnalysedBadge';
+import { AutoRerunLabel } from './AutoRerunLabel';
+import { AutoMergeButton, AutoMergeLabel } from './AutoMergeButton';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
 import { TimelineDialog, type GanttItem } from './TimelineDialog';
@@ -58,7 +60,7 @@ function PrRow({ entry }: { entry: PrEntry }) {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const { config } = useConfig();
-  const { invalidateChecks } = useDashboard();
+  const { invalidateChecks, refreshAll } = useDashboard();
   const { owner, repo } = config.upstream;
   const { pr, overall } = entry;
   // Artifacts are per-run; derive the PR's CI run id from its check-run URLs.
@@ -98,6 +100,8 @@ function PrRow({ entry }: { entry: PrEntry }) {
         </Box>
         <StateLabel status={pr.draft ? 'draft' : 'pullOpened'} variant="small" />
         <AnalysedBadge kind="pr" id={pr.number} />
+        <AutoMergeLabel pr={pr} />
+        <AutoRerunLabel prNumber={pr.number} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Link
             href={pr.html_url}
@@ -155,6 +159,9 @@ function PrRow({ entry }: { entry: PrEntry }) {
             subtitle={`${pr.title} · #${pr.number}`}
             onRerun={() => invalidateChecks(pr.number)}
           />
+          {/* refreshAll, not invalidateChecks: arming changes the PR itself (auto_merge
+              and the body), and only a re-read of the PR list shows that. */}
+          <AutoMergeButton owner={owner} repo={repo} pr={pr} onArmed={refreshAll} />
           <IconButton
             size="small"
             variant="invisible"

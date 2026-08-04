@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { clearRerunRecords, loadRerunRecords, recordRerun } from '../storage/rerunStore';
+import {
+  clearRerunRecords,
+  loadRerunRecords,
+  recordDecline,
+  recordRerun,
+  rerunRequestCount,
+} from '../storage/rerunStore';
 
 const NOW = Date.parse('2026-07-31T12:00:00Z');
 const DAY = 24 * 3600_000;
@@ -89,5 +95,114 @@ describe('rerunStore', () => {
     recordRerun(1, { attempt: 1, fingerprint: 'a', at: NOW, ok: true }, NOW);
     clearRerunRecords();
     expect(loadRerunRecords(NOW).size).toBe(0);
+  });
+});
+
+/**
+ * A decline is "we decided not to ask", which is not an attempt. Keeping the two apart is
+ * what makes the re-run count readable and the reported reason true.
+ */
+describe('rerunStore declines', () => {
+  beforeEach(() => {
+    clearRerunRecords();
+  });
+
+  it('records a decline without inventing a re-run', () => {
+    recordDecline(1001, { attempt: 3, reason: 'identical_failure', fingerprint: 'same', at: NOW }, NOW);
+    const record = loadRerunRecords(NOW).get(1001);
+    expect(record?.declined).toEqual({
+      attempt: 3,
+      reason: 'identical_failure',
+      fingerprint: 'same',
+      at: NOW,
+    });
+    expect(record?.attempts).toEqual([]);
+    expect(rerunRequestCount(record)).toBe(0);
+  });
+
+  it('counts only the requests actually made', () => {
+    recordRerun(1001, { attempt: 1, fingerprint: 'a', at: NOW, ok: true }, NOW);
+    recordRerun(1001, { attempt: 2, fingerprint: 'b', at: NOW, ok: true }, NOW);
+    recordDecline(1001, { attempt: 3, reason: 'identical_failure', fingerprint: 'b', at: NOW }, NOW);
+
+    const record = loadRerunRecords(NOW).get(1001);
+    expect(rerunRequestCount(record)).toBe(2);
+    expect(record?.declined?.attempt).toBe(3);
+  });
+
+  it('keeps the attempts when a decline lands, and the decline when an attempt does', () => {
+    recordRerun(1001, { attempt: 1, fingerprint: 'a', at: NOW, ok: true }, NOW);
+    recordDecline(1001, { attempt: 2, reason: 'identical_failure', fingerprint: 'a', at: NOW }, NOW);
+    recordRerun(1001, { attempt: 3, fingerprint: 'c', at: NOW, ok: true }, NOW);
+
+    const record = loadRerunRecords(NOW).get(1001);
+    expect(record?.attempts.map((a) => a.attempt)).toEqual([1, 3]);
+    expect(record?.declined?.attempt).toBe(2);
+  });
+
+  it('supersedes an older decline rather than accumulating them', () => {
+    recordDecline(1001, { attempt: 2, reason: 'identical_failure', fingerprint: 'a', at: NOW }, NOW);
+    recordDecline(
+      1001,
+      { attempt: 3, reason: 'identical_failure', fingerprint: 'b', at: NOW + 100 },
+      NOW + 100,
+    );
+    expect(loadRerunRecords(NOW).get(1001)?.declined?.attempt).toBe(3);
+  });
+
+  /**
+   * Installs written before declines existed filed the identical-failure verdict as a
+   * failed request, which overstated the re-run count and made the engine answer "already
+   * re-run" about an attempt it never touched. Migrated on read so nobody has to clear
+   * their storage.
+   */
+  it('migrates a legacy decline out of the attempt list', () => {
+    localStorage.setItem(
+      'job-monitor.rerun',
+      JSON.stringify({
+        '30619940666': {
+          runId: 30619940666,
+          updatedAt: NOW,
+          attempts: [
+            { attempt: 1, fingerprint: 'a62793be', at: NOW - 200, ok: true },
+            { attempt: 2, fingerprint: '1c7a9266', at: NOW - 100, ok: true },
+            {
+              attempt: 3,
+              fingerprint: '1c7a9266',
+              at: NOW,
+              ok: false,
+              error: 'the failure repeated identically',
+            },
+          ],
+        },
+      }),
+    );
+
+    const record = loadRerunRecords(NOW).get(30619940666);
+    expect(rerunRequestCount(record)).toBe(2); // two re-runs, not three
+    expect(record?.attempts.map((a) => a.attempt)).toEqual([1, 2]);
+    expect(record?.declined).toEqual({
+      attempt: 3,
+      reason: 'identical_failure',
+      fingerprint: '1c7a9266',
+      at: NOW,
+    });
+  });
+
+  /** A genuinely failed request is a request: it must stay counted. */
+  it('leaves a real request failure among the attempts', () => {
+    localStorage.setItem(
+      'job-monitor.rerun',
+      JSON.stringify({
+        '7': {
+          runId: 7,
+          updatedAt: NOW,
+          attempts: [{ attempt: 1, fingerprint: 'a', at: NOW, ok: false, error: 'HTTP 500' }],
+        },
+      }),
+    );
+    const record = loadRerunRecords(NOW).get(7);
+    expect(rerunRequestCount(record)).toBe(1);
+    expect(record?.declined).toBeUndefined();
   });
 });

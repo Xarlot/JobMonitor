@@ -5,9 +5,10 @@
  *  - Reads (`ghGet`/`ghGetText`/`ghGetBlob`) send `If-None-Match` using a per-path
  *    in-memory ETag cache; a 304 returns the cached body with `notModified: true`
  *    so callers can skip state updates (and 304s don't count against the rate limit).
- *  - `ghPost` is the one write path — uncached, unconditional, and used only to
- *    re-run failed Actions jobs. It is gated by tokenCapability, so it is never
- *    reached unless the token is known to permit it.
+ *  - `ghPost` and `ghWriteJson` are the write paths — uncached, unconditional, and
+ *    used only to re-run failed Actions jobs and to arm auto-merge on a PR. Both
+ *    funnel through one internal function that is gated by tokenCapability, so no
+ *    write is reachable unless the token is known to permit it.
  *  - Feeds rate-limit headers into the rateLimit store and token scopes into the
  *    tokenCapability store; surfaces 403/429 secondary limits as a typed,
  *    retry-aware error.
@@ -366,24 +367,27 @@ function refusalMessage(
  *
  *  - never conditional and never cached — the ETag cache is keyed by path and a
  *    write has no cacheable representation;
- *  - the response body is never parsed on success, because the Actions re-run
- *    endpoints answer 201 with an empty body and `res.json()` would throw a bare
- *    SyntaxError outside the GitHubApiError contract callers rely on;
  *  - failures are classified into {@link WriteRefusal} so callers can tell
  *    "retry later" from "this run is a lost cause" from "hide the feature".
  *
- * Returns the HTTP status on success.
+ * Every write goes through here, whatever its verb, so the capability gate and the
+ * refusal classification exist once. Returns the raw response; the two exported
+ * wrappers decide what to do with the body.
  */
-export async function ghPost(path: string, body?: unknown): Promise<number> {
+async function ghWriteRaw(
+  method: 'POST' | 'PATCH' | 'PUT',
+  path: string,
+  body?: unknown,
+): Promise<Response> {
   const token = tokenProvider();
   if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
 
-  // Enforced here, not just asserted in prose: three callers currently check
-  // capability before offering a write, and a fourth must inherit the guarantee
-  // rather than have to remember it.
+  // Enforced here, not just asserted in prose: several callers check capability
+  // before offering a write, and the next one must inherit the guarantee rather
+  // than have to remember it.
   if (!getTokenCapability().canRerun) {
     throw new GitHubApiError(
-      "This token isn't allowed to re-run jobs.",
+      "This token isn't allowed to write to this repository.",
       403,
       false,
       'permission',
@@ -403,7 +407,7 @@ export async function ghPost(path: string, body?: unknown): Promise<number> {
   let res: Response;
   try {
     res = await fetchImpl(`${API_BASE}${path}`, {
-      method: 'POST',
+      method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
@@ -425,7 +429,7 @@ export async function ghPost(path: string, body?: unknown): Promise<number> {
     // Adding a new RequestKind would land it in requestStats' catch-all `else`
     // and be reported as an error.
     recordRequest('fresh');
-    return res.status;
+    return res;
   }
 
   recordRequest('error');
@@ -446,6 +450,39 @@ export async function ghPost(path: string, body?: unknown): Promise<number> {
     refusal === 'rate-limit',
     refusal,
   );
+}
+
+/**
+ * A write whose response body is of no interest.
+ *
+ * The body is deliberately not parsed: the Actions re-run endpoints answer 201 with an
+ * empty body, and `res.json()` would throw a bare SyntaxError outside the GitHubApiError
+ * contract callers rely on. Returns the HTTP status on success.
+ */
+export async function ghPost(path: string, body?: unknown): Promise<number> {
+  const res = await ghWriteRaw('POST', path, body);
+  return res.status;
+}
+
+/**
+ * A write whose response body carries the answer — a PATCH that returns the updated
+ * resource, or a GraphQL mutation, where failure arrives as HTTP 200 with an `errors`
+ * array and so cannot be detected from the status at all.
+ *
+ * An unparseable body is reported as a GitHubApiError rather than a raw SyntaxError, for
+ * the same reason {@link ghPost} refuses to parse at all: callers handle one error type.
+ */
+export async function ghWriteJson<T>(
+  method: 'POST' | 'PATCH' | 'PUT',
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await ghWriteRaw(method, path, body);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new GitHubApiError('GitHub returned a response that could not be read.', res.status);
+  }
 }
 
 /**

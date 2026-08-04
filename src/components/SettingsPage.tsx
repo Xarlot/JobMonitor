@@ -20,6 +20,7 @@ import {
 } from '@primer/react';
 import {
   BellIcon,
+  BugIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -51,6 +52,8 @@ import {
   safeParseConfig,
   type AiConfig,
   type AiTaskConfig,
+  type AutoMergeConfig,
+  type DiagnosticsConfig,
   type EmptyFlowFilter,
   type FailureReportsConfig,
   type Flow,
@@ -1026,19 +1029,67 @@ function AutoRerunSection({
             </FormControl>
           </Box>
 
-          <FormControl sx={{ mt: 3 }}>
-            <Checkbox
-              checked={settings.stopOnIdenticalFailure}
-              onChange={(e) => onChange({ stopOnIdenticalFailure: e.target.checked })}
+          <FormControl sx={{ mt: 3, maxWidth: 320 }}>
+            <FormControl.Label>Allow the same failure this many times</FormControl.Label>
+            <TextInput
+              type="number"
+              min={0}
+              max={20}
+              value={settings.maxIdenticalFailures}
+              onChange={(e) => onChange({ maxIdenticalFailures: Number(e.target.value) || 0 })}
+              block
             />
-            <FormControl.Label>Stop when the failure repeats identically</FormControl.Label>
             <FormControl.Caption>
-              Compares the failing tests and steps against the previous attempt. An identical
-              failure means the break is real, so retrying it only wastes CI.
+              Compares the failing tests and steps between attempts. Once the <em>same</em> failure
+              has come back this many times in a row, the break is real and retrying only wastes
+              CI. A different failure in between starts the count over. <strong>0</strong> switches
+              this off and retries up to the attempt limit.
             </FormControl.Caption>
           </FormControl>
         </>
       )}
+    </Box>
+  );
+}
+
+/**
+ * The manual arm-auto-merge action. No on/off switch — the button appears whenever the
+ * token can write, and a click is its own authority. Only the strategy is a choice, and it
+ * has to be one the repository allows, or GitHub refuses the request outright.
+ */
+function AutoMergeSection({
+  settings,
+  onChange,
+}: {
+  settings: AutoMergeConfig;
+  onChange: (patch: Partial<AutoMergeConfig>) => void;
+}) {
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Arm auto-merge
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        Each open pull request gets a <strong>merge</strong> button that clears its description
+        and asks GitHub to merge it once the required checks pass. It confirms first, and shows
+        you the description it is about to delete — that text cannot be recovered afterwards.
+      </Text>
+      <FormControl sx={{ maxWidth: 260 }}>
+        <FormControl.Label>Merge strategy</FormControl.Label>
+        <Select
+          value={settings.mergeMethod}
+          onChange={(e) =>
+            onChange({ mergeMethod: e.target.value as AutoMergeConfig['mergeMethod'] })
+          }
+        >
+          <Select.Option value="squash">Squash and merge</Select.Option>
+          <Select.Option value="merge">Create a merge commit</Select.Option>
+          <Select.Option value="rebase">Rebase and merge</Select.Option>
+        </Select>
+        <FormControl.Caption>
+          Must be a strategy the repository allows, or GitHub refuses to arm it.
+        </FormControl.Caption>
+      </FormControl>
     </Box>
   );
 }
@@ -1307,9 +1358,16 @@ function CheckRow({
  *
  * Shown rather than merely written, because a log nobody can find is no better than no log
  * — and the usual reason to want it is to hand it to someone else after something went
- * wrong.
+ * wrong. The heading and the description do not wait on the path lookup: this owns a tab
+ * now, and a tab that renders nothing at all reads as a broken one.
  */
-function DiagnosticsSection() {
+function DiagnosticsSection({
+  settings,
+  onChange,
+}: {
+  settings: DiagnosticsConfig;
+  onChange: (patch: Partial<DiagnosticsConfig>) => void;
+}) {
   const [paths, setPaths] = useState<{ file: string; dir: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -1321,8 +1379,6 @@ function DiagnosticsSection() {
     };
   }, []);
 
-  if (!paths) return null;
-
   return (
     <Box sx={sectionSx}>
       <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
@@ -1330,41 +1386,112 @@ function DiagnosticsSection() {
       </Heading>
       <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
         The desktop app keeps a record of what it did — every analysis, the commands it ran, how each
-        one ended, and any request that failed. One JSON object per line, capped at 5 MB with one
-        previous file kept. It holds sizes and outcomes, never your token and never the contents of a
-        log.
+        one ended, every auto-rerun decision including the ones that chose not to fire, and any
+        request that failed. One JSON object per line, capped at 5 MB with one previous file kept. It
+        holds sizes and outcomes, never your token and never the contents of a log.
       </Text>
-      <Box
-        as="pre"
-        sx={{
-          m: 0,
-          mb: 2,
-          p: 2,
-          fontFamily: 'mono',
-          fontSize: 0,
-          bg: 'canvas.inset',
-          borderRadius: 2,
-          border: '1px solid',
-          borderColor: 'border.muted',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-        }}
-      >
-        {paths.file}
-      </Box>
-      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-        <Button
-          leadingVisual={CopyIcon}
-          onClick={() => {
-            void navigator.clipboard?.writeText(paths.file);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
+
+      <FormControl sx={{ mb: 3 }}>
+        <Checkbox
+          checked={settings.showLogTab}
+          onChange={(e) => onChange({ showLogTab: e.target.checked })}
+        />
+        <FormControl.Label>Read the log in a Diagnostics tab</FormControl.Label>
+        <FormControl.Caption>
+          Adds a <strong>Diagnostics</strong> tab to the main navigation that follows the log live,
+          filtered by scope and searchable — instead of opening the file yourself. The log is written
+          either way; this only decides whether there is a tab for reading it.
+        </FormControl.Caption>
+      </FormControl>
+
+      {settings.showLogTab && (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: ['1fr', '1fr 1fr'],
+            columnGap: 3,
+            rowGap: 3,
+            mb: 3,
           }}
         >
-          {copied ? 'Copied' : 'Copy path'}
-        </Button>
-        <Button onClick={() => void revealDiagnosticsLog()}>Open folder</Button>
-      </Box>
+          <FormControl>
+            <FormControl.Label>Tail to read (KB)</FormControl.Label>
+            <TextInput
+              type="number"
+              min={16}
+              max={5120}
+              value={settings.tailKB}
+              onChange={(e) => onChange({ tailKB: Number(e.target.value) })}
+            />
+            <FormControl.Caption>
+              How much of the end of the file to load. The newest records are the point; raise it to
+              reach further back.
+            </FormControl.Caption>
+          </FormControl>
+          <FormControl>
+            <FormControl.Label>Live refresh (seconds)</FormControl.Label>
+            <TextInput
+              type="number"
+              min={1}
+              max={60}
+              value={settings.followSeconds}
+              onChange={(e) => onChange({ followSeconds: Number(e.target.value) })}
+            />
+            <FormControl.Caption>
+              How often the tab re-reads the file while <strong>Live</strong> is on. A local read, so
+              this costs no GitHub quota.
+            </FormControl.Caption>
+          </FormControl>
+        </Box>
+      )}
+      {paths ? (
+        <>
+          <Box
+            as="pre"
+            sx={{
+              m: 0,
+              mb: 2,
+              p: 2,
+              fontFamily: 'mono',
+              fontSize: 0,
+              bg: 'canvas.inset',
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'border.muted',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {paths.file}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Button
+              leadingVisual={CopyIcon}
+              onClick={() => {
+                void navigator.clipboard?.writeText(paths.file);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? 'Copied' : 'Copy path'}
+            </Button>
+            <Button onClick={() => void revealDiagnosticsLog()}>Open folder</Button>
+          </Box>
+        </>
+      ) : (
+        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1 }}>
+          Locating the log file…
+        </Text>
+      )}
+      {/* The file is written either way; this is only for watching it happen live. */}
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mt: 3, mb: 0 }}>
+        To follow the same lines as they happen, open DevTools and filter the console by a scope —
+        <Text as="span" sx={{ fontFamily: 'mono' }}> [auto-rerun]</Text>,
+        <Text as="span" sx={{ fontFamily: 'mono' }}> [api]</Text>,
+        <Text as="span" sx={{ fontFamily: 'mono' }}> [claude]</Text>. Console output is off by
+        default in an installed build; turn it on with
+        <Text as="span" sx={{ fontFamily: 'mono' }}> jobMonitorDebug.enable()</Text>.
+      </Text>
     </Box>
   );
 }
@@ -1534,7 +1661,15 @@ export function SettingsPage() {
   const [jsonText, setJsonText] = useState('');
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
   const [tab, setTab] = useState<
-    'repo' | 'polling' | 'flows' | 'token' | 'prauto' | 'ai' | 'notifications' | 'updates'
+    | 'repo'
+    | 'polling'
+    | 'flows'
+    | 'token'
+    | 'prauto'
+    | 'ai'
+    | 'notifications'
+    | 'diagnostics'
+    | 'updates'
   >('token');
 
   const exportJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
@@ -1623,8 +1758,12 @@ export function SettingsPage() {
     ['ai', 'AI integration', SparkleFillIcon],
     ['notifications', 'Notifications', BellIcon],
   ];
-  // Auto-update is a desktop-only feature, so its tab only appears there.
-  if (isDesktop()) TABS.push(['updates', 'Updates', DownloadIcon]);
+  // Both of these are desktop-only: there is no on-disk log in a browser tab, and no
+  // installer to update. An empty tab is worse than an absent one.
+  if (isDesktop()) {
+    TABS.push(['diagnostics', 'Diagnostics', BugIcon]);
+    TABS.push(['updates', 'Updates', DownloadIcon]);
+  }
 
   return (
     <Box sx={{ maxWidth: 860 }}>
@@ -1820,6 +1959,10 @@ export function SettingsPage() {
             settings={draft.prAutoRerun}
             onChange={(patch) => updateNested('prAutoRerun', patch)}
           />
+          <AutoMergeSection
+            settings={draft.autoMerge}
+            onChange={(patch) => updateNested('autoMerge', patch)}
+          />
           <MergedPrsSection
             settings={draft.mergedPrs}
             onChange={(patch) => updateNested('mergedPrs', patch)}
@@ -1836,7 +1979,16 @@ export function SettingsPage() {
         <>
           <AiSection settings={draft.ai} onChange={(patch) => updateNested('ai', patch)} />
           {draftFooter}
-          <DiagnosticsSection />
+        </>
+      )}
+
+      {tab === 'diagnostics' && (
+        <>
+          <DiagnosticsSection
+            settings={draft.diagnostics}
+            onChange={(patch) => updateNested('diagnostics', patch)}
+          />
+          {draftFooter}
         </>
       )}
 
