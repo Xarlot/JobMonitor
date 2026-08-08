@@ -119,6 +119,21 @@ export type ClaudeRunLogResult =
   | { ok: true; text: string; truncated: boolean }
   | { ok: false; error: string };
 
+/** Ask the CLI to write a pull request's title and description. */
+export interface ClaudeComposeRequest {
+  /** The whole brief, including the material to summarise. Sent on stdin. */
+  prompt: string;
+  requestId: string;
+  /** The only task this channel accepts; re-checked in the main process. */
+  task: 'pr';
+  model?: string;
+  effort?: string;
+}
+
+export type ClaudeComposeResult =
+  | { ok: true; reply: string; incompleteReason?: string }
+  | { ok: false; error: string; cancelled?: boolean };
+
 interface ClaudeApi {
   probe: () => Promise<ClaudeToolStatus>;
   runLog?: (payload: {
@@ -127,6 +142,8 @@ interface ClaudeApi {
     runId: number;
   }) => Promise<ClaudeRunLogResult>;
   analyze: (payload: ClaudeAnalyzeRequest) => Promise<ClaudeAnalyzeResult>;
+  /** Optional, so a desktop build predating this feature degrades to the template. */
+  compose?: (payload: ClaudeComposeRequest) => Promise<ClaudeComposeResult>;
   cancel: (requestId: string) => Promise<boolean>;
   onProgress: (callback: (progress: ClaudeProgress) => void) => () => void;
   onLog?: (callback: (event: ClaudeLogEvent) => void) => () => void;
@@ -172,6 +189,36 @@ export async function analyzeWithClaude(
   if (!c) return { ok: false, error: 'Not running in the desktop app.' };
   try {
     return await c.analyze(request);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * True when this build can write pull-request text.
+ *
+ * Probed as a method rather than inferred from `isDesktop()`, so a desktop app installed
+ * before this feature existed falls back to the template instead of failing — the same
+ * reason `runLog` is optional above.
+ */
+export function composeAvailable(): boolean {
+  return typeof api()?.compose === 'function';
+}
+
+/**
+ * Have the local CLI write a pull request's title and description.
+ *
+ * Returns a failure rather than throwing, and the caller is expected to carry on with its
+ * own template when it does: the pull request is the product here, and a model that is
+ * missing, slow or confused must not be able to stop one being opened.
+ */
+export async function composeWithClaude(
+  request: ClaudeComposeRequest,
+): Promise<ClaudeComposeResult> {
+  const c = api();
+  if (!c?.compose) return { ok: false, error: 'Not running in the desktop app.' };
+  try {
+    return await c.compose(request);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

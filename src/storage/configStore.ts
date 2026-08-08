@@ -230,6 +230,40 @@ export const diagnosticsSchema = z
   })
   .prefault({});
 
+/**
+ * Long-lived shared branches in the upstream repository.
+ *
+ * A "feature branch" is one that exists under `prefix` in **both** the upstream and the
+ * fork — the pair is what makes the three actions meaningful: a branch only in upstream
+ * can't be pulled into a fork that doesn't have it, and one only in the fork isn't shared
+ * work at all.
+ *
+ * Off by default, because most repositories have no such branches and an empty tab is
+ * worse than an absent one.
+ */
+export const featureBranchesSchema = z
+  .object({
+    /** Show the "Feature branches" tab in the main navigation. */
+    enabled: z.boolean().default(false),
+    /**
+     * Ref prefix that defines a feature branch. The trailing slash matters: it is handed
+     * to GitHub's `matching-refs` endpoint verbatim, where `feature` would also match
+     * `features-old` while `feature/` would not.
+     *
+     * Constrained to what a git ref may contain, because "verbatim" is literal — the
+     * slashes have to stay slashes for the prefix to match anything, so this cannot be
+     * percent-encoded on the way out. A `?` or `#` in here would otherwise stop being part
+     * of the path and start being a query or a fragment.
+     */
+    prefix: z
+      .string()
+      .trim()
+      .min(1)
+      .regex(/^[A-Za-z0-9._\-/]+$/, 'prefix may only contain letters, digits, . _ - and /')
+      .default('feature/'),
+  })
+  .prefault({});
+
 /** Markdown failure reports (one per failed job) for filing bugs. */
 export const failureReportsSchema = z
   .object({
@@ -320,6 +354,13 @@ export const aiSchema = z
      * medium effort rather than the deep pass's high.
      */
     blame: aiTaskSchema('opus', 'medium'),
+    /**
+     * The pull-request write-up: a title and description for the PR that ships a feature
+     * branch into the default branch, from the commit subjects and changed files the app
+     * has already fetched. One turn, no tools — it is summarising input it was handed, not
+     * investigating anything.
+     */
+    pr: aiTaskSchema('sonnet', 'medium'),
   })
   .prefault({});
 
@@ -328,6 +369,16 @@ export const monitorConfigSchema = z.object({
   upstream: ownerRepoSchema,
   fork: z.object({
     owner: z.string().trim().min(1, 'fork owner is required'),
+    /**
+     * The fork's own repository name, for the rare fork that was renamed.
+     *
+     * Blank means "same name as the upstream", which is what a fork gets by default and
+     * what every earlier version of this app assumed outright — it never needed the name,
+     * since the only thing it did with a fork was filter upstream PRs by head owner. The
+     * feature-branch actions address the fork repository directly, so the name has to be
+     * knowable. Read it through `forkRepo()` rather than this field.
+     */
+    repo: z.string().trim().default(''),
     branch: z.string().trim().min(1).nullable().default(null),
   }),
   /** GitHub login whose open PRs are tracked. Defaults to fork.owner if blank. */
@@ -344,6 +395,8 @@ export const monitorConfigSchema = z.object({
   failureReports: failureReportsSchema,
   /** The in-app diagnostics log viewer (desktop, opt-in). */
   diagnostics: diagnosticsSchema,
+  /** Shared `feature/**` branches: the tab and its three actions (opt-in). */
+  featureBranches: featureBranchesSchema,
   /** Local AI integration via the `claude` CLI. */
   ai: aiSchema,
   /** Desktop app: auto-download & install updates. Ignored where unsupported. */
@@ -372,6 +425,7 @@ export type PrAutoRerunConfig = z.infer<typeof prAutoRerunSchema>;
 export type MergedPrsConfig = z.infer<typeof mergedPrsSchema>;
 export type FailureReportsConfig = z.infer<typeof failureReportsSchema>;
 export type DiagnosticsConfig = z.infer<typeof diagnosticsSchema>;
+export type FeatureBranchesConfig = z.infer<typeof featureBranchesSchema>;
 export type AutoMergeConfig = z.infer<typeof autoMergeSchema>;
 export type EmptyFlowFilter = z.infer<typeof emptyFlowFilterSchema>;
 export type MonitorConfig = z.infer<typeof monitorConfigSchema>;
@@ -386,7 +440,7 @@ const STORAGE_KEY = 'job-monitor.config';
 export const DEFAULT_CONFIG: MonitorConfig = {
   version: 1,
   upstream: { owner: '', repo: '' },
-  fork: { owner: '', branch: null },
+  fork: { owner: '', repo: '', branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
   notifications: { pr: false, flow: false, autoRerun: false },
@@ -401,6 +455,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
   autoMerge: { mergeMethod: 'squash' },
   diagnostics: { showLogTab: false, tailKB: 512, followSeconds: 3 },
+  featureBranches: { enabled: false, prefix: 'feature/' },
   ai: {
     enabled: true,
     extraInstructions: '',
@@ -408,6 +463,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
     deep: { model: 'opus', effort: 'high', prompt: '' },
     log: { model: 'sonnet', effort: 'low', prompt: '' },
     blame: { model: 'opus', effort: 'medium', prompt: '' },
+    pr: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,
   rateLimitWarnAt: 50,
@@ -486,6 +542,18 @@ export function isConfigComplete(config: MonitorConfig): boolean {
 /** Effective PR author: explicit prAuthor, else the fork owner. */
 export function effectivePrAuthor(config: MonitorConfig): string {
   return config.prAuthor.trim() || config.fork.owner.trim();
+}
+
+/**
+ * Effective fork repository name: the explicit override, else the upstream's name.
+ *
+ * Forking keeps the name unless someone renames it afterwards, so the fallback is right
+ * for almost everyone — but it is a *guess*, and the calls that use it write to whatever
+ * repository it names. Everything addressing the fork must go through here rather than
+ * reaching for `upstream.repo` and quietly baking the guess in a second time.
+ */
+export function forkRepo(config: MonitorConfig): string {
+  return config.fork.repo.trim() || config.upstream.repo;
 }
 
 export function newFlowId(): string {

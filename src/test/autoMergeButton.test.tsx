@@ -61,7 +61,7 @@ function renderButton(over: Partial<PullRequest> = {}, onArmed = vi.fn()) {
   return onArmed;
 }
 
-const open = () => fireEvent.click(screen.getByLabelText(/Arm auto-merge/));
+const open = () => fireEvent.click(screen.getByLabelText(/Enable auto-merge/));
 
 describe('toMergeMethod', () => {
   /** Config stores lower-case; the GraphQL enum is upper-case, and a mismatch 400s. */
@@ -82,18 +82,18 @@ describe('AutoMergeButton', () => {
   it('is absent when the token cannot write', () => {
     capability.canRerun = false;
     renderButton();
-    expect(screen.queryByLabelText(/Arm auto-merge/)).toBeNull();
+    expect(screen.queryByLabelText(/Enable auto-merge/)).toBeNull();
   });
 
   /** GitHub errors on an already-armed PR, so offering it would only produce one. */
   it('is absent when auto-merge is already armed', () => {
     renderButton({ auto_merge: ARMED });
-    expect(screen.queryByLabelText(/Arm auto-merge/)).toBeNull();
+    expect(screen.queryByLabelText(/Enable auto-merge/)).toBeNull();
   });
 
   it('is absent for a PR that is not open', () => {
     renderButton({ state: 'closed' });
-    expect(screen.queryByLabelText(/Arm auto-merge/)).toBeNull();
+    expect(screen.queryByLabelText(/Enable auto-merge/)).toBeNull();
   });
 
   /** The whole point of the dialog: nothing reaches GitHub on the first click. */
@@ -109,9 +109,9 @@ describe('AutoMergeButton', () => {
     armAutoMerge.mockResolvedValue({ descriptionCleared: true, autoMergeEnabled: true });
     const onArmed = renderButton();
     open();
-    fireEvent.click(screen.getByRole('button', { name: /Clear description and arm/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Clear description and enable/ }));
 
-    await waitFor(() => expect(screen.getByText(/Auto-merge armed \(squash\)/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Auto-merge enabled \(squash\)/)).toBeTruthy());
     expect(armAutoMerge).toHaveBeenCalledWith('o', 'r', expect.objectContaining({ number: 41763 }), 'SQUASH');
     expect(onArmed).toHaveBeenCalledTimes(1);
   });
@@ -128,10 +128,10 @@ describe('AutoMergeButton', () => {
     });
     const onArmed = renderButton();
     open();
-    fireEvent.click(screen.getByRole('button', { name: /Clear description and arm/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Clear description and enable/ }));
 
     await waitFor(() =>
-      expect(screen.getByText(/description was cleared, but auto-merge was not armed/i)).toBeTruthy(),
+      expect(screen.getByText(/description was cleared, but auto-merge was not enabled/i)).toBeTruthy(),
     );
     expect(onArmed).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe('AutoMergeButton', () => {
     });
     renderButton();
     open();
-    fireEvent.click(screen.getByRole('button', { name: /Clear description and arm/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Clear description and enable/ }));
 
     await waitFor(() => expect(screen.getByText(/Nothing was changed: PR is locked/)).toBeTruthy());
   });

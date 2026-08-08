@@ -7,6 +7,7 @@ import { jobIdFromUrl } from '../api/endpoints';
 import { isQuietStatus, useViewMode } from '../context/ViewModeContext';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunDialog } from './CheckRunDialog';
+import { AnalyseFailureButton } from './AnalyseFailureButton';
 import { formatDuration, formatRelative } from '../lib/format';
 
 const cellSx = {
@@ -29,6 +30,8 @@ interface Row {
   url: string | null;
   /** Actions job id (when this check-run maps to a job) — enables Summary/Logs. */
   jobId: number | null;
+  /** The check-run itself, which is how a pull request's failures are keyed. */
+  checkRunId: number | null;
 }
 
 function toRows(checkRuns: CheckRun[], combined: CombinedStatus | null): Row[] {
@@ -41,6 +44,7 @@ function toRows(checkRuns: CheckRun[], combined: CombinedStatus | null): Row[] {
     started: formatRelative(c.started_at),
     url: c.html_url ?? c.details_url,
     jobId: jobIdFromUrl(c.details_url ?? c.html_url),
+    checkRunId: c.id,
   }));
   if (combined) {
     for (const s of combined.statuses) {
@@ -53,6 +57,9 @@ function toRows(checkRuns: CheckRun[], combined: CombinedStatus | null): Row[] {
         started: formatRelative(s.created_at),
         url: s.target_url,
         jobId: null,
+        // A commit status is not a check run and has no job, so it never reaches the
+        // Failures tab and gets no jump.
+        checkRunId: null,
       });
     }
   }
@@ -115,6 +122,7 @@ export function CheckRunsTable({
                 {r.started}
               </Box>
               <Box as="td" sx={{ ...cellSx, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <AnalyseFailureButton checkRunId={r.checkRunId} jobId={r.jobId} />
                 {r.jobId != null && (
                   <>
                     <IconButton

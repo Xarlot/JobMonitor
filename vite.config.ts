@@ -57,6 +57,42 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : './',
   define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react(), cspPlugin(command === 'serve')],
+  build: {
+    rolldownOptions: {
+      output: {
+        /**
+         * Split the dependencies out of the app bundle.
+         *
+         * Not for the sake of a smaller download — the whole thing is ~290 KB gzipped
+         * either way — but for **caching**. In one chunk, a one-line change to a component
+         * invalidates React, Primer and styled-components along with it, so every release
+         * re-downloads all of them. They change a few times a year; this app changes weekly.
+         *
+         * Grouped by how they version rather than by size: Primer and styled-components
+         * move together (Primer v36 renders through styled-components), and the two
+         * single-purpose libraries are separated because each is used by exactly one part
+         * of the app and neither changes.
+         */
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            // The icon set is its own package and its own release cadence, and it is large
+            // enough to be worth not re-downloading with the component library.
+            { name: 'octicons', test: /node_modules[\\/]@primer[\\/]octicons-react[\\/]/ },
+            // styled-components v5 is effectively frozen, so it is worth its own chunk
+            // rather than being invalidated whenever Primer moves.
+            {
+              name: 'styled',
+              test: /node_modules[\\/](styled-components|@styled-system|@emotion)[\\/]/,
+            },
+            { name: 'primer', test: /node_modules[\\/]@primer[\\/]/ },
+            { name: 'table', test: /node_modules[\\/]@tanstack[\\/]/ },
+            { name: 'zip', test: /node_modules[\\/]fflate[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

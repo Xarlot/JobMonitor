@@ -6,6 +6,7 @@ import {
   BugIcon,
   DeviceDesktopIcon,
   GearIcon,
+  GitBranchIcon,
   GitPullRequestIcon,
   MarkGithubIcon,
   MoonIcon,
@@ -19,6 +20,8 @@ import { useConfig } from './context/ConfigContext';
 import { useCapabilityProbe } from './hooks/useCapabilityProbe';
 import { DashboardProvider } from './context/DashboardContext';
 import { AutoRerunProvider } from './context/AutoRerunContext';
+import { FeatureBranchesProvider } from './context/FeatureBranchesContext';
+import { NavigationProvider } from './context/NavigationContext';
 import { FailuresProvider, useFailures } from './context/FailuresContext';
 import { FlowsRuntimeProvider } from './context/FlowsRuntimeContext';
 import { ResolvedFlowsProvider } from './context/ResolvedFlowsContext';
@@ -32,11 +35,12 @@ import { PrList } from './components/PrList';
 import { FlowsView } from './components/FlowsView';
 import { FailuresView } from './components/FailuresView';
 import { DiagnosticsView } from './components/DiagnosticsView';
+import { FeatureBranchesView } from './components/FeatureBranchesView';
 import { SettingsPage } from './components/SettingsPage';
 import { setAutoUpdateEnabled } from './storage/desktopUpdates';
 import { isDesktop } from './storage/desktopSecret';
 
-type View = 'overview' | 'prs' | 'flows' | 'failures' | 'diagnostics';
+type View = 'overview' | 'prs' | 'branches' | 'flows' | 'failures' | 'diagnostics';
 
 const THEME_ICON = { auto: DeviceDesktopIcon, light: SunIcon, dark: MoonIcon } as const;
 
@@ -92,10 +96,17 @@ export function App() {
   useCapabilityProbe();
   const [view, setView] = useState<View>('overview');
   const [focusFlowId, setFocusFlowId] = useState<string | null>(null);
+  const [focusPrNumber, setFocusPrNumber] = useState<number | null>(null);
+  const [focusFailureKey, setFocusFailureKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Bumped on every navigation request, so repeating one still re-scrolls. */
+  const [focusNonce, setFocusNonce] = useState(0);
 
   // Opt-in, and only where the log exists: a browser tab has no file to read.
   const showDiagnostics = isDesktop() && config.diagnostics.showLogTab;
+  // Opt-in, and pointless without coordinates: everything on it is a comparison
+  // between the fork and the upstream.
+  const showBranches = complete && config.featureBranches.enabled;
 
   // Keep the desktop shell's auto-updater in sync with the user's setting.
   useEffect(() => {
@@ -106,7 +117,8 @@ export function App() {
   // blank with no nav item to leave by.
   useEffect(() => {
     if (!showDiagnostics && view === 'diagnostics') setView('overview');
-  }, [showDiagnostics, view]);
+    if (!showBranches && view === 'branches') setView('overview');
+  }, [showDiagnostics, showBranches, view]);
 
   if (status === 'loading') {
     return (
@@ -126,6 +138,24 @@ export function App() {
     setView('flows');
   };
   const openPrs = () => setView('prs');
+  /**
+   * Jump to one pull request in the Pull requests tab.
+   *
+   * The counter is part of the state so that asking for the *same* pull request twice still
+   * re-triggers the scroll — without it, a second click after scrolling away would change
+   * nothing and read as a broken button.
+   */
+  const openPr = (prNumber: number) => {
+    setFocusPrNumber(prNumber);
+    setFocusNonce((n) => n + 1);
+    setView('prs');
+  };
+  /** Open the Failures tab at one failure — from a failing check or job in a run. */
+  const openFailure = (failureKey: string) => {
+    setFocusFailureKey(failureKey);
+    setFocusNonce((n) => n + 1);
+    setView('failures');
+  };
 
   return (
     <Box sx={{ minHeight: '100vh', bg: 'canvas.default', color: 'fg.default' }}>
@@ -135,6 +165,11 @@ export function App() {
         <UnlockDialog />
       ) : (
         <DataProviders>
+          {/*
+            Inside the data providers, because a control that navigates to a failure first
+            has to ask the failure list whether that failure is there to navigate to.
+          */}
+          <NavigationProvider value={{ openPr, openFailure }}>
           {showSettings ? (
             <>
               <Box
@@ -157,7 +192,7 @@ export function App() {
                   </Button>
                 )}
               </Box>
-              <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
+              <Box sx={{ p: 4, maxWidth: 1440, mx: 'auto' }}>
                 {status === 'needs-setup' && (
                   <Flash variant="warning" sx={{ mb: 4 }}>
                     Add a GitHub token below to start monitoring.
@@ -172,6 +207,7 @@ export function App() {
                 view={view}
                 disabled={navDisabled}
                 showDiagnostics={showDiagnostics}
+                showBranches={showBranches}
                 onSelect={setView}
               />
 
@@ -179,15 +215,28 @@ export function App() {
                 Full width. The dashboard's content is grids, tables and a two-column
                 master/detail — all of which use the room: capping at 1200px left a wide
                 window mostly empty while the failure list and its report fought over the
-                same 1200. The Settings page below keeps its cap, because that one is a
-                form and a text field stretched across a 4K monitor is worse, not better.
+                same 1200. The Settings page below keeps a cap, because that one is a form —
+                but a generous one: what benefits from the room there is the multi-column
+                rows and the flow editor, not the text fields, which carry their own widths
+                and stay readable however wide the window gets.
               */}
               <Box sx={{ p: 4 }}>
                 {view === 'overview' &&
                   (complete ? <Overview onOpenFlow={openFlow} onOpenPrs={openPrs} /> : <ConfigHint />)}
-                {view === 'prs' && (complete ? <PrList /> : <ConfigHint />)}
+                {view === 'prs' &&
+                  (complete ? (
+                    <PrList key={`focus-${focusNonce}`} focusPrNumber={focusPrNumber} />
+                  ) : (
+                    <ConfigHint />
+                  ))}
+                {view === 'branches' && showBranches && <FeatureBranchesView />}
                 {view === 'flows' && (complete ? <FlowsView focusFlowId={focusFlowId} /> : <ConfigHint />)}
-                {view === 'failures' && (complete ? <FailuresView /> : <ConfigHint />)}
+                {view === 'failures' &&
+                  (complete ? (
+                    <FailuresView focusFailure={{ target: focusFailureKey, nonce: focusNonce }} />
+                  ) : (
+                    <ConfigHint />
+                  ))}
                 {/*
                   No `complete` gate: this one reads a local file rather than GitHub, and
                   an unconfigured app is a state you might well be diagnosing.
@@ -196,6 +245,7 @@ export function App() {
               </Box>
             </>
           )}
+          </NavigationProvider>
         </DataProviders>
       )}
     </Box>
@@ -211,11 +261,13 @@ function MainNav({
   view,
   disabled,
   showDiagnostics,
+  showBranches,
   onSelect,
 }: {
   view: View;
   disabled: boolean;
   showDiagnostics: boolean;
+  showBranches: boolean;
   onSelect: (view: View) => void;
 }) {
   const failureCount = useFailures().failures.length;
@@ -223,9 +275,16 @@ function MainNav({
   const navItems: { key: View; label: string; icon: typeof AppsIcon; counter?: number }[] = [
     { key: 'overview', label: 'Overview', icon: AppsIcon },
     { key: 'prs', label: 'Pull requests', icon: GitPullRequestIcon },
+  ];
+  // Next to Pull requests, since that is what it deals in — just the ones the PR tab
+  // cannot show, because both their ends are in the upstream.
+  if (showBranches) {
+    navItems.push({ key: 'branches', label: 'Feature branches', icon: GitBranchIcon });
+  }
+  navItems.push(
     { key: 'flows', label: 'Flows', icon: WorkflowIcon },
     { key: 'failures', label: 'Failures', icon: BugIcon, counter: failureCount || undefined },
-  ];
+  );
   // Last, and only when asked for: it is about the app rather than about the work.
   if (showDiagnostics) {
     navItems.push({ key: 'diagnostics', label: 'Diagnostics', icon: TerminalIcon });
@@ -264,14 +323,21 @@ function DataProviders({ children }: { children: ReactNode }) {
     <ViewModeProvider>
       <FlowsFilterProvider>
         <DashboardProvider>
-          <AutoRerunProvider>
-            <ResolvedFlowsProvider>
-              <FlowsRuntimeProvider>
-                {/* Innermost: the failure list reads both PR state and flow runs. */}
-                <FailuresProvider>{children}</FailuresProvider>
-              </FlowsRuntimeProvider>
-            </ResolvedFlowsProvider>
-          </AutoRerunProvider>
+          {/*
+            Above the auto-rerun engine, which consumes its pull requests: they are
+            invisible to the dashboard's fork-head filter, so nothing else would ever
+            re-run their failed jobs.
+          */}
+          <FeatureBranchesProvider>
+            <AutoRerunProvider>
+              <ResolvedFlowsProvider>
+                <FlowsRuntimeProvider>
+                  {/* Innermost: the failure list reads both PR state and flow runs. */}
+                  <FailuresProvider>{children}</FailuresProvider>
+                </FlowsRuntimeProvider>
+              </ResolvedFlowsProvider>
+            </AutoRerunProvider>
+          </FeatureBranchesProvider>
         </DashboardProvider>
       </FlowsFilterProvider>
     </ViewModeProvider>

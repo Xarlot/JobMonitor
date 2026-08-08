@@ -46,7 +46,13 @@ function derived(patternId: string, file: string): ResolvedFlow {
 }
 
 function cfg(flows: Flow[], groups: FlowGroup[]): MonitorConfig {
-  return { ...DEFAULT_CONFIG, upstream: { owner: 'o', repo: 'r' }, fork: { owner: 'f', branch: null }, flows, groups };
+  return {
+    ...DEFAULT_CONFIG,
+    upstream: { owner: 'o', repo: 'r' },
+    fork: { owner: 'f', repo: '', branch: null },
+    flows,
+    groups,
+  };
 }
 
 const ids = (flows: Flow[]) => flows.map((f) => f.id);

@@ -55,7 +55,7 @@ function inFilter(status: OverallStatus, filter: Filter): boolean {
   }
 }
 
-function PrRow({ entry }: { entry: PrEntry }) {
+function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
   const [open, setOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -80,8 +80,29 @@ function PrRow({ entry }: { entry: PrEntry }) {
     started_at: c.started_at,
     completed_at: c.completed_at,
   }));
+  /**
+   * Open and highlight the row that was navigated to.
+   *
+   * The Feature branches tab can send you here for one pull request, and a list of a dozen
+   * with nothing marked would leave you to find it by number. Mirrors how a flow behaves
+   * when the Overview jumps to it.
+   */
+  useEffect(() => {
+    if (focused) setOpen(true);
+  }, [focused]);
+
   return (
-    <Box sx={{ borderBottom: '1px solid', borderColor: 'border.default' }}>
+    <Box
+      id={`pr-${pr.number}`}
+      sx={{
+        borderBottom: '1px solid',
+        borderColor: 'border.default',
+        // A left edge rather than a background: the row already colours its own status
+        // column, and tinting the whole thing would read as a state the pull request is in.
+        borderLeft: '3px solid',
+        borderLeftColor: focused ? 'accent.emphasis' : 'transparent',
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -216,7 +237,10 @@ function PrRow({ entry }: { entry: PrEntry }) {
   );
 }
 
-export function PrList({ initialFilter }: { initialFilter?: PrFilter } = {}) {
+export function PrList({
+  initialFilter,
+  focusPrNumber,
+}: { initialFilter?: PrFilter; focusPrNumber?: number | null } = {}) {
   const { prs, listError, listUpdatedAt, isFetchingList, isFetchingChecks, refreshAll } =
     useDashboard();
   const { compact, setCompact } = useViewMode();
@@ -226,6 +250,26 @@ export function PrList({ initialFilter }: { initialFilter?: PrFilter } = {}) {
   useEffect(() => {
     if (initialFilter) setFilter(initialFilter);
   }, [initialFilter]);
+
+  /**
+   * Arriving for one particular pull request.
+   *
+   * The filter is cleared to `all` first: the request came from somewhere that knows the
+   * pull request exists, and landing on a filtered list that happens to exclude it would
+   * look like it had vanished. Scrolling waits a frame, since the row it targets is only
+   * rendered once that filter change has been applied.
+   */
+  useEffect(() => {
+    if (focusPrNumber == null) return;
+    setFilter('all');
+    const id = requestAnimationFrame(() => {
+      document.getElementById(`pr-${focusPrNumber}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focusPrNumber]);
 
   const counts = useMemo(() => {
     const c = { all: prs.length, active: 0, failed: 0, success: 0 };
@@ -304,7 +348,9 @@ export function PrList({ initialFilter }: { initialFilter?: PrFilter } = {}) {
             {prs.length === 0 ? 'No open pull requests found for this fork.' : 'No PRs match this filter.'}
           </Box>
         ) : (
-          visible.map((e) => <PrRow key={e.pr.number} entry={e} />)
+          visible.map((e) => (
+            <PrRow key={e.pr.number} entry={e} focused={e.pr.number === focusPrNumber} />
+          ))
         )}
       </Box>
     </Box>

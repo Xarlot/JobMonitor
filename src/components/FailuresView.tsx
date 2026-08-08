@@ -38,6 +38,7 @@ import {
   WorkflowIcon,
   ZapIcon,
 } from '@primer/octicons-react';
+import type { NavigationRequest } from '../context/NavigationContext';
 import { useCopy } from '../hooks/useCopy';
 import { useClaudeTriage } from '../hooks/useClaudeTriage';
 import type { ClaudeAnalysis, ClaudeDepth } from '../lib/claudePrompt';
@@ -206,6 +207,8 @@ function FailureRow({
   const count = testCountLabel(detail);
   return (
     <Box
+      // Anchor for arriving from a run — see the focus effect in FailuresView.
+      id={`failure-${failure.key}`}
       sx={{
         display: 'flex',
         alignItems: 'center',
@@ -369,7 +372,7 @@ const GROUP_BADGE_VARIANT: Record<string, 'success' | 'done' | 'secondary'> = {
   merged: 'done',
 };
 
-export function FailuresView() {
+export function FailuresView({ focusFailure }: { focusFailure?: NavigationRequest<string> } = {}) {
   const { config } = useConfig();
   const { isFetchingChecks } = useDashboard();
   const { failures, groups } = useFailures();
@@ -424,6 +427,49 @@ export function FailuresView() {
   // Derived rather than synced by an effect: failures come and go between polls, and
   // a stale focus would otherwise survive. Selections are likewise filtered against
   // the live list at use, so a vanished failure can't end up in a copied report.
+  /**
+   * Arriving from a run, for one failure.
+   *
+   * Focusing it is not enough: this list starts with its groups **collapsed**, so the row
+   * would be focused inside something shut and the tab would look like it had ignored the
+   * request. So the group and section holding it are opened, and only then is it scrolled to
+   * — a frame later, since it does not exist in the DOM until that expansion has rendered.
+   *
+   * Keyed on the request's nonce rather than the failure key, so asking for the same one
+   * twice still scrolls back to it.
+   */
+  const requestedKey = focusFailure?.target ?? null;
+  const requestNonce = focusFailure?.nonce ?? 0;
+  useEffect(() => {
+    if (!requestedKey) return;
+    const target = failures.find((f) => f.key === requestedKey);
+    if (!target) return;
+
+    setFocusKey(requestedKey);
+    const owner = sections.find((section) =>
+      section.groups.some((g) => g.jobs.some((j) => j.key === requestedKey)),
+    );
+    const group = owner?.groups.find((g) => g.jobs.some((j) => j.key === requestedKey));
+    if (owner || group) {
+      setLayout((prev) => ({
+        expandedGroups: group ? new Set(prev.expandedGroups).add(group.id) : prev.expandedGroups,
+        collapsedSections: owner
+          ? new Set([...prev.collapsedSections].filter((k) => k !== owner.kind))
+          : prev.collapsedSections,
+      }));
+    }
+
+    const raf = requestAnimationFrame(() => {
+      document
+        .getElementById(`failure-${requestedKey}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(raf);
+    // `failures` and `sections` are read at the moment of the request; re-running when they
+    // change would re-scroll on every poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestNonce, requestedKey]);
+
   const focused = focusKey ? (failures.find((f) => f.key === focusKey) ?? null) : null;
 
   const { details, reloadLog } = useFailureDetails(failures, visible, focused?.key ?? null, {

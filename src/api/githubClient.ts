@@ -314,11 +314,61 @@ export async function ghGet<T>(path: string): Promise<GhResult<T>> {
   return { data, status: res.status, notModified: false };
 }
 
-/** Lift GitHub's `message` out of an error body. Never throws. */
+/** GitHub's per-field validation codes, as something a person can read. */
+const ERROR_CODE_TEXT: Record<string, string> = {
+  missing: 'does not exist',
+  missing_field: 'is required',
+  invalid: 'is invalid',
+  already_exists: 'already exists',
+  unprocessable: 'could not be processed',
+};
+
+interface GitHubErrorEntry {
+  resource?: string;
+  field?: string;
+  code?: string;
+  message?: string;
+}
+
+/** One validation entry as a phrase. */
+function describeErrorEntry(entry: GitHubErrorEntry): string | null {
+  // `code: 'custom'` carries its own sentence, and it is the one that matters most: the
+  // reasons a pull request cannot be opened arrive this way ("No commits between …",
+  // "A pull request already exists for …").
+  if (typeof entry.message === 'string' && entry.message) return entry.message;
+  const code = entry.code ? (ERROR_CODE_TEXT[entry.code] ?? entry.code) : null;
+  if (!code) return null;
+  const subject = [entry.resource, entry.field].filter(Boolean).join('.');
+  return subject ? `${subject} ${code}` : code;
+}
+
+/**
+ * Lift GitHub's reason for refusing out of an error body. Never throws.
+ *
+ * **`message` alone is not the reason.** For a 422 it is the constant string
+ * `"Validation Failed"`, and everything that says *what* failed is in the `errors` array
+ * beside it. Reading only `message` had two costs: the user was told "Validation Failed",
+ * which names nothing they can act on; and the callers that recognise a specific refusal by
+ * its text — "No commits between …" meaning there is simply nothing to merge, "A pull
+ * request already exists …" meaning adopt the existing one — never matched, so both of
+ * those ordinary outcomes were reported as hard failures.
+ */
 async function readErrorMessage(res: Response): Promise<string | null> {
   try {
-    const body = (await res.json()) as { message?: unknown };
-    return typeof body?.message === 'string' ? body.message : null;
+    const body = (await res.json()) as { message?: unknown; errors?: unknown };
+    const message = typeof body?.message === 'string' ? body.message : null;
+
+    const details = Array.isArray(body?.errors)
+      ? (body.errors as GitHubErrorEntry[])
+          .map((e) => (e && typeof e === 'object' ? describeErrorEntry(e) : null))
+          .filter((d): d is string => Boolean(d))
+      : [];
+
+    if (details.length === 0) return message;
+    const joined = details.join('; ');
+    // Keep GitHub's own heading when it adds anything; "Validation Failed" alone does not,
+    // so the detail leads rather than trails it.
+    return message && !/^validation failed\.?$/i.test(message) ? `${message}: ${joined}` : joined;
   } catch {
     return null;
   }
@@ -339,24 +389,43 @@ function classifyRefusal(status: number, message: string | null): WriteRefusal {
   return 'other';
 }
 
+/**
+ * What a write was trying to do, so a refusal can say so.
+ *
+ * Every refusal message used to be phrased for re-running jobs, which was true when
+ * re-running was the only write. It stopped being true the moment a second kind of write
+ * existed: "This run is too old to re-run" is actively misleading in answer to a failed
+ * pull request. Callers name their own subject; the default keeps the original wording
+ * for the caller that owned it.
+ */
+export interface WriteSubject {
+  /** A verb phrase: "re-run jobs", "open a pull request", "sync the branch". */
+  action: string;
+  /** The thing acted on, capitalised for use at the start of a sentence: "Run". */
+  noun: string;
+}
+
+const RERUN_SUBJECT: WriteSubject = { action: 're-run jobs', noun: 'Run' };
+
 function refusalMessage(
   refusal: WriteRefusal,
   message: string | null,
   status: number,
+  subject: WriteSubject,
 ): string {
   switch (refusal) {
     case 'rate-limit':
       return 'GitHub rate limit reached.';
     case 'permission':
-      return `Your token isn't allowed to re-run jobs${message ? ` (${message})` : ''}.`;
+      return `Your token isn't allowed to ${subject.action}${message ? ` (${message})` : ''}.`;
     case 'too-old':
       return message ?? 'This run is too old to re-run (GitHub allows 30 days).';
     case 'conflict':
-      return message ?? "GitHub can't re-run this run in its current state.";
+      return message ?? `GitHub can't ${subject.action} in this state.`;
     case 'forbidden':
       return status === 404
-        ? 'Run not reachable — most likely the token lacks write access to this repository.'
-        : (message ?? 'GitHub refused the re-run.');
+        ? `${subject.noun} not reachable — most likely the token lacks write access to this repository.`
+        : (message ?? `GitHub refused to ${subject.action}.`);
     default:
       return message ?? `GitHub API error (HTTP ${status}).`;
   }
@@ -378,6 +447,7 @@ async function ghWriteRaw(
   method: 'POST' | 'PATCH' | 'PUT',
   path: string,
   body?: unknown,
+  subject: WriteSubject = RERUN_SUBJECT,
 ): Promise<Response> {
   const token = tokenProvider();
   if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
@@ -444,8 +514,21 @@ async function ghWriteRaw(
   }
 
   const refusal = classifyRefusal(res.status, message);
+  /**
+   * Every refused write, on the record.
+   *
+   * Writes were the one thing this app did that it never logged, so a failure left nothing
+   * behind: the diagnostics log showed the work leading up to it and then simply stopped,
+   * and the only account of what GitHub said was a sentence in a dialog the user had
+   * already closed. Path and status only — no token, no request body.
+   */
+  devWarn('api', `${method} ${path} refused: HTTP ${res.status}`, {
+    refusal,
+    githubMessage: message,
+    action: subject.action,
+  });
   throw new GitHubApiError(
-    refusalMessage(refusal, message, res.status),
+    refusalMessage(refusal, message, res.status, subject),
     res.status,
     refusal === 'rate-limit',
     refusal,
@@ -459,8 +542,12 @@ async function ghWriteRaw(
  * empty body, and `res.json()` would throw a bare SyntaxError outside the GitHubApiError
  * contract callers rely on. Returns the HTTP status on success.
  */
-export async function ghPost(path: string, body?: unknown): Promise<number> {
-  const res = await ghWriteRaw('POST', path, body);
+export async function ghPost(
+  path: string,
+  body?: unknown,
+  subject?: WriteSubject,
+): Promise<number> {
+  const res = await ghWriteRaw('POST', path, body, subject);
   return res.status;
 }
 
@@ -476,8 +563,9 @@ export async function ghWriteJson<T>(
   method: 'POST' | 'PATCH' | 'PUT',
   path: string,
   body?: unknown,
+  subject?: WriteSubject,
 ): Promise<T> {
-  const res = await ghWriteRaw(method, path, body);
+  const res = await ghWriteRaw(method, path, body, subject);
   try {
     return (await res.json()) as T;
   } catch {

@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('desktop', {
   claude: {
     probe: () => ipcRenderer.invoke('claude:probe'),
     analyze: (payload) => ipcRenderer.invoke('claude:analyze', payload),
+    /** A pull request's title and description, from material the renderer supplies. */
+    compose: (payload) => ipcRenderer.invoke('claude:compose', payload),
     cancel: (requestId) => ipcRenderer.invoke('claude:cancel', requestId),
     /** The whole run's failed-step log via `gh`, for the log viewer (see runLog). */
     runLog: (payload) => ipcRenderer.invoke('claude:runLog', payload),

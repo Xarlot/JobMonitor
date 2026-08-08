@@ -108,8 +108,14 @@ const QUICK_MAX_TURNS = 1;
  * calibrate a likelihood, which Opus at medium has done well in practice; raising it would
  * slow a task that already strains its wall clock.
  */
-const CLAUDE_MODEL = { quick: 'sonnet', deep: 'opus', log: 'sonnet', blame: 'opus' };
-const CLAUDE_EFFORT = { quick: 'medium', deep: 'high', log: 'low', blame: 'medium' };
+const CLAUDE_MODEL = { quick: 'sonnet', deep: 'opus', log: 'sonnet', blame: 'opus', pr: 'sonnet' };
+const CLAUDE_EFFORT = {
+  quick: 'medium',
+  deep: 'high',
+  log: 'low',
+  blame: 'medium',
+  pr: 'medium',
+};
 
 /**
  * What a renderer-supplied model/effort may be.
@@ -139,6 +145,9 @@ const TIMEOUT_BY_TASK = {
   log: 5 * 60_000,
   deep: CLAUDE_TIMEOUT_MS,
   blame: 40 * 60_000,
+  // Summarising a commit list that is already in the prompt. If this is still going after
+  // ninety seconds something is wrong, and the caller has a template to fall back on.
+  pr: 90_000,
 };
 const MAX_TURNS_BY_TASK = {
   quick: QUICK_MAX_TURNS,
@@ -148,9 +157,10 @@ const MAX_TURNS_BY_TASK = {
   // evidence across several branches — each its own turn. 24 ran out on a real repo before
   // it could finish, which is a wasted Opus run rather than a slow one.
   blame: 48,
+  pr: 1,
 };
-/** The two investigating tasks get tools; quick and log work from the log they are handed. */
-const USES_TOOLS = { quick: false, log: false, deep: true, blame: true };
+/** The two investigating tasks get tools; the rest work from what they are handed. */
+const USES_TOOLS = { quick: false, log: false, deep: true, blame: true, pr: false };
 
 /** Thinking budgets used only as the fallback when --effort isn't understood. */
 const THINKING_TOKENS = { medium: '10000', high: '31999' };
@@ -482,9 +492,6 @@ async function analyze(sender, payload) {
       /* window gone */
     }
   };
-  let scratch = null;
-  /** Set when the run leaves a resumable session behind. */
-  let keepScratch = false;
   const track = (child) => {
     const existing = running.get(requestId);
     running.set(requestId, existing ? [...existing, child] : [child]);
@@ -550,21 +557,90 @@ async function analyze(sender, payload) {
 
     // A scratch directory to be the run's cwd, so anything it downloads (artifact
     // zips, extracted reports) lands somewhere disposable rather than in the user's
-    // files. Removed in the finally below.
+    // files.
     // Stable per failure and task, not random. `claude --resume` looks a session up by the
     // directory it ran in, so a resumed run must land in the same place — a fresh mkdtemp
     // would make every session unreachable the moment it was needed.
-    scratch = path.join(os.tmpdir(), `job-monitor-triage-${scratchKey(owner, repo, runId, depth)}`);
-    fs.mkdirSync(scratch, { recursive: true });
+    const scratch = path.join(
+      os.tmpdir(),
+      `job-monitor-triage-${scratchKey(owner, repo, runId, depth)}`,
+    );
+
+    // The caller's prompt ends with a log placeholder line; the log was appended above.
+    const outcome = await runClaudeTask({
+      task: depth,
+      prompt: full,
+      requestId,
+      scratchDir: scratch,
+      model,
+      effort,
+      resumeSessionId,
+      emit,
+      log,
+      track,
+    });
+
+    if (!outcome.ok) return outcome;
+    return {
+      ok: true,
+      reply: outcome.answer,
+      logTruncated: Boolean(ghLog.truncated),
+      logSource: source,
+      incompleteReason: outcome.incompleteReason,
+      sessionId: outcome.sessionId,
+    };
+  } finally {
+    running.delete(requestId);
+  }
+}
+
+/**
+ * Spawn `claude` for one task and return what it wrote.
+ *
+ * The half of a request that has nothing to do with what is being asked: the scratch
+ * directory, the skills, the stream parser, the flag-fallback ladder, and the reading of
+ * an early exit. Extracted when a second kind of request appeared — a hand-rolled second
+ * spawn path would have quietly lost the fallback ladder (so an older CLI would fail
+ * instead of degrading), the cancellation registry, and the diagnostics that are the only
+ * record of what the CLI actually did.
+ *
+ * Answers `{ ok: true, answer }` or `{ ok: false, error }`; it never throws, because it is
+ * called from IPC handlers that must not.
+ */
+async function runClaudeTask({
+  task,
+  prompt,
+  requestId,
+  scratchDir,
+  model,
+  effort,
+  resumeSessionId,
+  /**
+   * Whether an unfinished run's directory is worth keeping so `--resume` can find it.
+   *
+   * Only true for a caller that can actually resume: `claude --resume` looks a session up
+   * by the directory it ran in, so keeping one is useful precisely when the directory is
+   * *derivable again* from the request. A caller whose scratch path is random has no way
+   * back to it, and keeping it would leak a temp directory per unfinished run.
+   */
+  resumable = true,
+  emit,
+  log,
+  track,
+}) {
+  /** Set when the run leaves a resumable session behind that this caller can return to. */
+  let keepScratch = false;
+  try {
+    fs.mkdirSync(scratchDir, { recursive: true });
 
     // `claude` discovers skills from `.claude/skills` under its working directory, and the
     // scratch dir is that directory — so writing it here is how the procedure reaches the
-    // model. Only the deep pass can use it: the others have one turn and no tools.
+    // model. Only the investigating tasks can use one: the rest have one turn and no tools.
     //
     // Best-effort. If this fails the brief still carries the contract and the facts, so
     // the analysis degrades to a less methodical one rather than failing outright.
-    for (const skill of SKILLS_BY_TASK[depth] ?? []) {
-      const installed = installSkill(scratch, skill);
+    for (const skill of SKILLS_BY_TASK[task] ?? []) {
+      const installed = installSkill(scratchDir, skill);
       if (installed !== true) log(`could not install the ${skill.SKILL_NAME} skill: ${installed}`);
     }
 
@@ -572,18 +648,18 @@ async function analyze(sender, payload) {
     const parser = createStreamParser((phase, detail) => {
       if (detail && typeof detail.activity === 'string') {
         toolCallCount += 1;
-        logEvent('claude', `tool: ${detail.activity}`, { requestId, depth, n: toolCallCount });
+        logEvent('claude', `tool: ${detail.activity}`, { requestId, depth: task, n: toolCallCount });
       }
       emit(phase, detail);
     });
     const baseOptions = {
-      timeoutMs: TIMEOUT_BY_TASK[depth],
+      timeoutMs: TIMEOUT_BY_TASK[task],
       // Set per variant below: the streaming ones are distilled by the parser, so the raw
       // cap is only a memory guard; for a plain `-p` run stdout *is* the reply.
       maxBytes: MAX_REPLY_BYTES,
-      stdin: full,
+      stdin: prompt,
       register: track,
-      cwd: scratch,
+      cwd: scratchDir,
     };
 
     // Each variant is a strict subset of the one before it, and a rejected flag fails
@@ -593,7 +669,7 @@ async function analyze(sender, payload) {
     let reply = null;
     let answer = '';
     let attempt = 0;
-    for (const variant of claudeVariants(depth, { model, effort, resumeSessionId })) {
+    for (const variant of claudeVariants(task, { model, effort, resumeSessionId })) {
       attempt += 1;
       if (variant.toolsUnavailable) emit('analysing', { toolsUnavailable: true });
       log(`spawn: claude ${variant.args.join(' ')}`, { env: variant.env, attempt });
@@ -626,8 +702,7 @@ async function analyze(sender, payload) {
     if (!reply.ok) {
       if (reply.cancelled) return { ok: false, cancelled: true, error: 'Stopped.' };
 
-      const outcome = parser.outcome();
-      const reason = describeExit(outcome, reply.error, {
+      const reason = describeExit(parser.outcome(), reply.error, {
         streamTruncated: Boolean(reply.truncated),
         textTruncated: parser.textTruncated(),
       });
@@ -635,39 +710,34 @@ async function analyze(sender, payload) {
       // Keep what it managed to write. An investigation that spent twenty tool calls and
       // produced a partial verdict before hitting the turn limit is worth far more than an
       // error message — throwing it away also throws away everything it cost.
-      const resumable = parser.sessionId();
-      keepScratch = Boolean(resumable);
-      if (answer.trim() || resumable) {
+      const sessionId = parser.sessionId();
+      keepScratch = resumable && Boolean(sessionId);
+      if (answer.trim() || sessionId) {
         log(`claude ended early (${reason}) with ${answer.length} chars`, {
-          resumable: Boolean(resumable),
+          sessionId: Boolean(sessionId),
+          keptScratch: keepScratch,
         });
         return {
           ok: true,
-          reply: answer,
-          logTruncated: Boolean(ghLog.truncated),
-          logSource: source,
+          answer,
           incompleteReason: reason,
-          sessionId: resumable ?? undefined,
+          // Only handed back to a caller that can use it: resuming needs the directory the
+          // run happened in, and that is gone for everyone else.
+          sessionId: resumable ? (sessionId ?? undefined) : undefined,
         };
       }
       return { ok: false, error: `claude: ${reason}` };
     }
 
     emit('done');
-    return {
-      ok: true,
-      reply: answer || reply.stdout,
-      logTruncated: Boolean(ghLog.truncated),
-      logSource: source,
-    };
+    return { ok: true, answer: answer || reply.stdout };
   } finally {
-    running.delete(requestId);
     // Kept when the run ended with something to continue from: deleting it would throw
     // away the session along with the directory, turning "continue" into "start again".
     // Swept on the next completed run of the same failure, and by the OS in any case.
-    if (scratch && !keepScratch) {
+    if (!keepScratch) {
       try {
-        fs.rmSync(scratch, { recursive: true, force: true });
+        fs.rmSync(scratchDir, { recursive: true, force: true });
       } catch {
         /* a leftover temp dir is not worth failing over */
       }
@@ -878,6 +948,86 @@ async function fetchLog({ owner, repo, runId, track, emit }) {
   return result;
 }
 
+/**
+ * Write a pull request's title and description from material the renderer supplies.
+ *
+ * A separate channel rather than another `depth` on {@link analyze}, because analyze is
+ * built around a workflow run: it requires a positive run id, fetches a log, refuses when
+ * there isn't one, and appends that log to the prompt. None of that applies to summarising
+ * a commit list, and faking a run id to get past it would also poison the scratch key that
+ * `--resume` depends on.
+ *
+ * No tools, one turn, and a fresh empty working directory — the model is summarising text
+ * it was handed, so it needs neither the network nor the filesystem, and starting it
+ * somewhere empty keeps it from picking up a CLAUDE.md belonging to some real project.
+ */
+async function compose(sender, payload) {
+  const { prompt, requestId, task = 'pr', model, effort } = payload ?? {};
+
+  // Re-validated here, not trusted from the renderer.
+  if (typeof prompt !== 'string' || prompt.length === 0 || prompt.length > 500_000) {
+    return { ok: false, error: 'Invalid prompt.' };
+  }
+  if (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(requestId)) {
+    return { ok: false, error: 'Invalid request id.' };
+  }
+  // A closed set, checked rather than trusted: `task` indexes the per-task budget tables,
+  // and an unrecognised key would read `undefined` out of all of them — which reaches
+  // `setTimeout(kill, undefined)` and kills the child the instant it spawns.
+  if (task !== 'pr') return { ok: false, error: 'Invalid task.' };
+
+  const emit = (phase, detail = {}) => {
+    try {
+      if (!sender.isDestroyed()) sender.send('claude:progress', { requestId, phase, ...detail });
+    } catch {
+      /* window gone */
+    }
+  };
+  const log = (message, detail) => {
+    logEvent('claude', message, { requestId, depth: task, ...(detail ?? {}) });
+    try {
+      if (!sender.isDestroyed()) sender.send('claude:log', { requestId, message, detail });
+    } catch {
+      /* window gone */
+    }
+  };
+  const track = (child) => {
+    const existing = running.get(requestId);
+    running.set(requestId, existing ? [...existing, child] : [child]);
+  };
+
+  // Random, unlike the analysis scratch key: there is no session to resume, so nothing
+  // needs to find this directory again, and two composes in flight must not share one.
+  const scratchDir = path.join(os.tmpdir(), `job-monitor-compose-${crypto.randomUUID()}`);
+
+  try {
+    log(`compose: task=${task}`, { promptChars: prompt.length });
+    emit('analysing', { logBytes: 0 });
+    const outcome = await runClaudeTask({
+      task,
+      prompt,
+      requestId,
+      scratchDir,
+      model,
+      effort,
+      // Deliberately absent: a one-shot composition has nothing to continue, and not
+      // accepting a session id removes an argv surface entirely.
+      resumeSessionId: undefined,
+      // And so the scratch directory is always removed. Keeping one is only useful when
+      // `--resume` could find it again, and the path above is random by design — every
+      // early-exiting compose would otherwise leave a directory nothing can reach or sweep.
+      resumable: false,
+      emit,
+      log,
+      track,
+    });
+    if (!outcome.ok) return outcome;
+    return { ok: true, reply: outcome.answer, incompleteReason: outcome.incompleteReason };
+  } finally {
+    running.delete(requestId);
+  }
+}
+
 /** Kill whatever is still running for a request. */
 function cancel(requestId) {
   const children = running.get(requestId);
@@ -897,6 +1047,7 @@ function registerClaudeIpc(ipcMain) {
   ipcMain.handle('claude:probe', () => probe());
   ipcMain.handle('claude:runLog', (_e, payload) => runLog(payload));
   ipcMain.handle('claude:analyze', (e, payload) => analyze(e.sender, payload));
+  ipcMain.handle('claude:compose', (e, payload) => compose(e.sender, payload));
   ipcMain.handle('claude:cancel', (_e, requestId) =>
     typeof requestId === 'string' ? cancel(requestId) : false,
   );
@@ -914,4 +1065,9 @@ module.exports = {
   describeExit,
   SKILLS_BY_TASK,
   MAX_REPLY_BYTES,
+  // The per-task budget tables, exported so a test can assert every task appears in every
+  // one of them. A missing entry fails in a way nobody would diagnose from the symptom:
+  // an undefined timeout reaches `setTimeout(kill, undefined)` and kills the child on
+  // spawn, reported as "claude timed out after NaNs".
+  TASK_TABLES: { CLAUDE_MODEL, CLAUDE_EFFORT, TIMEOUT_BY_TASK, MAX_TURNS_BY_TASK, USES_TOOLS },
 };

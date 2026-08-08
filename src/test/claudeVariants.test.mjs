@@ -6,6 +6,7 @@ import {
   describeExit,
   installSkill,
   MAX_REPLY_BYTES,
+  TASK_TABLES,
 } from '../../electron/claudeBridge.cjs';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,6 +20,39 @@ function valueOf(args, flag) {
   const i = args.indexOf(flag);
   return i === -1 ? null : args[i + 1];
 }
+
+describe('per-task budget tables', () => {
+  /**
+   * Every table is indexed by task name and read without a guard, so a task missing from
+   * one of them fails in a way nobody would trace back to a missing key: an undefined
+   * timeout reaches `setTimeout(kill, undefined)`, which fires immediately, and the run is
+   * reported as "claude timed out after NaNs" having been SIGKILLed on spawn. A missing
+   * turn limit is quieter still — `--max-turns undefined` as a literal string.
+   */
+  it('has an entry for every task in every table', () => {
+    const tables = Object.entries(TASK_TABLES);
+    const tasks = Object.keys(TASK_TABLES.CLAUDE_MODEL);
+    expect(tasks).toContain('pr');
+    for (const [name, table] of tables) {
+      for (const task of tasks) {
+        expect(table[task], `${name} is missing an entry for "${task}"`).toBeDefined();
+      }
+      // And nothing extra: a table with a task the others don't have is the same bug
+      // seen from the other side.
+      expect(Object.keys(table).sort()).toEqual([...tasks].sort());
+    }
+  });
+
+  /**
+   * The pull-request write-up summarises material the renderer already fetched. Giving it
+   * tools would hand a model shell access to describe a commit list it can already read.
+   */
+  it('gives the pull-request task one turn and no tools', () => {
+    expect(TASK_TABLES.USES_TOOLS.pr).toBe(false);
+    expect(TASK_TABLES.MAX_TURNS_BY_TASK.pr).toBe(1);
+    expect(claudeVariants('pr')[0].args).not.toContain('--allowedTools');
+  });
+});
 
 describe('claudeVariants', () => {
   /**
@@ -401,7 +435,7 @@ describe('how a run that ends badly is reported', () => {
 
   /** The bridge must keep a partial answer rather than turning it into an error. */
   it('returns a partial answer with a reason instead of failing', () => {
-    expect(BRIDGE_SOURCE).toMatch(/if \(answer\.trim\(\) \|\| resumable\) \{/);
+    expect(BRIDGE_SOURCE).toMatch(/if \(answer\.trim\(\) \|\| sessionId\) \{/);
     expect(BRIDGE_SOURCE).toContain('incompleteReason: reason');
     expect(BRIDGE_SOURCE).toMatch(/error_max_turns/);
   });
@@ -606,8 +640,29 @@ describe('resuming an unfinished run', () => {
    */
   it('uses a scratch directory derived from the analysis, and keeps it when resumable', () => {
     expect(BRIDGE_SOURCE).toMatch(/scratchKey\(owner, repo, runId, depth\)/);
-    expect(BRIDGE_SOURCE).toMatch(/keepScratch = Boolean\(resumable\)/);
-    expect(BRIDGE_SOURCE).toMatch(/if \(scratch && !keepScratch\)/);
+    expect(BRIDGE_SOURCE).toMatch(/keepScratch = resumable && Boolean\(sessionId\)/);
+    // The removal lives in runClaudeTask, which owns the directory it was given.
+    expect(BRIDGE_SOURCE).toMatch(/if \(!keepScratch\) \{\s*try \{\s*fs\.rmSync\(scratchDir/);
+  });
+
+  /**
+   * Keeping the directory is only useful to a caller that can find it again. `compose`
+   * builds a random path and never accepts a session id, so an unfinished one would leave a
+   * temp directory nothing can reach — or sweep, since the sweep is "the next run of the
+   * same analysis" and there is no same-ness to a uuid.
+   */
+  it('only keeps the directory for a caller that can resume into it', () => {
+    const composeBody = /async function compose\(sender, payload\) \{[\s\S]*?\n\}/.exec(
+      BRIDGE_SOURCE,
+    )?.[0];
+    expect(composeBody).toBeTruthy();
+    expect(composeBody).toMatch(/resumable: false/);
+    expect(composeBody).toMatch(/job-monitor-compose-\$\{crypto\.randomUUID\(\)\}/);
+    // And analyze, whose path *is* derivable, keeps the default.
+    const analyzeBody = /async function analyze\(sender, payload\) \{[\s\S]*?\n\}/.exec(
+      BRIDGE_SOURCE,
+    )?.[0];
+    expect(analyzeBody).not.toMatch(/resumable:/);
   });
 
   /** Two attempts at the same analysis must land in the same place. */

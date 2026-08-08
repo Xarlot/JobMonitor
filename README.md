@@ -43,9 +43,15 @@ that lives in the tray and pops a notification when something finishes.
   name.
 - **An arm auto‑merge button** on every open PR — clears the description and hands the PR to GitHub
   to merge once its checks pass, after confirming.
+- **A Feature branches tab** (opt‑in) — for long‑lived branches shared between your fork and the
+  upstream. Shows *where each merge has stopped* rather than merely that a pull request exists,
+  and offers three actions: bring the default branch into a feature branch, take a feature branch
+  into the default branch, and pull the upstream's copy of a branch down into your fork.
 - **Explain with Claude** (desktop app) — turn a failed job's log into a readable problem statement
   and a suggested fix, using the `gh` and `claude` CLIs already on your machine. Two depths: a
-  **quick read** in about a minute, or a **deep analysis** that goes and investigates.
+  **quick read** in about a minute, or a **deep analysis** that goes and investigates. It also
+  writes the title and description of a pull request shipping a feature branch — you edit the
+  result before anything is published, and a browser falls back to a template.
 - **A Diagnostics tab** (desktop app, opt‑in) — read Job Monitor's own log live, to see why it did
   what it did: every auto‑rerun decision including the ones that chose *not* to fire, every analysis,
   and every request that failed.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CONFIG,
   effectivePrAuthor,
+  forkRepo,
   isConfigComplete,
   monitorConfigSchema,
   safeParseConfig,
@@ -104,15 +105,33 @@ describe('configStore', () => {
   });
 
   it('keeps DEFAULT_CONFIG in step with the schema', () => {
-    // DEFAULT_CONFIG is hand-written, so it can drift from the schema's defaults.
+    // DEFAULT_CONFIG is hand-written, so it can drift from the schema's defaults — and it
+    // only drifts when someone adds a section and updates one of the two places. So this
+    // compares *everything* rather than a list of sections that has to be kept current
+    // itself: the coordinates are the only fields that legitimately differ, since the
+    // schema requires values the app doesn't have until it is configured.
     const parsed = monitorConfigSchema.parse({
       upstream: { owner: 'o', repo: 'r' },
       fork: { owner: 'f' },
     });
-    expect(DEFAULT_CONFIG.prAutoRerun).toEqual(parsed.prAutoRerun);
-    expect(DEFAULT_CONFIG.mergedPrs).toEqual(parsed.mergedPrs);
-    expect(DEFAULT_CONFIG.failureReports).toEqual(parsed.failureReports);
-    expect(DEFAULT_CONFIG.notifications).toEqual(parsed.notifications);
+    const { upstream: _u1, fork: _f1, ...defaults } = DEFAULT_CONFIG;
+    const { upstream: _u2, fork: _f2, ...fromSchema } = parsed;
+    expect(defaults).toEqual(fromSchema);
+    expect(Object.keys(DEFAULT_CONFIG).sort()).toEqual(Object.keys(parsed).sort());
+  });
+
+  it('defaults the fork repo to the upstream’s name, and honours an override', () => {
+    const same = monitorConfigSchema.parse({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'me' },
+    });
+    expect(forkRepo(same)).toBe('r');
+
+    const renamed = monitorConfigSchema.parse({
+      upstream: { owner: 'o', repo: 'r' },
+      fork: { owner: 'me', repo: 'r-fork' },
+    });
+    expect(forkRepo(renamed)).toBe('r-fork');
   });
 
   it('reports completeness only with required coordinates', () => {

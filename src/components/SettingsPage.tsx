@@ -54,6 +54,7 @@ import {
   type AiTaskConfig,
   type AutoMergeConfig,
   type DiagnosticsConfig,
+  type FeatureBranchesConfig,
   type EmptyFlowFilter,
   type FailureReportsConfig,
   type Flow,
@@ -569,10 +570,12 @@ function FlowEditor({
     <Box sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, p: 3, mb: 3 }}>
       {/* Header: name + remove */}
       <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-end', mb: 3 }}>
-        <FormControl sx={{ flex: 1 }}>
+        {/* A flow name is a short label; `flex: 1` alone stretched it across the card. */}
+        <FormControl sx={{ flex: 1, maxWidth: 420 }}>
           <FormControl.Label>Name</FormControl.Label>
           <TextInput value={flow.name} onChange={(e) => set('name', e.target.value)} block />
         </FormControl>
+        <Box sx={{ flex: 1 }} />
         <IconButton
           aria-label="Remove flow"
           icon={TrashIcon}
@@ -1006,6 +1009,7 @@ function AutoRerunSection({
                 value={settings.maxAttempts}
                 onChange={(e) => onChange({ maxAttempts: Number(e.target.value) || 1 })}
                 block
+                sx={{ maxWidth: 140 }}
               />
               <FormControl.Caption>
                 Counts GitHub’s own attempt number, so it survives restarts. 1 means never
@@ -1022,6 +1026,7 @@ function AutoRerunSection({
                 value={settings.maxRunAgeHours}
                 onChange={(e) => onChange({ maxRunAgeHours: Number(e.target.value) || 1 })}
                 block
+                sx={{ maxWidth: 140 }}
               />
               <FormControl.Caption>
                 GitHub itself refuses re-runs after 30 days (720 h).
@@ -1029,7 +1034,12 @@ function AutoRerunSection({
             </FormControl>
           </Box>
 
-          <FormControl sx={{ mt: 3, maxWidth: 320 }}>
+          {/*
+            The control is wide so its caption reads across the page; the field itself is
+            capped separately. A caption pinned to the width of a two-digit number box
+            wraps into a column of five lines and stops being read.
+          */}
+          <FormControl sx={{ mt: 3, maxWidth: 620 }}>
             <FormControl.Label>Allow the same failure this many times</FormControl.Label>
             <TextInput
               type="number"
@@ -1038,6 +1048,7 @@ function AutoRerunSection({
               value={settings.maxIdenticalFailures}
               onChange={(e) => onChange({ maxIdenticalFailures: Number(e.target.value) || 0 })}
               block
+              sx={{ maxWidth: 140 }}
             />
             <FormControl.Caption>
               Compares the failing tests and steps between attempts. Once the <em>same</em> failure
@@ -1067,16 +1078,17 @@ function AutoMergeSection({
   return (
     <Box sx={sectionSx}>
       <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
-        Arm auto-merge
+        Auto-merge
       </Heading>
       <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
         Each open pull request gets a <strong>merge</strong> button that clears its description
-        and asks GitHub to merge it once the required checks pass. It confirms first, and shows
-        you the description it is about to delete — that text cannot be recovered afterwards.
+        and lets GitHub merge it when the checks pass. It confirms first, and shows you the
+        description it is about to delete — that text cannot be recovered afterwards.
       </Text>
-      <FormControl sx={{ maxWidth: 260 }}>
+      <FormControl sx={{ maxWidth: 620 }}>
         <FormControl.Label>Merge strategy</FormControl.Label>
         <Select
+          sx={{ maxWidth: 260 }}
           value={settings.mergeMethod}
           onChange={(e) =>
             onChange({ mergeMethod: e.target.value as AutoMergeConfig['mergeMethod'] })
@@ -1087,9 +1099,69 @@ function AutoMergeSection({
           <Select.Option value="rebase">Rebase and merge</Select.Option>
         </Select>
         <FormControl.Caption>
-          Must be a strategy the repository allows, or GitHub refuses to arm it.
+          Must be a strategy the repository allows, or GitHub refuses to enable it.
         </FormControl.Caption>
       </FormControl>
+    </Box>
+  );
+}
+
+/**
+ * The Feature branches tab.
+ *
+ * Lives under PR automation rather than in a tab of its own: everything it switches on is
+ * a pull request that opens and merges itself, which is what this page section is for.
+ */
+function FeatureBranchesSection({
+  settings,
+  onChange,
+}: {
+  settings: FeatureBranchesConfig;
+  onChange: (patch: Partial<FeatureBranchesConfig>) => void;
+}) {
+  return (
+    <Box sx={sectionSx}>
+      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+        Feature branches
+      </Heading>
+      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+        For long-lived branches shared between your fork and the upstream. Adds a tab that
+        shows where each branch's merges have got to, and three actions: bring the default
+        branch into a feature branch, take a feature branch into the default branch, and pull
+        the upstream's copy of a branch down into your fork. Off by default — most
+        repositories have no such branches.
+      </Text>
+
+      <FormControl sx={{ mb: 3 }}>
+        <Checkbox
+          checked={settings.enabled}
+          onChange={(e) => onChange({ enabled: e.target.checked })}
+        />
+        <FormControl.Label>Show a Feature branches tab</FormControl.Label>
+        <FormControl.Caption>
+          Nothing is polled or written while this is off.
+        </FormControl.Caption>
+      </FormControl>
+
+      {settings.enabled && (
+        // The control is wide so the caption can be read; the input is capped separately,
+        // because a branch prefix is short and a text box the width of the page invites
+        // nobody to type one.
+        <FormControl sx={{ maxWidth: 560 }}>
+          <FormControl.Label>Branch prefix</FormControl.Label>
+          <TextInput
+            value={settings.prefix}
+            onChange={(e) => onChange({ prefix: e.target.value })}
+            block
+            sx={{ maxWidth: 260 }}
+          />
+          <FormControl.Caption>
+            A branch counts when it starts with this <em>and</em> exists in both repositories.
+            Keep the trailing slash: <code>feature</code> would also match{' '}
+            <code>features-old</code>.
+          </FormControl.Caption>
+        </FormControl>
+      )}
     </Box>
   );
 }
@@ -1112,7 +1184,7 @@ function MergedPrsSection({
         reviewable. Their checks are already finished, so each is fetched once and then
         left alone.
       </Text>
-      <FormControl sx={{ maxWidth: 220 }}>
+      <FormControl sx={{ maxWidth: 480 }}>
         <FormControl.Label>How many to track</FormControl.Label>
         <TextInput
           type="number"
@@ -1121,6 +1193,7 @@ function MergedPrsSection({
           value={settings.count}
           onChange={(e) => onChange({ count: Number(e.target.value) || 0 })}
           block
+          sx={{ maxWidth: 140 }}
         />
         <FormControl.Caption>0 switches merged PRs off entirely.</FormControl.Caption>
       </FormControl>
@@ -1184,7 +1257,12 @@ function AiTaskFields({
           </Select>
         </FormControl>
       </Box>
-      <FormControl>
+      {/*
+        Capped below the card's width: this is prose, and a line running the full width of a
+        wide window is harder to read than one that doesn't. The page is wide so the
+        multi-column rows have room, not so the paragraphs do.
+      */}
+      <FormControl sx={{ maxWidth: 860 }}>
         <FormControl.Label>Custom prompt</FormControl.Label>
         <Textarea
           rows={4}
@@ -1422,6 +1500,8 @@ function DiagnosticsSection({
               max={5120}
               value={settings.tailKB}
               onChange={(e) => onChange({ tailKB: Number(e.target.value) })}
+              block
+              sx={{ maxWidth: 140 }}
             />
             <FormControl.Caption>
               How much of the end of the file to load. The newest records are the point; raise it to
@@ -1436,6 +1516,8 @@ function DiagnosticsSection({
               max={60}
               value={settings.followSeconds}
               onChange={(e) => onChange({ followSeconds: Number(e.target.value) })}
+              block
+              sx={{ maxWidth: 140 }}
             />
             <FormControl.Caption>
               How often the tab re-reads the file while <strong>Live</strong> is on. A local read, so
@@ -1535,7 +1617,7 @@ function AiSection({
 
       {settings.enabled && (
         <>
-          <FormControl sx={{ mb: 4 }}>
+          <FormControl sx={{ mb: 4, maxWidth: 860 }}>
             <FormControl.Label>Additional instructions</FormControl.Label>
             <Textarea
               rows={3}
@@ -1568,6 +1650,12 @@ function AiSection({
             blurb="Rewrites the log: decisive lines first, noise cut, a short note where a line needs one. Mechanical work on a large input, so speed matters more than depth."
             settings={settings.log}
             onChange={(patch) => onChange({ log: { ...settings.log, ...patch } })}
+          />
+          <AiTaskFields
+            title="Pull request write-up"
+            blurb="Writes the title and description for a pull request shipping a feature branch, from its commit subjects and changed files. One turn on material it is handed, and you get to edit the result before anything is published."
+            settings={settings.pr}
+            onChange={(patch) => onChange({ pr: { ...settings.pr, ...patch } })}
           />
           <AiTaskFields
             title="Who broke it"
@@ -1628,6 +1716,7 @@ function FailureReportsSection({
             value={settings.logTailLines}
             onChange={(e) => onChange({ logTailLines: Number(e.target.value) || 0 })}
             block
+            sx={{ maxWidth: 140 }}
           />
           <FormControl.Caption>
             Tail of the failing step’s log. 0 leaves the log out.
@@ -1637,6 +1726,7 @@ function FailureReportsSection({
         <FormControl>
           <FormControl.Label>Default format</FormControl.Label>
           <Select
+            sx={{ maxWidth: 260 }}
             value={settings.format}
             onChange={(e) => onChange({ format: e.target.value as FailureReportsConfig['format'] })}
             block
@@ -1766,7 +1856,7 @@ export function SettingsPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 860 }}>
+    <Box sx={{ maxWidth: 1180 }}>
       <Box sx={{ mb: 4 }}>
         <UnderlineNav aria-label="Settings sections">
           {TABS.map(([key, label, icon]) => (
@@ -1822,6 +1912,19 @@ export function SettingsPage() {
               onChange={(e) => updateNested('fork', { owner: e.target.value })}
               block
             />
+          </FormControl>
+          <FormControl sx={{ flex: 1, minWidth: 160 }}>
+            <FormControl.Label>Fork repo (optional)</FormControl.Label>
+            <TextInput
+              value={draft.fork.repo}
+              onChange={(e) => updateNested('fork', { repo: e.target.value })}
+              placeholder="same as upstream"
+              block
+            />
+            <FormControl.Caption>
+              Only needed if you renamed your fork. The feature-branch actions write to it, so
+              they need its real name.
+            </FormControl.Caption>
           </FormControl>
           <FormControl sx={{ flex: 1, minWidth: 160 }}>
             <FormControl.Label>Branch filter (optional)</FormControl.Label>
@@ -1962,6 +2065,10 @@ export function SettingsPage() {
           <AutoMergeSection
             settings={draft.autoMerge}
             onChange={(patch) => updateNested('autoMerge', patch)}
+          />
+          <FeatureBranchesSection
+            settings={draft.featureBranches}
+            onChange={(patch) => updateNested('featureBranches', patch)}
           />
           <MergedPrsSection
             settings={draft.mergedPrs}

@@ -6,8 +6,16 @@ import { subtleScrollbarSx } from '../lib/scrollbar';
 
 /**
  * Large, scrollable modal rendered into a body-level portal (so it isn't clipped
- * by the flow card's overflow). Closes on backdrop click and Escape. Bigger than
- * Primer's Dialog (which caps at 640px).
+ * by the flow card's overflow). Bigger than Primer's Dialog (which caps at 640px).
+ *
+ * **Closing is deliberate only: the ✕, or Escape.** A backdrop click used to close it too,
+ * and that was wrong here — these dialogs hold work. Several carry text the user has typed
+ * (a pull request's title and description, a custom prompt) and a mis-aimed click threw it
+ * away with no warning and no undo; others are mid-operation, where dismissing the window
+ * looks like cancelling something that is in fact still running.
+ *
+ * Escape stays, because it is the keyboard route out of a dialog and the only one screen
+ * reader and keyboard users have. It is also not something you hit by missing.
  */
 export function Modal({
   title,
@@ -33,8 +41,8 @@ export function Modal({
   }, [onClose]);
 
   return createPortal(
+    // No onClick: the backdrop dims and blocks, it does not dismiss.
     <Box
-      onClick={onClose}
       sx={{
         position: 'fixed',
         inset: 0,
@@ -48,7 +56,6 @@ export function Modal({
       }}
     >
       <Box
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         sx={{

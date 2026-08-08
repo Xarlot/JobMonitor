@@ -29,7 +29,7 @@ import { StatusBadge } from './StatusBadge';
 import { formatRelative } from '../lib/format';
 import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryDialog';
 import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
-import { GroupStatusCounts } from './GroupStatusCounts';
+import { GroupStatusCounts, groupVerdict } from './GroupStatusCounts';
 import { ArtifactsButton } from './ArtifactsButton';
 import { RerunFailedJobsButton } from './RerunFailedJobsButton';
 import { PromptDialog } from './PromptDialog';
@@ -499,10 +499,7 @@ export function Overview({
                   </Heading>
                   <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
                   <GroupStatusCounts
-                    statuses={visible.map((f) => {
-                      const run = latestRun(flowStates.get(f.id)?.runs ?? []);
-                      return run ? statusToOverall(run.status, run.conclusion) : 'unknown';
-                    })}
+                    verdicts={visible.map((f) => groupVerdict(flowStates.get(f.id)?.runs ?? []))}
                   />
                   {/* Placement kept for a flow that's gone or no longer matched. */}
                   {!resolving && section.pinnedMissing.length > 0 && (

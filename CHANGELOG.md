@@ -4,6 +4,118 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [2.2.0]
+
+**Long-lived feature branches get a tab of their own, and it answers "why is this sitting there".** Work
+on a branch shared between your fork and the upstream was invisible here: both ends of its pull requests
+live in the upstream, so the PR tab's fork-head filter excluded them entirely. The new tab tracks those
+branches, shows how far each merge has actually got, and does the three things the routine around such a
+branch consists of. The interesting part is the second one — a pull request that is merely "open" tells
+you nothing, while one that is open, green, mergeable and *unarmed* tells you it is waiting for a person.
+
+### Added
+- **A Feature branches tab** (opt-in under **Settings → PR automation**). A feature branch is one under a
+  prefix — `feature/` by default — that exists in **both** your fork and the upstream; a branch only one
+  of them has is not shared work and does not appear. Branches are found through GitHub's prefix-matching
+  refs endpoint rather than by listing every branch and filtering here, so a repository with hundreds of
+  them costs two requests instead of sixteen.
+- **A stage strip per pull request** — opened → checks → mergeable → auto-merge armed → merged — with the
+  reason it is stuck spelled out: *waiting on required checks or a review*, *behind the base branch*,
+  *conflicts — this one needs a working copy*. That last piece comes from `mergeable_state`, which only
+  the single-pull-request endpoint carries and which GitHub computes asynchronously, so it is polled
+  until it means something rather than read once and believed.
+- **Three actions, one loop, and none of them merge.** Bring the default branch into the feature branch;
+  pull the upstream's copy of the branch down into your fork; offer your fork's work back to the
+  upstream's copy of the same branch — a cross-fork pull request, the only one this app opens, with the
+  same branch name on both sides. Nothing here targets the default branch: getting a feature branch into
+  `main` is somebody else's decision. Every action **opens a pull request and arms auto-merge**, and
+  GitHub does the merging when the required checks pass — landing directly in a feature branch is
+  forbidden by branch protection, so a merge button here would be a route around the rule that forbids it.
+  If GitHub declines to queue one, that is reported rather than worked around.
+- **The actions are icons with tooltips.** Four labelled buttons naming two branches filled the row and
+  still read alike ("Sync from main" beside "Ship to main"); the tooltip carries a sentence naming both
+  ends of what is about to happen, which no button label could — including *why* an action is
+  unavailable, since a disabled control that explains nothing is a dead end. Disabled ones stay
+  hoverable for exactly that reason.
+- **Claude writes the offered pull request's title and description** (desktop app), from the commits your
+  fork has that the upstream's copy of the branch does not — which the app fetches itself, so the task is one turn with no tools
+  and no shell. You see and edit the result before anything is published, and a browser, a missing CLI or
+  a slow reply all fall back to a template rather than stopping the pull request. Issue references and
+  @mentions are stripped from whatever comes back: a hallucinated `Fixes #123` closes somebody's issue the
+  moment the pull request merges. Model and effort are configurable under **Settings → AI integration**.
+- **A fork repo name** under **Settings → Repository**, for the rare fork that was renamed. Blank still
+  means "same name as the upstream", which is what every earlier version assumed outright.
+
+### Changed
+- **Dialogs no longer close when you click outside them.** The ✕ and Escape close them; the backdrop
+  dims and blocks, and that is all it does. Several of these windows hold text you have typed — a pull
+  request's title and description, a custom prompt — and a mis-aimed click threw it away with no warning
+  and no undo. Escape stays because it is the keyboard route out of a dialog, and because it is not
+  something you hit by missing.
+- **A pull request with nothing to merge gets an empty description**, and no model is asked about it.
+  Handed an empty change set a model does not answer "nothing to say" — it hedges from the branch name
+  at length ("appears to relate to…", "a reviewer should check the actual diff"), which fills the space a
+  reader scans and tells them less than a blank body would. The brief now forbids that shape of writing
+  outright, for the thin-but-not-empty case that still reaches it.
+- **Auto-rerun now covers the feature-branch pull requests too.** Its rule has always been "auto-merge is
+  armed", and these arm it — but the dashboard cannot see them, so without this a single flaky check would
+  park an armed pull request indefinitely. All the existing brakes still apply unchanged.
+- **Write failures say what was refused.** Every refusal message was phrased for re-running jobs, which was
+  true when that was the only write; "this run is too old to re-run" in answer to a failed pull request is
+  not.
+- The `development.md` claim that everything is read-only bar one feature has been replaced with a table
+  of every write the app can make and how each is reached. It was already stale at 2.1.0.
+
+- **The bundle is split by dependency instead of shipped as one 1.1 MB file.** Not for the download —
+  it is ~275 KB gzipped either way — but for caching: in one chunk, a one-line change to a component
+  invalidated React, Primer and styled-components along with it, so every release re-downloaded all of
+  them. They change a few times a year; this app changes weekly. Grouped by how they version rather
+  than by size, and the largest chunk is now 456 KB, which also silences the build's size warning.
+- **The desktop app's `app://` file server is now a tested module** (`electron/appAssets.cjs`). Every
+  JS chunk reaches the desktop app through it and nowhere else, so a change to how the bundle is split
+  could break the desktop build while the browser build kept working perfectly. Its failure mode is
+  also invisible: unknown paths fall back to `index.html`, and a browser will not execute HTML as a
+  module, so a renamed chunk meant a blank window. A `.js` request that hits the fallback is now
+  logged as the fault it is.
+
+### Fixed
+- **Syncing a branch into your fork reported a failure after succeeding.** `merge-upstream` answers with
+  an **owner-qualified** branch — `DevExpress:feature/x`, not `feature/x` — and the check that GitHub had
+  acted on the branch asked for compared it against the bare name, so it fired on every successful sync:
+  *GitHub synced "DevExpress:feature/x" rather than "feature/x"*. Not a harmless false alarm, either — the
+  sync had already happened, so the fork **was** updated while the app said it wasn't. Only the owner is
+  stripped now, so a branch with slashes of its own still compares correctly, and the check still catches
+  GitHub genuinely acting on another branch.
+- **The merge commits this app makes are no longer counted as your work.** Pulling a diverged branch
+  into a fork *merges* rather than fast-forwarding, and that merge is then a commit the upstream does not
+  have — so a branch with two commits on it read as *"3 commits of your own"* after one press of the sync
+  button. The count now excludes merges (`parents > 1`), and a difference that is *only* a merge says so
+  instead of naming a number.
+- **The fork/upstream comparison is no longer inverted.** It compared base=fork against head=upstream, so
+  `ahead_by` meant "how far behind" and needed a comment saying the names read backwards — the kind of
+  thing that survives review and then quietly gets a sign wrong. Base is the upstream now, head the fork,
+  so every number reads from the fork's point of view; the same request also returns the fork's own
+  commits, which is what makes the merge-commit count above possible.
+- **A fork that is ahead no longer reads as a problem.** *"2 commits ahead — nothing to pull"* was the
+  expected state right after a sync that had commits of its own to merge, and it looked like a
+  discrepancy. It now says both halves in the order that matters: *"your fork is up to date, plus 2
+  commits of your own"* — nothing to pull, and something to offer.
+- **"Validation Failed" now says what failed.** For a 422, GitHub's `message` *is* the constant string
+  "Validation Failed" — everything naming the problem sits in the `errors` array beside it, and the app
+  read only `message`. So opening a pull request could fail with a sentence that identified nothing, and
+  worse: the two ordinary outcomes recognised by their wording — *No commits between …* (there is simply
+  nothing to merge) and *A pull request already exists for …* (adopt the open one) — never matched, so
+  both were reported as hard failures. The reason is now lifted out of `errors`, including field-level
+  entries as readable phrases (`PullRequest.head is invalid`).
+- **Refused writes are logged.** Writes were the one thing the app never recorded, so a failure left
+  nothing behind: the diagnostics log showed the work leading up to it and then stopped, and the only
+  account of what GitHub said was a sentence in a dialog already dismissed. Path, status, refusal kind
+  and GitHub's message — no token, no request body.
+- **`failures.test.ts` was a time bomb.** Its fixtures carry absolute dates and the code under test drops
+  anything older than a week, so all 26 of its assertions passed until seven days after they were written
+  and then failed for good, saying nothing about the code. The clock is now frozen to the date they were
+  written against.
+
 ## [2.1.0]
 
 **The auto-rerun engine stops being a black box.** It used to work out a precise reason for every run it

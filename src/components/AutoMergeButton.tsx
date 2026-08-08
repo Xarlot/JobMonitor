@@ -51,7 +51,7 @@ function ArmDialog({
     try {
       const outcome = await armAutoMerge(owner, repo, pr, toMergeMethod(method));
       if (outcome.autoMergeEnabled) {
-        setResult({ ok: true, message: `Auto-merge armed (${method}). The description is cleared.` });
+        setResult({ ok: true, message: `Auto-merge enabled (${method}). The description is cleared.` });
         onArmed();
       } else {
         // Which half succeeded matters: the description is already gone in one case and
@@ -59,7 +59,7 @@ function ArmDialog({
         setResult({
           ok: false,
           message: outcome.descriptionCleared
-            ? `The description was cleared, but auto-merge was not armed: ${outcome.error}`
+            ? `The description was cleared, but auto-merge was not enabled: ${outcome.error}`
             : `Nothing was changed: ${outcome.error}`,
         });
       }
@@ -70,7 +70,7 @@ function ArmDialog({
 
   return (
     <Modal
-      title="Arm auto-merge"
+      title="Enable auto-merge"
       subtitle={`${pr.title} · #${pr.number}`}
       onClose={onClose}
       width="min(560px, 94vw)"
@@ -79,7 +79,7 @@ function ArmDialog({
           <Button onClick={onClose}>{result?.ok ? 'Close' : 'Cancel'}</Button>
           {!result?.ok && (
             <Button variant="danger" disabled={busy} onClick={() => void arm()}>
-              {busy ? 'Working…' : 'Clear description and arm'}
+              {busy ? 'Working…' : 'Clear description and enable'}
             </Button>
           )}
         </Box>
@@ -102,9 +102,8 @@ function ArmDialog({
           )}
         </Box>
         <Box as="li">
-          <strong>Arm auto-merge</strong> with the <Label>{method}</Label> strategy, so GitHub
-          merges it as soon as the required checks pass. If they already pass, that is
-          immediately.
+          <strong>Enable auto-merge</strong> with the <Label>{method}</Label> strategy, so
+          GitHub merges it when the checks pass — immediately, if they already have.
         </Box>
       </Box>
 
@@ -157,9 +156,9 @@ function ArmedLabel({ pr }: { pr: PullRequest }) {
   const method = pr.auto_merge?.merge_method ?? 'merge';
   const by = pr.auto_merge?.enabled_by?.login;
   const tip = [
-    `Auto-merge is armed (${method})${by ? ` by ${by}` : ''}.`,
-    'GitHub will merge this pull request as soon as its required checks pass.',
-    'Change or cancel it on GitHub — this app only ever arms it.',
+    `Auto-merge is enabled (${method})${by ? ` by ${by}` : ''}.`,
+    'GitHub will merge this pull request when its checks pass.',
+    'Change or cancel it on GitHub — this app only ever turns it on.',
   ].join('\n');
 
   return (
@@ -225,7 +224,7 @@ export function AutoMergeButton({
         size={size}
         variant="invisible"
         icon={GitMergeIcon}
-        aria-label="Arm auto-merge (clears the description)"
+        aria-label="Enable auto-merge (clears the description)"
         onClick={() => setOpen(true)}
       />
       {open && (

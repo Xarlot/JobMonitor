@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   collectFailedJobs,
   groupFailures,
@@ -9,6 +9,25 @@ import {
   type FlowFailureSource,
 } from '../lib/failures';
 import type { CheckRun, Job, PullRequest, RunConclusion, WorkflowRun } from '../api/types';
+
+/**
+ * The clock these fixtures were written against.
+ *
+ * `collectFailedJobs` drops anything older than SCAN_WINDOW_MS, and the fixtures below
+ * carry absolute dates — so left to the real clock every one of these tests passed until
+ * a week after they were written and then failed for good, saying nothing about the code.
+ * Freezing time is what makes a fixed date mean a fixed thing.
+ */
+const NOW = Date.parse('2026-07-31T12:00:00Z');
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 const SLUG = 'o/r';
 

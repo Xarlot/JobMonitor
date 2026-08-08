@@ -9,7 +9,7 @@ const enc = encodeURIComponent;
 export function pullsPath(
   owner: string,
   repo: string,
-  opts: { head?: string | null; state?: 'open' | 'closed'; perPage?: number } = {},
+  opts: { head?: string | null; base?: string | null; state?: 'open' | 'closed'; perPage?: number } = {},
 ): string {
   const params = new URLSearchParams({
     state: opts.state ?? 'open',
@@ -18,12 +18,63 @@ export function pullsPath(
     direction: 'desc',
   });
   if (opts.head) params.set('head', opts.head);
+  // Left out when unset, so every path an earlier version built stays byte-identical —
+  // these strings double as ETag cache keys, and a changed key throws the cache away.
+  if (opts.base) params.set('base', opts.base);
   return `/repos/${enc(owner)}/${enc(repo)}/pulls?${params.toString()}`;
 }
 
-/** One pull request. PATCHed to edit it (the only PR field this app ever writes: `body`). */
+/**
+ * One pull request.
+ *
+ * GET is the **only** source of `mergeable` and `mergeable_state` — the list endpoint
+ * omits both — which is what the feature-branch tab reads to say why a merge is stuck.
+ * PATCHed to clear the description when arming auto-merge from the PR list.
+ */
 export function pullPath(owner: string, repo: string, number: number): string {
   return `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`;
+}
+
+/** POST target: open a pull request. Both refs are plain branch names within `repo`. */
+export function createPullPath(owner: string, repo: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/pulls`;
+}
+
+/**
+ * POST target: sync one branch of a fork from the same-named branch of its parent.
+ *
+ * GitHub's "Sync fork" button. The body names only the branch — the source repository is
+ * the fork's **actual parent**, which the request cannot override, so callers must first
+ * establish that the parent is the upstream they think it is. See forkSync.ts.
+ */
+export function mergeUpstreamPath(owner: string, repo: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/merge-upstream`;
+}
+
+/**
+ * Every ref whose name starts with `prefix`, e.g. `heads/feature/` for the feature
+ * branches. GitHub matches on the prefix server-side, which is why this is used instead
+ * of listing all branches and filtering here: a large repository has many pages of
+ * branches, each entry carrying a full commit object.
+ *
+ * `prefix` is **not** encoded — its slashes are path separators to this endpoint, and
+ * percent-encoding them makes the prefix match nothing.
+ */
+export function matchingRefsPath(owner: string, repo: string, prefix: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/git/matching-refs/${prefix}`;
+}
+
+/**
+ * What is in `head` that is not in `base`: commits and changed files.
+ *
+ * Each side must be a **commit SHA or a branch name with no slash in it**. A `feature/x`
+ * cannot be passed by name: the two refs share one path segment here, so its slash would
+ * have to be percent-encoded, and that is not reliably interpreted. The ref listing
+ * already yields every feature branch's SHA — which also pins the comparison to exactly
+ * the commit the UI displayed.
+ */
+export function comparePath(owner: string, repo: string, base: string, head: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/compare/${enc(base)}...${enc(head)}`;
 }
 
 /**

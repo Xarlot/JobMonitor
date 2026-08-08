@@ -40,7 +40,7 @@ import { FlowRunsGrid } from './FlowRunsGrid';
 import { FlowBoardDialog } from './FlowBoardDialog';
 import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { PromptDialog } from './PromptDialog';
-import { GroupStatusCounts } from './GroupStatusCounts';
+import { GroupStatusCounts, groupVerdict } from './GroupStatusCounts';
 
 const RUN_FILTERS: { value: RunStatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -381,8 +381,14 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                   {group ? group.name : 'Ungrouped'}
                 </Heading>
                 <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
+                {/*
+                  The latest run, not the flow's aggregate across all of them: the aggregate
+                  puts failure first, so a flow that failed five runs ago read as red here
+                  long after it had gone green — and the Overview, showing the same group,
+                  said otherwise.
+                */}
                 <GroupStatusCounts
-                  statuses={visible.map((f) => states.get(f.id)?.overall ?? 'unknown')}
+                  verdicts={visible.map((f) => groupVerdict(states.get(f.id)?.runs ?? []))}
                 />
                 {/* Cards the group still holds a place for: a deleted flow, or a
                     regex match the pattern no longer produces. The placement is

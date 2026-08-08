@@ -8,6 +8,7 @@ import { isQuietStatus, useViewMode } from '../context/ViewModeContext';
 import { StatusBadge } from './StatusBadge';
 import { JobSummaryDialog } from './JobSummaryDialog';
 import { JobLogsDialog } from './JobLogsDialog';
+import { AnalyseFailureButton } from './AnalyseFailureButton';
 import { formatDuration, formatRelative } from '../lib/format';
 
 const cellSx = {
@@ -89,6 +90,7 @@ export function JobsTable({
                 {formatRelative(job.started_at)}
               </Box>
               <Box as="td" sx={{ ...cellSx, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <AnalyseFailureButton jobId={job.id} />
                 <IconButton
                   size="small"
                   variant="invisible"

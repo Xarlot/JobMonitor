@@ -8,9 +8,12 @@
 import { strToU8, zipSync } from 'fflate';
 import { fnv1aHex } from '../lib/hash';
 import {
+  MOCK_FEATURE_PULLS,
   MOCK_MERGED_PULLS,
   MOCK_PULLS,
   flowHasRuns,
+  mockComparison,
+  mockMatchingRefs,
   mockAnnotations,
   mockArtifacts,
   mockCheckRuns,
@@ -80,6 +83,34 @@ export async function mockFetch(
     // always returns a body and a 200.
     return new Response(null, { status: 201, headers: rateLimitHeaders() });
   }
+
+  // The feature-branch writes. Like the re-run above, these are method-sensitive and must
+  // not be shadowed by the GET routes further down. None of them mutate the fixtures:
+  // mock mode exists to exercise the UI's paths, and a mock that "merged" a pull request
+  // would then have to model everything that follows from it.
+  if (/\/merge-upstream$/.test(path)) {
+    return json({ message: 'Successfully fetched and fast-forwarded', merge_type: 'fast-forward' }, null);
+  }
+  if (path === '/graphql') {
+    // enablePullRequestAutoMerge is the app's only GraphQL call. A refusal here would be
+    // HTTP 200 with an `errors` array — worth remembering, but success is what the tab
+    // needs to be walkable offline.
+    return json(
+      {
+        data: {
+          enablePullRequestAutoMerge: {
+            pullRequest: { number: 38100, autoMergeRequest: { enabledAt: new Date().toISOString(), mergeMethod: 'SQUASH' } },
+          },
+        },
+      },
+      null,
+    );
+  }
+
+  const refsMatch = path.match(/^\/repos\/[^/]+\/([^/]+)\/git\/matching-refs\/heads\/(.+)$/);
+  if (refsMatch) return json(mockMatchingRefs(refsMatch[1], refsMatch[2]), inm);
+
+  if (/\/compare\//.test(path)) return json(mockComparison(), inm);
 
   const jobLogsMatch = path.match(/\/actions\/jobs\/(\d+)\/logs$/);
   if (jobLogsMatch) {
@@ -156,10 +187,54 @@ export async function mockFetch(
   if (statusMatch) return json(mockCombinedStatus(statusMatch[1]), inm);
 
   if (/\/pulls$/.test(path)) {
+    // POST — opening one. Answered with the fixture rather than a new object, so the
+    // dialog's success path has a real pull request to report on.
+    if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
+      return json(MOCK_FEATURE_PULLS[0], null);
+    }
     // state=closed feeds the merged-PR list (which then filters on merged_at).
-    return url.searchParams.get('state') === 'closed'
-      ? json(MOCK_MERGED_PULLS, inm)
-      : json(MOCK_PULLS, inm);
+    if (url.searchParams.get('state') === 'closed') return json(MOCK_MERGED_PULLS, inm);
+
+    // The feature-branch tab narrows by head and base; the dashboard does not. Filtering
+    // here rather than returning everything is what keeps the two apart — the tab must not
+    // adopt an unrelated pull request as its own.
+    const head = url.searchParams.get('head');
+    const base = url.searchParams.get('base');
+    if (head || base) {
+      // `head` arrives as `owner:branch`; both halves matter, because the feature-branch tab
+      // asks for the same branch name on both sides of a cross-fork pull request and the
+      // owner is the only thing distinguishing the two queries.
+      const [headOwner, ...rest] = (head ?? '').split(':');
+      const headRef = rest.join(':') || null;
+      return json(
+        [...MOCK_PULLS, ...MOCK_FEATURE_PULLS].filter(
+          (pr) =>
+            (!headRef || pr.head.ref === headRef) &&
+            (!head || (pr.head.user?.login ?? '').toLowerCase() === headOwner.toLowerCase()) &&
+            (!base || pr.base.ref === base),
+        ),
+        inm,
+      );
+    }
+    /**
+     * Unfiltered: everything open in the repository, which is what GitHub answers and what
+     * the dashboard asks for. The feature-branch offers belong here too — their head is in
+     * the fork, so `matchesFork` keeps them and they appear in the Pull requests tab. Leaving
+     * them out made the tab look narrower than it is and hid the jump between the two.
+     */
+    return json([...MOCK_PULLS, ...MOCK_FEATURE_PULLS], inm);
+  }
+
+  // One pull request — the only source of mergeable/mergeable_state, which is what the
+  // feature-branch tab reads to say why a merge is stuck. Must sit above the list route's
+  // sibling patterns and below /pulls/{n}/merge.
+  const singlePullMatch = path.match(/\/pulls\/(\d+)$/);
+  if (singlePullMatch) {
+    const number = Number(singlePullMatch[1]);
+    const found = [...MOCK_PULLS, ...MOCK_FEATURE_PULLS, ...MOCK_MERGED_PULLS].find(
+      (pr) => pr.number === number,
+    );
+    if (found) return json({ ...found, mergeable: found.mergeable ?? true }, inm);
   }
 
   // The repository itself — read for `permissions.push` (the Write-role half of

@@ -58,6 +58,59 @@ export interface Repository {
     triage?: boolean;
     pull: boolean;
   };
+  /** The branch a PR targets by default — "main" here, whatever it is actually called. */
+  default_branch?: string;
+  /** True for a fork; `parent` then names what it was forked from. */
+  fork?: boolean;
+  /**
+   * The repository this one was forked from. Load-bearing for the fork sync: the
+   * merge-upstream endpoint syncs from *this*, not from whatever the app has configured
+   * as the upstream, and it succeeds either way — so the two have to be compared first.
+   */
+  parent?: { full_name: string } | null;
+  /**
+   * Which merge strategies the repository permits, and whether auto-merge is switched on
+   * at all. Absent on an unauthenticated read. Worth checking up front: GitHub refuses
+   * the auto-merge mutation for either reason, and by then the pull request already exists.
+   */
+  allow_auto_merge?: boolean;
+  allow_merge_commit?: boolean;
+  allow_squash_merge?: boolean;
+  allow_rebase_merge?: boolean;
+}
+
+/** One entry of `git/matching-refs`: `ref` is fully qualified (`refs/heads/feature/x`). */
+export interface GitRef {
+  ref: string;
+  object: { sha: string; type: string };
+}
+
+/** The answer from merge-upstream. `none` means the branch was already up to date. */
+export interface MergeUpstreamResult {
+  message: string;
+  merge_type?: 'merge' | 'fast-forward' | 'none';
+  base_branch?: string;
+}
+
+/** What `compare/{base}...{head}` returns, trimmed to the fields the app reads. */
+export interface Comparison {
+  status: string;
+  ahead_by: number;
+  behind_by: number;
+  /** The true number of commits, which `commits` is capped below on a large range. */
+  total_commits: number;
+  /**
+   * The commits in `head` that `base` lacks. `parents` distinguishes a merge (two or more)
+   * from authored work, which is what separates a branch's own commits from the merge
+   * commits a fork sync leaves behind. Capped at 250 by GitHub.
+   */
+  commits: {
+    sha: string;
+    parents?: { sha: string }[];
+    commit: { message: string; author: { name?: string } | null };
+  }[];
+  /** Absent past the first page, and capped at 300 by GitHub. */
+  files?: { filename: string; status: string; additions: number; deletions: number }[];
 }
 
 /** Present (non-null) on a pull request that is queued behind auto-merge. */
@@ -93,6 +146,21 @@ export interface PullRequest {
   auto_merge: AutoMerge | null;
   /** Set once the PR has been merged; null for open and closed-unmerged PRs. */
   merged_at: string | null;
+  /**
+   * Whether GitHub can merge this PR as it stands. **Only present on the single-PR
+   * endpoint**, and `null` there until a background job has worked it out — so a caller
+   * that acts on it has to poll until it isn't null rather than read it once.
+   */
+  mergeable?: boolean | null;
+  /**
+   * Why it can or can't: `clean`, `blocked`, `behind`, `dirty`, `unstable`, `draft`,
+   * `has_hooks`, `unknown`. Typed as a plain string on purpose — the set is undocumented
+   * and GitHub adds to it, so a union here would turn a new value into a type error
+   * rather than the "something we don't recognise" the UI can already render.
+   */
+  mergeable_state?: string;
+  /** Single-PR endpoint only; `merged_at` covers the same ground on the list. */
+  merged?: boolean;
   head: {
     sha: string;
     ref: string;

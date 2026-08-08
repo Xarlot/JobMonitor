@@ -174,7 +174,14 @@ function slotKey(key: string, depth: ClaudeDepth): string {
   return `${key}|${depth}`;
 }
 
-function newRequestId(): string {
+/**
+ * Correlates progress events and cancellation with one call.
+ *
+ * `randomUUID` is absent outside a secure context, hence the fallback — which has to stay
+ * within `/^[A-Za-z0-9-]{1,64}$/`, since the main process re-checks the shape before
+ * letting it near anything.
+ */
+export function newRequestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 

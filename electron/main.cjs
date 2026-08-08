@@ -29,6 +29,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { autoUpdater } = require('electron-updater');
 const windowState = require('./windowState.cjs');
+const { resolveAppAsset } = require('./appAssets.cjs');
 const { registerClaudeIpc } = require('./claudeBridge.cjs');
 const { initRunLog, logEvent, readRunLogTail, runLogDir, runLogPath } = require('./runLog.cjs');
 
@@ -106,37 +107,21 @@ if (!gotLock) {
   });
 }
 
-const MIME = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-  '.map': 'application/json',
-};
-
 function registerAppProtocol() {
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
-    let pathname = decodeURIComponent(url.pathname);
-    if (pathname === '/' || pathname === '') pathname = '/index.html';
+    const resolved = resolveAppAsset(decodeURIComponent(url.pathname), DIST);
+    if (resolved.status === 403) return new Response('Forbidden', { status: 403 });
 
-    let filePath = path.normalize(path.join(DIST, pathname));
-    // Block path traversal outside the bundled dist.
-    if (filePath !== DIST && !filePath.startsWith(DIST + path.sep)) {
-      return new Response('Forbidden', { status: 403 });
+    // A JS or CSS request that fell through to index.html is a real fault — most likely a
+    // chunk the build renamed — and it presents as a blank window otherwise, because the
+    // browser will not execute HTML as a module. Say so where it can be found afterwards.
+    if (resolved.fallback && /\.(js|mjs|css)$/i.test(url.pathname)) {
+      logEvent('desktop', `WARN: no bundled asset for ${url.pathname}; served index.html`);
     }
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-      filePath = path.join(DIST, 'index.html'); // SPA fallback
-    }
-    const ext = path.extname(filePath).toLowerCase();
-    return new Response(fs.readFileSync(filePath), {
-      headers: { 'content-type': MIME[ext] || 'application/octet-stream' },
+
+    return new Response(fs.readFileSync(resolved.filePath), {
+      headers: { 'content-type': resolved.contentType },
     });
   });
 }

@@ -7,10 +7,22 @@ It watches your fork → upstream pull requests and configurable workflow "flows
 no webhooks. Data is read directly from `api.github.com` with a PAT that is stored **encrypted**
 in your browser.
 
-Everything is read-only **except one opt-in feature**: re-running the failed jobs of a workflow
-run (manually, or automatically for PRs waiting on auto-merge). That is the only request the app
-ever makes that isn't a `GET`, it is off by default, and it is hidden outright unless the token is
-*proven* able to perform it — see [Token capability](#token-capability).
+**Reading is the default; writing is exceptional and enumerated.** Every write the app can make
+is listed here, and every one of them is either behind an explicit click or off by default:
+
+| Write | Reached by | Default |
+| --- | --- | --- |
+| `POST .../actions/runs/{id}/rerun-failed-jobs` | the re-run button, or the auto-rerun engine | engine off |
+| `PATCH .../pulls/{n}` (clears the body) | the arm-auto-merge dialog only | on click |
+| `POST /graphql` — `enablePullRequestAutoMerge` | arming auto-merge, either tab | on click |
+| `POST .../pulls` | the Feature branches tab | tab off |
+| `PUT .../pulls/{n}/merge` | the Feature branches tab | tab off |
+| `POST .../merge-upstream` | the Feature branches tab | tab off |
+
+Nothing writes on a timer except the auto-rerun engine, which re-runs failed jobs and does
+nothing else. Every write control is hidden outright unless the token is *proven* able to
+perform it — see [Token capability](#token-capability) — and `ghWriteRaw` enforces that in one
+place rather than trusting each caller to have checked.
 
 ## Features
 
@@ -31,6 +43,18 @@ ever makes that isn't a `GET`, it is off by default, and it is hidden outright u
   endpoint is CORS-enabled, so logs render in-app — but it requires a token that can download
   logs: a **classic PAT with the `repo` scope** (a read-only fine-grained PAT returns 404,
   and the Logs dialog then links out to GitHub).
+- **Feature branches** (opt-in tab) — branches under a prefix (`feature/` by default) that exist
+  in **both** the fork and the upstream. Per branch: how the two copies stand (`compare` in the
+  fork with the upstream's commit as `{owner}:{sha}`, only when the tips differ — the direction is
+  what decides whether the fork sync fast-forwards or writes a merge commit) and a **stage strip**
+  for each of its two pull requests (opened → checks → mergeable → auto-merge armed → merged) and the reason it is stuck,
+  read from `mergeable_state`, which only the single-PR endpoint carries. Three actions, each
+  confirming first and reporting which of its steps ran: **sync** (a pull request from the default
+  branch into the feature branch, armed if GitHub will queue it and merged if it won't — GitHub
+  refuses auto-merge on a pull request it could merge already), **ship** (the reverse direction,
+  armed but never merged unprompted), and **pull into my fork** (`merge-upstream`). Its pull
+  requests are handed to the auto-rerun engine, since the PR tab's fork-head filter cannot see
+  them. Desktop-only extra: the ship pull request's title and description are written by `claude`.
 - **Timeline (Gantt)** — a button on each PR and flow run opens a Gantt-style timeline: bars
   positioned by start offset and sized by duration. For flow-run jobs, each bar is split into
   **runner allocation** (queue + “Set up job”) and **payload** (actual work) so slow setup vs

@@ -251,6 +251,91 @@ describe('ghPost', () => {
     expect((err as GitHubApiError).message).toMatch(/write access/i);
   });
 
+  /**
+   * The 422 that cost a real user an unexplained failure.
+   *
+   * `message` for a validation failure is the constant "Validation Failed"; everything that
+   * says *what* failed is in `errors` beside it. Reading only `message` produced "Could not
+   * open the pull request: Validation Failed", which names nothing to act on — and it broke
+   * the callers that recognise an ordinary outcome by its text, so "nothing to merge" and
+   * "one already exists" were both reported as hard failures.
+   */
+  it('lifts the reason out of a 422 errors array', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, {
+        message: 'Validation Failed',
+        errors: [
+          {
+            resource: 'PullRequest',
+            code: 'custom',
+            message: 'No commits between master and feature/java/test_sync',
+          },
+        ],
+      })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({
+      status: 422,
+      message: 'No commits between master and feature/java/test_sync',
+    });
+  });
+
+  it('reads a field-and-code entry as a phrase', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, {
+        message: 'Validation Failed',
+        errors: [{ resource: 'PullRequest', field: 'head', code: 'invalid' }],
+      })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({
+      message: 'PullRequest.head is invalid',
+    });
+  });
+
+  it('joins several entries', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, {
+        message: 'Validation Failed',
+        errors: [
+          { resource: 'PullRequest', field: 'base', code: 'invalid' },
+          { resource: 'PullRequest', field: 'head', code: 'missing_field' },
+        ],
+      })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({
+      message: 'PullRequest.base is invalid; PullRequest.head is required',
+    });
+  });
+
+  /** A heading that says something is kept; the useless one is not. */
+  it('keeps a meaningful message ahead of the detail', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, {
+        message: 'Reference update failed',
+        errors: [{ resource: 'Ref', code: 'custom', message: 'the branch is protected' }],
+      })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({
+      message: 'Reference update failed: the branch is protected',
+    });
+  });
+
+  it('falls back to the message when there is no errors array', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, { message: 'Validation Failed' })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({ message: 'Validation Failed' });
+  });
+
+  it('ignores entries it cannot describe', async () => {
+    setFetchImpl((async () =>
+      errorResponse(422, {
+        message: 'Validation Failed',
+        errors: [{ resource: 'PullRequest' }, null, { code: 'invalid' }],
+      })) as unknown as typeof fetch);
+
+    await expect(ghPost('/x')).rejects.toMatchObject({ message: 'is invalid' });
+  });
+
   it("classifies a 409 as a conflict and keeps GitHub's wording", async () => {
     setFetchImpl((async () =>
       errorResponse(409, { message: 'This run is already in progress.' })) as unknown as typeof fetch);

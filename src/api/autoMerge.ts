@@ -16,12 +16,29 @@
  */
 
 import { GRAPHQL_PATH, pullPath } from './endpoints';
-import { ghWriteJson, GitHubApiError } from './githubClient';
+import { ghWriteJson, GitHubApiError, type WriteSubject } from './githubClient';
 import { recordWriteRefused } from './tokenCapability';
 import type { PullRequest } from './types';
 
 /** GitHub's three merge strategies, as the GraphQL enum spells them. */
 export type MergeMethod = 'SQUASH' | 'MERGE' | 'REBASE';
+
+/**
+ * What a refusal here is about.
+ *
+ * Without these, both writes below fall back to githubClient's default — which is phrased
+ * for re-running jobs, because that was the only write when it was written. Being told
+ * "your token isn't allowed to re-run jobs" after a failed arming points at the wrong
+ * thing entirely.
+ */
+const AUTO_MERGE_SUBJECT: WriteSubject = {
+  action: 'arm auto-merge',
+  noun: 'Pull request',
+};
+const DESCRIPTION_SUBJECT: WriteSubject = {
+  action: "edit this pull request's description",
+  noun: 'Pull request',
+};
 
 interface GraphQlResponse<T> {
   data?: T | null;
@@ -65,10 +82,15 @@ export function graphQlErrorMessage(errors: { message?: string; type?: string }[
 export async function enableAutoMerge(pr: PullRequest, mergeMethod: MergeMethod): Promise<void> {
   let body: GraphQlResponse<EnableAutoMergeData>;
   try {
-    body = await ghWriteJson<GraphQlResponse<EnableAutoMergeData>>('POST', GRAPHQL_PATH, {
-      query: ENABLE_AUTO_MERGE,
-      variables: { pullRequestId: pr.node_id, mergeMethod },
-    });
+    body = await ghWriteJson<GraphQlResponse<EnableAutoMergeData>>(
+      'POST',
+      GRAPHQL_PATH,
+      {
+        query: ENABLE_AUTO_MERGE,
+        variables: { pullRequestId: pr.node_id, mergeMethod },
+      },
+      AUTO_MERGE_SUBJECT,
+    );
   } catch (e) {
     if (e instanceof GitHubApiError && e.refusal === 'permission') recordWriteRefused();
     throw e;
@@ -97,7 +119,12 @@ export async function clearPrDescription(
   prNumber: number,
 ): Promise<void> {
   try {
-    await ghWriteJson<unknown>('PATCH', pullPath(owner, repo, prNumber), { body: '' });
+    await ghWriteJson<unknown>(
+      'PATCH',
+      pullPath(owner, repo, prNumber),
+      { body: '' },
+      DESCRIPTION_SUBJECT,
+    );
   } catch (e) {
     if (e instanceof GitHubApiError && e.refusal === 'permission') recordWriteRefused();
     throw e;

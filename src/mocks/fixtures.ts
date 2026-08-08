@@ -5,6 +5,8 @@ import type {
   CheckRun,
   CheckRunsResponse,
   CombinedStatus,
+  Comparison,
+  GitRef,
   Job,
   JobsResponse,
   PullRequest,
@@ -33,7 +35,10 @@ const ONE_WORKFLOW: Flow['match'] = { pattern: '', by: 'name', caseSensitive: fa
 export const MOCK_CONFIG: MonitorConfig = {
   version: 1,
   upstream: { owner: OWNER, repo: REPO },
-  fork: { owner: OWNER, branch: null },
+  // A distinct fork repo name, so the feature-branch tab addresses two different
+  // repositories offline — with both names equal, the branch intersection would compare a
+  // list against itself and appear to work whatever it did.
+  fork: { owner: OWNER, repo: `${REPO}-fork`, branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
   notifications: { pr: false, flow: false, autoRerun: false },
@@ -51,6 +56,9 @@ export const MOCK_CONFIG: MonitorConfig = {
   autoMerge: { mergeMethod: 'squash' },
   // On in mock mode: the tab is one of the things worth being able to look at offline.
   diagnostics: { showLogTab: true, tailKB: 512, followSeconds: 3 },
+  // On too, for the same reason — and because the actions behind it write to a real
+  // repository, so mock mode is the only place to exercise them safely.
+  featureBranches: { enabled: true, prefix: 'feature/' },
   ai: {
     enabled: true,
     extraInstructions: '',
@@ -58,6 +66,7 @@ export const MOCK_CONFIG: MonitorConfig = {
     deep: { model: 'opus', effort: 'high', prompt: '' },
     log: { model: 'sonnet', effort: 'low', prompt: '' },
     blame: { model: 'opus', effort: 'medium', prompt: '' },
+    pr: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,
   rateLimitWarnAt: 50,
@@ -533,6 +542,101 @@ export function mockRepository(owner: string, repo: string): Repository {
     full_name: `${owner}/${repo}`,
     private: true,
     permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+    default_branch: BRANCH,
+    // Every repository reports itself as a fork of the upstream, so the fork-parent check
+    // passes and the sync action is reachable offline. The mock config points fork and
+    // upstream at the same owner, which in reality would fail that check.
+    fork: true,
+    parent: { full_name: SLUG },
+    allow_auto_merge: true,
+    allow_merge_commit: true,
+    allow_squash_merge: true,
+    allow_rebase_merge: false,
+  };
+}
+
+/* --------------------------------------------------------------- feature branches ---- */
+
+/**
+ * Two shared feature branches, plus one that exists only upstream.
+ *
+ * The odd one out is the point: it must not appear in the tab, since a branch the fork
+ * does not have cannot be pulled into it.
+ */
+const FEATURE_REFS: Record<string, { name: string; sha: string }[]> = {
+  [OWNER]: [
+    { name: 'feature/reporting-v2', sha: 'f1a2b3c' },
+    { name: 'feature/print-preview', sha: 'd4e5f60' },
+    { name: 'feature/upstream-only', sha: '9988776' },
+  ],
+  fork: [
+    { name: 'feature/reporting-v2', sha: 'f1a2b3c' },
+    // Behind the upstream's copy, so "Pull into my fork" has something to do.
+    { name: 'feature/print-preview', sha: '0000aaa' },
+  ],
+};
+
+export function mockMatchingRefs(repo: string, prefix: string): GitRef[] {
+  const refs = FEATURE_REFS[repo === REPO ? OWNER : 'fork'] ?? [];
+  return refs
+    .filter((r) => r.name.startsWith(prefix))
+    .map((r) => ({ ref: `refs/heads/${r.name}`, object: { sha: r.sha, type: 'commit' } }));
+}
+
+/**
+ * An offer from the fork into the upstream's copy of the same branch — the third leg of the
+ * loop, and the only cross-fork pull request the app opens. Head and base carry the same
+ * branch name; the head *owner* is what tells them apart.
+ */
+export const MOCK_FEATURE_PULLS: PullRequest[] = [
+  {
+    id: 900,
+    node_id: 'PR_kwDOmockFB1',
+    number: 38100,
+    title: 'Reporting v2: server-side grouping',
+    html_url: `https://github.com/${SLUG}/pull/38100`,
+    state: 'open',
+    draft: false,
+    body: 'Moves grouping to the server so the client stops re-sorting the whole dataset.',
+    user: user('a-petrova'),
+    created_at: new Date(BOOT - 2 * 86400_000).toISOString(),
+    updated_at: new Date(BOOT - 3600_000).toISOString(),
+    auto_merge: AUTO_MERGE,
+    merged_at: null,
+    mergeable: true,
+    mergeable_state: 'blocked',
+    head: {
+      sha: SHA_RUN,
+      ref: 'feature/reporting-v2',
+      label: `${OWNER}:feature/reporting-v2`,
+      user: user(OWNER),
+    },
+    base: { ref: 'feature/reporting-v2', repo: { full_name: SLUG } },
+  },
+];
+
+/**
+ * What `compare` answers — used both for the pull-request write-up and for the fork's
+ * standing against the upstream.
+ *
+ * `ahead` with a non-zero `ahead_by` reads, for the standing, as "your fork is 3 commits
+ * behind": the base of that comparison is the fork and the head is the upstream.
+ */
+export function mockComparison(): Comparison {
+  return {
+    status: 'ahead',
+    ahead_by: 3,
+    behind_by: 0,
+    total_commits: 3,
+    commits: [
+      { sha: 'c3', commit: { message: 'Group on the server\n\nlong body', author: { name: 'A' } } },
+      { sha: 'c2', commit: { message: 'Add a grouping endpoint', author: { name: 'A' } } },
+      { sha: 'c1', commit: { message: 'Extract the sort comparator', author: { name: 'A' } } },
+    ],
+    files: [
+      { filename: 'src/grouping.ts', status: 'modified', additions: 120, deletions: 40 },
+      { filename: 'src/api/report.ts', status: 'modified', additions: 18, deletions: 2 },
+    ],
   };
 }
 
