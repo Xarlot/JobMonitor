@@ -402,6 +402,27 @@ When it is stuck, the reason is spelled out rather than left to be inferred — 
 branch*, *conflicts — this one needs a working copy*, *some checks failed, but none of them are
 required*.
 
+#### How the flow goes
+
+One branch, the same name in both repositories, kept in step over weeks. The loop:
+
+1. **`main` moves.** The shared branch falls behind it, and the row starts saying so.
+2. **Bring the default branch in.** A `sync/main-into-<branch>` branch is created at `main`'s tip and
+   a pull request from it goes into the shared branch. It merges when its checks pass, and the sync
+   branch is finished — the next time round makes a new one.
+3. **Pull into your fork.** Now that the shared branch has moved, your copy is behind it. This brings
+   it down.
+4. **Do the work**, and **commit it to the upstream** — a pull request from your fork's branch into
+   the upstream's branch of the same name.
+5. Back to step 1.
+
+**The order matters between 3 and 4.** Offering work from a fork that is behind the shared branch is
+how conflicts are made, which is why the row recommends getting current before offering — and why
+*commit to the upstream* is unavailable while your copy has nothing the upstream lacks.
+
+**Nothing here ends the branch.** The loop keeps a long-lived branch healthy; getting it into `main`
+is a separate decision made elsewhere.
+
 #### The three actions
 
 They are the icons on the right of each branch row. Hover one for a sentence naming **both ends** of
