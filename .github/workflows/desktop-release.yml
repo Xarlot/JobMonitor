@@ -29,7 +29,29 @@ jobs:
         shell: bash
         run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
 
+      # Before the build, because building installers on three platforms costs ten minutes and a
+      # missing credential does not fail it — it produces installers that never publish, and the
+      # only symptom is a dashboard that stays empty.
+      - name: Check the release credentials
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/check-release-secrets.mjs --env
+        env:
+          TELEMETRY_ABLY_KEY: ${{ secrets.TELEMETRY_ABLY_KEY }}
+          TELEMETRY_RECEIVER_PUBKEY: ${{ secrets.TELEMETRY_RECEIVER_PUBKEY }}
+          TELEMETRY_DEPLOYMENT_ID: ${{ secrets.TELEMETRY_DEPLOYMENT_ID }}
+
       - run: npm run build # tsc + vite -> dist/ + electron/telemetry.bundle.cjs
+        env:
+          TELEMETRY_ABLY_KEY: ${{ secrets.TELEMETRY_ABLY_KEY }}
+          TELEMETRY_RECEIVER_PUBKEY: ${{ secrets.TELEMETRY_RECEIVER_PUBKEY }}
+          TELEMETRY_DEPLOYMENT_ID: ${{ secrets.TELEMETRY_DEPLOYMENT_ID }}
+
+      # And after it, on the artifact that will actually ship: the check above proves the secrets
+      # exist, this one proves they were substituted into the bundle. Only the second can fail when
+      # the build wiring is what broke.
+      - name: Check they reached the bundle
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/check-release-secrets.mjs --bundle
         env:
           TELEMETRY_ABLY_KEY: ${{ secrets.TELEMETRY_ABLY_KEY }}
           TELEMETRY_RECEIVER_PUBKEY: ${{ secrets.TELEMETRY_RECEIVER_PUBKEY }}

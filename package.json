@@ -39,7 +39,8 @@
     "electron:dist": "npm run check-node && npm run build && npm run icons && electron-builder",
     "electron:publish": "npm run check-node && npm run build && npm run icons && electron-builder --publish always",
     "skills:sync": "node scripts/sync-skills.mjs",
-    "screenshots": "node scripts/shoot-screenshots.mjs"
+    "screenshots": "node scripts/shoot-screenshots.mjs",
+    "check-secrets": "node scripts/check-release-secrets.mjs"
   },
   "dependencies": {
     "@primer/octicons-react": "^19.28.1",
