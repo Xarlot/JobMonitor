@@ -87,7 +87,7 @@ function stubGitHub(routes: {
   forkRefs?: unknown;
   /** What the fork is offering: head `{fork}:{branch}`, base the same branch upstream. */
   pulls?: unknown;
-  /** What is coming in from the default branch: head `{upstream}:{defaultBranch}`. */
+  /** What is coming into the branch — the backmerge lives here, from a `sync/...` head. */
   syncPulls?: unknown;
   detail?: unknown;
   repo?: Record<string, unknown>;
@@ -126,13 +126,20 @@ function stubGitHub(routes: {
     if (/\/pulls\/\d+$/.test(path)) return jsonResponse(routes.detail ?? pull({}));
     if (/\/pulls$/.test(path)) {
       /**
-       * Routed by the `head` filter, as GitHub does. The two queries the tab makes differ
-       * only in it — `up:main` for what is coming *in* from the default branch, and
-       * `me:feature/a` for what the fork is offering — and answering both with one list made
-       * a single pull request match as both, which is not a state that can exist.
+       * Routed by the presence of a `head` filter, as GitHub would answer it.
+       *
+       * The two queries the tab makes differ in it: the offer query names a head
+       * (`me:feature/a`), the backmerge query narrows by **base** alone and lists everything
+       * coming into the branch. Answering both with one list made a single pull request match as
+       * both, which is not a state that can exist.
+       *
+       * This used to key on `head=up:main`, which is how the backmerge query looked before it went
+       * through a sync branch — and once it stopped naming a head, the stub answered it with the
+       * *offers* list. Both the app and the stub were wrong in the same direction, which is why the
+       * suite stayed green while the tab showed nothing.
        */
       const head = url.searchParams.get('head') ?? '';
-      if (head.startsWith('up:')) return jsonResponse(routes.syncPulls ?? []);
+      if (!head) return jsonResponse(routes.syncPulls ?? []);
       return jsonResponse(routes.pulls ?? []);
     }
     if (/\/check-runs$/.test(path)) return jsonResponse({ total_count: 0, check_runs: [] });
@@ -518,6 +525,67 @@ describe('FeatureBranchesView', () => {
   });
 
   /** Equal tips need no request at all. */
+  /**
+   * The backmerge pull request is found and shown.
+   *
+   * There was no test for this, and that is how it broke: the write side moved to a
+   * `sync/main-into-x` head while the read side still asked for pull requests whose head was
+   * `main`. The query returned nothing, the tab showed nothing, and the suite stayed green.
+   */
+  it('shows the backmerge pull request opened from a sync branch', async () => {
+    stubGitHub({
+      upstreamRefs: [ref('feature/a', 'aaa')],
+      forkRefs: [ref('feature/a', 'aaa')],
+      syncPulls: [
+        pull({
+          number: 42956,
+          title: "Merge branch 'main' into 'feature/a'",
+          head: {
+            sha: 'syncsha',
+            ref: 'sync/main-into-feature-a',
+            label: 'up:sync/main-into-feature-a',
+            user: { login: 'up', avatar_url: '', html_url: '' },
+          },
+          base: { ref: 'feature/a', repo: null },
+        }),
+      ],
+    });
+
+    renderView();
+
+    expect(await screen.findByText('main → feature/a')).toBeInTheDocument();
+  });
+
+  /**
+   * Narrowing by base alone also returns everybody else's work into the feature branch. Claiming
+   * one of those as the backmerge would put somebody's review under a heading that says it merges
+   * automatically.
+   */
+  it('does not mistake an ordinary pull request into the branch for the backmerge', async () => {
+    stubGitHub({
+      upstreamRefs: [ref('feature/a', 'aaa')],
+      forkRefs: [ref('feature/a', 'aaa')],
+      syncPulls: [
+        pull({
+          number: 999,
+          title: 'Add retries',
+          head: {
+            sha: 'othersha',
+            ref: 'bugfix/retries',
+            label: 'someone:bugfix/retries',
+            user: { login: 'someone', avatar_url: '', html_url: '' },
+          },
+          base: { ref: 'feature/a', repo: null },
+        }),
+      ],
+    });
+
+    renderView();
+
+    await screen.findByText('your fork matches the upstream');
+    expect(screen.queryByText(/#999/)).not.toBeInTheDocument();
+  });
+
   it('says how far the shared branch has fallen behind the default branch', async () => {
     stubGitHub({
       upstreamRefs: [ref('feature/a', 'aaa')],

@@ -27,6 +27,20 @@ import {
 import { flowRunJobsCache, flowRunJobsKey } from '../storage/failureCaches';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useResolvedFlows } from '../context/ResolvedFlowsContext';
+import { createVerdictLog } from '../lib/devLog';
+
+/**
+ * Why each flow did or did not contribute failures, recorded once per verdict.
+ *
+ * The Failures tab showing nothing from a flow has half a dozen legitimate causes — the latest run
+ * is green, or still running, or older than the scan window — and from the outside they are
+ * indistinguishable from a bug. The auto-rerun engine had the same problem and the same answer: log
+ * the decisions *not* to act, not only the actions.
+ *
+ * Keyed by flow with the verdict as the value, so a poll that changes nothing is silent and a flow
+ * that flips from red to green says so exactly once.
+ */
+const logVerdict = createVerdictLog('failures');
 
 /** Ceiling on concurrent job fetches, so a board of red flows stays polite. */
 const MAX_FLOW_JOB_FETCH = 8;
@@ -75,12 +89,41 @@ export function useFlowFailures(): FlowFailureSource[] {
     const now = Date.now();
     const out: Candidate[] = [];
     for (const [flowId, state] of states) {
+      const name = nameById.get(flowId) ?? flowId;
       const run = state.runs[0];
-      if (!run || !isFailingRun(run)) continue;
+      if (!run) {
+        logVerdict(flowId, 'no-runs', `${name}: no runs loaded yet, so no failures from it`);
+        continue;
+      }
+      if (!isFailingRun(run)) {
+        // The common one, and the one that surprises: a flow whose *previous* run failed
+        // contributes nothing once a newer run starts, because "in progress" is not "failing".
+        logVerdict(
+          flowId,
+          `latest-not-failing:${run.status}:${run.conclusion ?? 'null'}`,
+          `${name}: latest run #${run.run_number} is ${run.conclusion ?? run.status}, not a failure — nothing listed`,
+          { runId: run.id, status: run.status, conclusion: run.conclusion },
+        );
+        continue;
+      }
       // Outside the scan window the failure wouldn't be listed anyway, so don't
       // spend a job-list request discovering that. A nightly that has been red for
       // a month otherwise costs a request per poll forever.
-      if (!withinScanWindow(Date.parse(run.updated_at) || 0, now)) continue;
+      if (!withinScanWindow(Date.parse(run.updated_at) || 0, now)) {
+        logVerdict(
+          flowId,
+          `outside-window:${run.id}`,
+          `${name}: latest run #${run.run_number} failed but finished outside the scan window — not listed`,
+          { runId: run.id, updatedAt: run.updated_at },
+        );
+        continue;
+      }
+      logVerdict(
+        flowId,
+        `candidate:${run.id}:${run.run_attempt}`,
+        `${name}: latest run #${run.run_number} failed — fetching its jobs`,
+        { runId: run.id, attempt: run.run_attempt },
+      );
       out.push({
         flowId,
         flowName: nameById.get(flowId) ?? flowId,
@@ -166,7 +209,33 @@ export function useFlowFailures(): FlowFailureSource[] {
         // A run that failed with no failing job of its own (e.g. a startup failure)
         // has nothing to report per-worker, so it drops out rather than showing an
         // empty group.
-        .filter((s) => s.jobs.some(isFailingJob)),
+        .filter((s) => {
+          if (s.jobs.length === 0) {
+            // Not yet fetched, or the fetch failed. Distinguished from "fetched and none failing"
+            // because only one of the two is going to resolve itself on the next poll.
+            logVerdict(
+              `jobs:${s.run.id}`,
+              'no-jobs-yet',
+              `${s.flowName}: run #${s.run.run_number} failed, its job list is not in hand yet`,
+            );
+            return false;
+          }
+          if (!s.jobs.some(isFailingJob)) {
+            logVerdict(
+              `jobs:${s.run.id}`,
+              `no-failing-job:${s.jobs.length}`,
+              `${s.flowName}: run #${s.run.run_number} failed but none of its ${s.jobs.length} jobs did — nothing to list. A run can fail before any job starts, or be cancelled.`,
+              { runId: s.run.id, conclusions: s.jobs.map((j) => j.conclusion ?? j.status) },
+            );
+            return false;
+          }
+          logVerdict(
+            `jobs:${s.run.id}`,
+            `listed:${s.jobs.filter(isFailingJob).length}`,
+            `${s.flowName}: run #${s.run.run_number} contributes ${s.jobs.filter(isFailingJob).length} failing job(s)`,
+          );
+          return true;
+        }),
     [candidates, jobsByRun],
   );
 }

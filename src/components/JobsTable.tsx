@@ -8,7 +8,7 @@ import { isQuietStatus, useViewMode } from '../context/ViewModeContext';
 import { StatusBadge } from './StatusBadge';
 import { JobSummaryDialog } from './JobSummaryDialog';
 import { JobLogsDialog } from './JobLogsDialog';
-import { AnalyseFailureButton } from './AnalyseFailureButton';
+import { ShowInFailuresButton } from './ShowInFailuresButton';
 import { formatDuration, formatRelative } from '../lib/format';
 import styles from './JobsTable.module.css';
 import { Feature, Telemetry } from '../lib/telemetry';
@@ -82,7 +82,7 @@ export function JobsTable({
                 {formatRelative(job.started_at)}
               </td>
               <td className={styles.px2Small4}>
-                <AnalyseFailureButton jobId={job.id} />
+                <ShowInFailuresButton jobId={job.id} />
                 <IconButton
                   size="small"
                   variant="invisible"

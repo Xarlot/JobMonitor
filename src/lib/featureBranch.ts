@@ -378,10 +378,17 @@ export interface NextStep {
  * that is already upstream — which is exactly the case that reads as "you still have two
  * commits to send" when the honest answer is "nothing to do".
  */
+/** How many commits, and in words rather than a bare number. */
+export function plural(n: number): string {
+  return n === 1 ? '1 commit' : `${n} commits`;
+}
+
 export function nextStep(
   standing: StandingFacts,
   offer: PullFacts | null,
   sync: PullFacts | null,
+  /** How far the shared branch trails the default branch. Null while it is being compared. */
+  main: { behindBy: number } | null = null,
 ): NextStep {
   // 1. The offer, if one is open: it is the work in flight, and it comes first.
   if (offer) {
@@ -407,7 +414,48 @@ export function nextStep(
     };
   }
 
-  // 3. Otherwise the standing decides.
+  // 3. Otherwise the standing decides — with one thing behind it, see `backmergeStep`.
+  return backmergeStep(standingStep(standing), sync, main);
+}
+
+/**
+ * The default branch having moved on, but only when nothing more pressing is going on.
+ *
+ * Ranked **below** the fork standing, and that placement is the whole decision. Falling behind the
+ * default branch is a continuous chore in any repository where that branch is busy, so a
+ * recommendation that led with it would say the same sentence on every row forever and would bury
+ * the one thing a person actually wants to finish — their own work, waiting to be offered.
+ *
+ * So it fills the silence instead: a branch the standing has nothing to say about is exactly where
+ * "bring the default branch in" is the useful next move, and that is also the row where a green
+ * button means something.
+ */
+function backmergeStep(
+  base: NextStep,
+  sync: PullFacts | null,
+  main: { behindBy: number } | null,
+): NextStep {
+  // Only when the standing found nothing to do. Anything else outranks maintenance.
+  if (base.target !== 'none' || base.tone !== 'ok') return base;
+  // An open backmerge already *is* the answer; recommending a second one would be noise.
+  if (sync) {
+    return {
+      text: `Nothing to do — #${sync.pr.number} brings the default branch in`,
+      target: 'none',
+      tone: 'ok',
+    };
+  }
+  if (main && main.behindBy > 0) {
+    return {
+      text: `Bring the default branch in — the branch is ${plural(main.behindBy)} behind it`,
+      target: 'sync',
+      tone: 'action',
+    };
+  }
+  return base;
+}
+
+function standingStep(standing: StandingFacts): NextStep {
   switch (standing.state) {
     case 'unknown':
       return {

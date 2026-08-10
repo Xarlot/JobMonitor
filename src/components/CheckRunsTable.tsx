@@ -7,7 +7,7 @@ import { jobIdFromUrl } from '../api/endpoints';
 import { isQuietStatus, useViewMode } from '../context/ViewModeContext';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunDialog } from './CheckRunDialog';
-import { AnalyseFailureButton } from './AnalyseFailureButton';
+import { ShowInFailuresButton } from './ShowInFailuresButton';
 import { formatDuration, formatRelative } from '../lib/format';
 import styles from './CheckRunsTable.module.css';
 import { Feature, Telemetry } from '../lib/telemetry';
@@ -114,7 +114,7 @@ export function CheckRunsTable({
                 {r.started}
               </td>
               <td className={styles.px2Small4}>
-                <AnalyseFailureButton checkRunId={r.checkRunId} jobId={r.jobId} />
+                <ShowInFailuresButton checkRunId={r.checkRunId} jobId={r.jobId} />
                 {r.jobId != null && (
                   <>
                     <IconButton

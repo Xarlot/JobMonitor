@@ -410,7 +410,7 @@ nothing is a dead end.
 
 | | What it does |
 |---|---|
-| **Bring the default branch in** | Merges e.g. `2026.1` into the feature branch, so the branch is not left behind |
+| **Bring the default branch in** | Creates `sync/2026.1-into-<branch>` at the default branch's tip and opens a pull request from it into the feature branch |
 | **Pull into your fork** | Brings the upstream's copy of the branch down into your fork |
 | **Commit to the upstream** | Opens a pull request from your fork's branch into the upstream's branch of the same name |
 
@@ -456,6 +456,10 @@ expanding one collapses the rest — and you can **drag the grip** on the left t
 them between groups.
 
 ![Flows](docs/screenshots/flows.png)
+
+A failing job carries a 🐛 button that opens **that same failure in the Failures tab** — where its
+log is coloured, its annotations are listed and its report can be copied. It appears only when the
+failure is in that tab's list, so it never lands you somewhere empty.
 
 A **regex flow** shows up as one card per matching workflow — each with its own runs, filters and
 place in a group. The `· regex` suffix next to the workflow file marks a card that came from a

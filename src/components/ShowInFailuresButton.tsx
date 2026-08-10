@@ -1,27 +1,28 @@
 /**
  * "Take me to this failure in the Failures tab", on a failing check or job.
  *
- * The Failures tab is where a failure can be explained, its log rewritten and its report
- * copied — but getting there meant leaving the run you were reading, finding the same job
- * in a list grouped differently, and hoping it was the one. This is that trip, in one click.
+ * The Failures tab is where a failure can be explained, its log rewritten and coloured, its
+ * annotations read and its report copied — but getting there meant leaving the run you were
+ * reading, finding the same job in a list grouped differently, and hoping it was the one. This is
+ * that trip, in one click.
  *
- * Two conditions, and both are about not offering a dead end:
+ * **It used to require the AI integration**, on the reasoning that going to the tab was only worth
+ * it to have the failure explained. That was wrong about the tab: the coloured log, the annotations
+ * and the report are all there without a model, and they are most of what the tab is for. The gate
+ * mainly meant that anyone using the app in a browser, or with the integration off, had no way out
+ * of a job row at all.
  *
- *  - **The AI integration has to be on.** Without it the Failures tab still works, but the
- *    thing this button is *for* — going somewhere to have the failure explained — is not
- *    there, and a button that moves you to a list you were already looking at is noise.
- *  - **The failure has to actually be in that tab.** Its list is bounded (a week's window,
- *    a bounded set of tracked pull requests), so a job failing outside those bounds has no
- *    row to land on. Asked of the live list rather than re-derived, so the two cannot
- *    disagree about what exists.
+ * One condition remains, and it is the one that prevents a dead end: **the failure has to actually
+ * be in that tab.** Its list is bounded — a week's window, a bounded set of tracked pull requests —
+ * so a job failing outside those bounds has no row to land on. Asked of the live list rather than
+ * re-derived, so the two cannot disagree about what exists.
  */
 
 import { IconButton } from '@primer/react';
-import { SparkleFillIcon } from '@primer/octicons-react';
+import { BugIcon } from '@primer/octicons-react';
 import { useFailures } from '../context/FailuresContext';
 import { useNavigation } from '../context/NavigationContext';
-import { useAiAvailable } from '../hooks/useAiAvailable';
-import styles from './AnalyseFailureButton.module.css';
+import styles from './ShowInFailuresButton.module.css';
 
 /**
  * Find the failure a row stands for.
@@ -47,7 +48,7 @@ export function useFailureKey(ids: {
   );
 }
 
-export function AnalyseFailureButton({
+export function ShowInFailuresButton({
   checkRunId,
   jobId,
   size = 'small',
@@ -57,17 +58,16 @@ export function AnalyseFailureButton({
   size?: 'small' | 'medium';
 }) {
   const navigation = useNavigation();
-  const available = useAiAvailable();
   const failureKey = useFailureKey({ checkRunId, jobId });
 
-  if (!available || !navigation || !failureKey) return null;
+  if (!navigation || !failureKey) return null;
 
   return (
     <IconButton
       size={size}
       variant="invisible"
-      icon={SparkleFillIcon}
-      aria-label="Analyse in Failures"
+      icon={BugIcon}
+      aria-label="Show in Failures"
       className={styles.mr1}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();

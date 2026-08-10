@@ -18,6 +18,8 @@
  */
 
 import { enableAutoMerge, type MergeMethod } from './autoMerge';
+import { createRefPath, refPath } from './endpoints';
+import { ghGet, ghWriteJson, type WriteSubject } from './githubClient';
 import { syncForkBranch, type SyncForkOutcome } from './forkSync';
 import { GitHubApiError } from './githubClient';
 import {
@@ -57,8 +59,69 @@ export interface SyncParams {
   defaultBranch: string;
 }
 
+const REF_SUBJECT: WriteSubject = { action: 'create a branch', noun: 'Branch' };
+
+/**
+ * The branch a sync is carried on — `sync/main-into-feature-x`.
+ *
+ * Sanitised the same way the reference workflow does it: anything outside `[A-Za-z0-9._-]`
+ * becomes a dash, which flattens the slashes of `feature/x` into a single segment. Two different
+ * branches can therefore collide on one sync branch name — `feature/x` and `feature-x` — but a
+ * name with slashes in the middle would nest refs unpredictably, and one shared sync branch is a
+ * visible mess rather than a silent one.
+ */
+export function syncBranchName(source: string, target: string): string {
+  const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '-');
+  return `sync/${safe(source)}-into-${safe(target)}`;
+}
+
+/**
+ * Create the sync branch at the source's tip, or leave the existing one alone.
+ *
+ * Reuse rather than fast-forward, matching the reference workflow. If the branch is already there
+ * its pull request is almost certainly still open, and that pull request — not the branch — is the
+ * unit of work: moving the branch under an open review would change what people had already looked
+ * at. The consequence to know about is that a sync branch left behind with no pull request goes
+ * stale, and the next sync will carry the older commit until the branch is deleted.
+ */
+async function upsertSyncBranch(
+  owner: string,
+  repo: string,
+  source: string,
+  name: string,
+): Promise<{ created: boolean }> {
+  try {
+    await ghGet(refPath(owner, repo, `heads/${name}`));
+    return { created: false };
+  } catch (e) {
+    // Anything other than "not there" is a real failure and must not be mistaken for one.
+    if (!(e instanceof GitHubApiError) || e.status !== 404) throw e;
+  }
+
+  const { data } = await ghGet<{ object: { sha: string } }>(
+    refPath(owner, repo, `heads/${source}`),
+  );
+  await ghWriteJson(
+    'POST',
+    createRefPath(owner, repo),
+    { ref: `refs/heads/${name}`, sha: data.object.sha },
+    REF_SUBJECT,
+  );
+  return { created: true };
+}
+
 /**
  * Bring the default branch into a feature branch.
+ *
+ * **Through a sync branch, never straight from the default branch.** A pull request whose head is
+ * `main` is not a unit of work that can finish: `main` keeps moving, so the same pull request is
+ * never done, its diff changes under review, and the head branch cannot be deleted when it merges.
+ * Pinning a `sync/main-into-x` branch at one commit makes the pull request finite — it merges, it
+ * closes, and the next sync is a new one.
+ *
+ * This mirrors the `create-merge.yml` workflow the same repositories are driven by, deliberately:
+ * two mechanisms that produce differently-shaped pull requests for the same operation would leave
+ * whoever reviews them guessing which tool made this one.
  *
  * Fixed at `merge`, not the configured strategy. Squashing the default branch into a
  * feature branch would replace hundreds of shared commits with one that exists nowhere
@@ -69,12 +132,28 @@ export async function syncIntoFeatureBranch(params: SyncParams): Promise<ActionO
   const { owner, repo, branch, defaultBranch } = params;
   const steps: ActionStep[] = [];
 
+  const syncBranch = syncBranchName(defaultBranch, branch);
+  try {
+    const { created } = await upsertSyncBranch(owner, repo, defaultBranch, syncBranch);
+    steps.push({
+      label: created ? 'Created the sync branch' : 'Found the sync branch',
+      state: 'done',
+      detail: syncBranch,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      steps: [{ label: 'Create the sync branch', state: 'failed', detail: errorText(e) }],
+      message: `Could not create ${syncBranch}: ${errorText(e)}`,
+    };
+  }
+
   let pr: PullRequest;
   try {
     const created = await createPull(owner, repo, {
-      head: defaultBranch,
+      head: syncBranch,
       base: branch,
-      title: `Merge ${defaultBranch} into ${branch}`,
+      title: `Merge branch '${defaultBranch}' into '${branch}'`,
       body: '',
     });
     pr = created.pr;

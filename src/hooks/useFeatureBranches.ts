@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchFeatureBranches, type FeatureBranch } from '../api/featureBranches';
 import { verifyForkParent, type ForkParentCheck } from '../api/forkSync';
+import { syncBranchName } from '../api/featureBranchActions';
 import {
   checkRunsPath,
   combinedStatusPath,
@@ -385,23 +386,31 @@ export function useFeatureBranches(): FeatureBranchesState {
     }
 
     /**
-     * Two lists, and both are narrowed server-side.
+     * Two requests per branch, both narrowed server-side.
      *
-     * Every incoming pull request has the same head — the upstream's default branch — so a
-     * single request finds all of them. The offers *from the fork* each have their own head
-     * (`{forkOwner}:{branch}`) and their own base (the same branch in the upstream), so they
-     * need one request apiece.
+     * The incoming ones used to be a single request: every backmerge had the same head — the
+     * upstream's default branch — so one query found all of them. That stopped being true when the
+     * sync started going through a `sync/main-into-x` branch, and the query silently returned
+     * nothing: the pull requests existed, the tab showed none. Narrowed by **base** now, which is
+     * the feature branch and is per-branch, hence the extra request each.
+     *
+     * The offers *from the fork* have their own head (`{forkOwner}:{branch}`) and their own base
+     * (the same branch in the upstream), as before.
      */
-    const [syncList, ...offerLists] = await Promise.all([
-      ghGet<PullRequest[]>(
-        pullsPath(upstreamOwner, upstreamRepo, { head: `${upstreamOwner}:${defaultBranch}` }),
+    const [syncLists, offerLists] = await Promise.all([
+      Promise.all(
+        tracked.map((b) =>
+          ghGet<PullRequest[]>(pullsPath(upstreamOwner, upstreamRepo, { base: b.name })),
+        ),
       ),
-      ...tracked.map((b) =>
-        ghGet<PullRequest[]>(
-          pullsPath(upstreamOwner, upstreamRepo, {
-            head: `${forkOwner}:${b.name}`,
-            base: b.name,
-          }),
+      Promise.all(
+        tracked.map((b) =>
+          ghGet<PullRequest[]>(
+            pullsPath(upstreamOwner, upstreamRepo, {
+              head: `${forkOwner}:${b.name}`,
+              base: b.name,
+            }),
+          ),
         ),
       ),
     ]);
@@ -410,7 +419,20 @@ export function useFeatureBranches(): FeatureBranchesState {
     setEntries((prev) => {
       const next = new Map<string, PrEntry>();
       tracked.forEach((b, i) => {
-        const sync = syncList.data.find((pr) => pr.base.ref === b.name);
+        /*
+         * Which of the pull requests into this branch is the backmerge.
+         *
+         * Narrowing by base alone also returns everybody else's work into the feature branch, so
+         * the head has to identify it. The canonical name is what this app writes; the `sync/`
+         * prefix additionally recognises one made by `create-merge.yml` with its optional
+         * `merge-branch` override. Nothing outside that prefix is claimed — an ordinary
+         * contributor's pull request into a feature branch is not a sync, and labelling it as one
+         * would put somebody's review under a heading that says it merges automatically.
+         */
+        const canonical = syncBranchName(defaultBranch, b.name);
+        const sync = syncLists[i]?.data.find(
+          (pr) => pr.head.ref === canonical || pr.head.ref.startsWith('sync/'),
+        );
         if (sync) next.set(`sync:${b.name}`, foldPr(sync, prev.get(`sync:${b.name}`)));
         // Head *and* base are this branch, in different repositories — so the head owner is
         // what tells them apart, and a same-named branch in a third fork must not match.

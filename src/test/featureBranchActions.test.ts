@@ -20,6 +20,8 @@ const createPull = vi.fn();
 const awaitMergeability = vi.fn();
 const mergePull = vi.fn();
 const syncForkBranch = vi.fn();
+const ghGet = vi.fn();
+const ghWriteJson = vi.fn();
 
 vi.mock('../api/autoMerge', () => ({
   enableAutoMerge: (...args: unknown[]) => enableAutoMerge(...args),
@@ -42,6 +44,21 @@ vi.mock('../api/pullRequests', async () => {
 vi.mock('../api/forkSync', () => ({
   syncForkBranch: (...args: unknown[]) => syncForkBranch(...args),
 }));
+
+/**
+ * The ref reads and writes the sync branch needs. `GitHubApiError` is kept real, because the
+ * "does this branch exist" check turns on its status being exactly 404 — a stubbed error class
+ * would let a wrong status pass unnoticed.
+ */
+vi.mock('../api/githubClient', async () => {
+  const actual =
+    await vi.importActual<typeof import('../api/githubClient')>('../api/githubClient');
+  return {
+    ...actual,
+    ghGet: (...args: unknown[]) => ghGet(...args),
+    ghWriteJson: (...args: unknown[]) => ghWriteJson(...args),
+  };
+});
 
 const { pullIntoFork, proposeToFeatureBranch, syncIntoFeatureBranch } = await import(
   '../api/featureBranchActions'
@@ -81,6 +98,13 @@ const OFFER = {
 };
 
 beforeEach(() => {
+  // The sync branch is absent by default, so the ordinary path creates it.
+  ghGet.mockImplementation(async (path: string) =>
+    path.includes('/git/ref/heads/main')
+      ? { data: { object: { sha: 'main-sha' } }, status: 200, notModified: false }
+      : Promise.reject(new GitHubApiError('Not Found', 404)),
+  );
+  ghWriteJson.mockResolvedValue({});
   createPull.mockResolvedValue({ pr: pr(), existing: false });
   enableAutoMerge.mockResolvedValue(undefined);
   mergePull.mockResolvedValue({ merged: true, message: 'Pull Request successfully merged' });
@@ -91,6 +115,73 @@ afterEach(() => {
 });
 
 describe('syncIntoFeatureBranch', () => {
+  /**
+   * The pull request is opened from a sync branch, never straight from the default branch.
+   *
+   * A pull request whose head is `main` cannot finish: `main` keeps moving, so its diff changes
+   * under review and the head cannot be deleted on merge. This mirrors the `create-merge.yml`
+   * workflow the same repositories are driven by, down to the branch name and the title, so that
+   * two tools producing the same operation produce the same shape of pull request.
+   */
+  it('creates a sync branch at the default branch tip and opens the PR from it', async () => {
+    awaitMergeability.mockResolvedValue(pr({ mergeable: true, mergeable_state: 'blocked' }));
+
+    const outcome = await syncIntoFeatureBranch(SYNC);
+
+    expect(ghWriteJson).toHaveBeenCalledWith(
+      'POST',
+      '/repos/o/r/git/refs',
+      { ref: 'refs/heads/sync/main-into-feature-x', sha: 'main-sha' },
+      expect.anything(),
+    );
+    expect(createPull).toHaveBeenCalledWith('o', 'r', {
+      head: 'sync/main-into-feature-x',
+      base: 'feature/x',
+      title: "Merge branch 'main' into 'feature/x'",
+      body: '',
+    });
+    expect(outcome.steps.map((s) => s.label)).toContain('Created the sync branch');
+  });
+
+  /**
+   * Reuse, not fast-forward. An existing sync branch almost certainly has an open pull request,
+   * and moving the branch under a review would change what people had already looked at.
+   */
+  it('reuses an existing sync branch rather than moving it', async () => {
+    ghGet.mockResolvedValue({ data: { object: { sha: 'whatever' } }, status: 200, notModified: false });
+    awaitMergeability.mockResolvedValue(pr({ mergeable: true, mergeable_state: 'blocked' }));
+
+    const outcome = await syncIntoFeatureBranch(SYNC);
+
+    expect(ghWriteJson).not.toHaveBeenCalled();
+    expect(outcome.steps.map((s) => s.label)).toContain('Found the sync branch');
+  });
+
+  /** A failure creating the branch is reported as such, and no pull request is attempted. */
+  it('stops if the sync branch cannot be created', async () => {
+    ghWriteJson.mockRejectedValue(new GitHubApiError('Reference already exists', 422));
+
+    const outcome = await syncIntoFeatureBranch(SYNC);
+
+    expect(outcome.ok).toBe(false);
+    expect(createPull).not.toHaveBeenCalled();
+    expect(outcome.steps[0]).toMatchObject({ label: 'Create the sync branch', state: 'failed' });
+  });
+
+  /**
+   * Anything other than a 404 on the existence check is a real failure. Treating every error as
+   * "not there" would try to create a branch over a permissions problem and report the wrong cause.
+   */
+  it('does not mistake a server error for a missing branch', async () => {
+    ghGet.mockRejectedValue(new GitHubApiError('Server Error', 500));
+
+    const outcome = await syncIntoFeatureBranch(SYNC);
+
+    expect(outcome.ok).toBe(false);
+    expect(ghWriteJson).not.toHaveBeenCalled();
+    expect(createPull).not.toHaveBeenCalled();
+  });
+
   it('enables auto-merge when GitHub cannot merge it yet', async () => {
     awaitMergeability.mockResolvedValue(pr({ mergeable: true, mergeable_state: 'blocked' }));
 

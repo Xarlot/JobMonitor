@@ -20,6 +20,36 @@ incremental path, so the styling layer moved in one change: **804 `sx` props, 40
 ### Changed
 - **Styles are a stylesheet rather than generated in the browser.** Primer 38 ships plain CSS, so the
   app no longer builds its own at startup through styled-components — and that dependency is gone.
+- **The backmerge is recommended, and its button turns green, when the branch has fallen behind the
+  default branch and no backmerge is open.** Ranked *below* the fork standing deliberately: falling
+  behind is a continuous chore wherever the default branch is busy, so leading with it would print the
+  same sentence on every row forever and bury the thing a person wants to finish — their own work,
+  waiting to be offered. It fills the silence instead, on the rows where there is nothing else to do.
+  An open backmerge is reported as the answer rather than a second one being suggested.
+- **Bringing the default branch into a feature branch now goes through a sync branch.** It used to
+  open a pull request whose head was the default branch itself, which cannot finish: `main` keeps
+  moving, so the diff changes under review and the head cannot be deleted on merge. A
+  `sync/main-into-<branch>` branch is created at the default branch's current tip and the pull request
+  comes from there, matching the `create-merge.yml` workflow these repositories are already driven by
+  — same branch name, same title, same merge commit — so two tools performing one operation produce
+  one shape of pull request. An existing sync branch is reused rather than moved: whatever pull
+  request it already has is the one to look at, and moving the branch would change what reviewers had
+  already seen.
+- **The Failures tab now says why a flow contributed nothing to it.** With debug logging on
+  (`jobMonitorDebug.enable()`, or the Diagnostics tab on the desktop app) each flow records a verdict
+  per poll: *latest run is success, not a failure*, *no runs loaded yet*, *failed but outside the scan
+  window*, *failed but none of its jobs did*. Those are all legitimate reasons for an empty list and
+  from the outside they were indistinguishable from a bug — the same problem the auto-rerun engine
+  had, with the same answer: log the decisions *not* to act. Verdicts are recorded once and repeat
+  only when they change, so a quiet poll stays quiet.
+- **The jump from a failing job to that failure no longer needs the AI integration.** Every failing
+  check and every failing job in a run carries a button that opens the same failure in the Failures
+  tab; it used to be hidden unless `claude` was installed and the integration switched on, on the
+  reasoning that going there was only worth it to have the failure explained. That was wrong about
+  the tab — the coloured log, the annotations and the copyable report are all there without a model,
+  and they are most of what it offers. Anyone using the app in a browser previously had no way out of
+  a job row at all. The one remaining condition is unchanged: the button appears only when the
+  failure is actually in that tab, so it can never lead to an empty list.
 - **How far each feature branch is behind the default branch**, shown in warning colour next to the
   fork standing — `47 commits behind 2026.1`. A branch can match the upstream exactly and still have
   drifted months behind the branch it merges into, and of the two numbers on that row only this one

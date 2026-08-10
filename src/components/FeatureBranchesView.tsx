@@ -36,10 +36,11 @@ import { useDashboard } from '../context/DashboardContext';
 import { useNavigation } from '../context/NavigationContext';
 import { useFeatureBranchesState } from '../context/FeatureBranchesContext';
 import type { FeatureBranchRow, ForkStanding, MainStanding } from '../hooks/useFeatureBranches';
+import { syncBranchName } from '../api/featureBranchActions';
 import { useCopy } from '../hooks/useCopy';
 import { useTokenCapability } from '../hooks/useTokenCapability';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
-import { mergeStages, nextStep, type MergeStage, type NextStep } from '../lib/featureBranch';
+import { mergeStages, nextStep, type MergeStage, type NextStep, plural } from '../lib/featureBranch';
 import { forkRepo } from '../storage/configStore';
 import { FeatureBranchActionDialog, type PendingAction } from './FeatureBranchActionDialog';
 import { StatusBadge } from './StatusBadge';
@@ -59,11 +60,6 @@ const STEP_TONE: Record<NextStep['tone'], string> = {
   action: 'var(--fgColor-accent)',
   stuck: 'var(--fgColor-danger)',
 };
-
-/** How many, and which way. */
-function plural(n: number): string {
-  return n === 1 ? '1 commit' : `${n} commits`;
-}
 
 /**
  * Say where the fork stands in words someone can act on.
@@ -366,6 +362,7 @@ function BranchCard({
     row.standing,
     offer ? { pr: offer.pr, overall: offer.overall } : null,
     sync ? { pr: sync.pr, overall: sync.overall } : null,
+    row.mainStanding,
   );
   const behindMain = describeMainStanding(row.mainStanding, defaultBranch);
   const nothingToPull = nothingToPullFor(row.standing);
@@ -428,7 +425,7 @@ function BranchCard({
               label={`Bring ${defaultBranch} into ${branch.name}`}
               description={
                 canMergeCommit
-                  ? `Opens a pull request from ${defaultBranch} into ${branch.name} in the upstream and arms auto-merge, so GitHub lands it once the required checks pass. Nothing is merged here.`
+                  ? `Opens a pull request from ${syncBranchName(defaultBranch, branch.name)} into ${branch.name}, with auto-merge armed. Nothing is merged here.`
                   : 'Unavailable: this repository does not allow merge commits, and a backmerge cannot be done any other way without rewriting shared history.'
               }
               disabled={!canMergeCommit}

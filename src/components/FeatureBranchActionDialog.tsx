@@ -35,6 +35,7 @@ import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
 import { categorizeError } from '../lib/telemetry/errorCategory';
 import styles from './FeatureBranchActionDialog.module.css';
 import { Icon } from './Icon';
+import { syncBranchName } from '../api/featureBranchActions';
 
 export type PendingAction =
   | { kind: 'sync'; branch: string }
@@ -322,15 +323,13 @@ function ActionExplanation({
     return (
       <>
         <Text as="p" className={styles.bodyMb2}>
-          This opens a pull request from <strong>{defaultBranch}</strong> into{' '}
-          <strong>{action.branch}</strong> in the upstream and arms auto-merge, so GitHub lands
-          it as soon as the required checks pass.
+          Opens a pull request from{' '}
+          <strong>{syncBranchName(defaultBranch, action.branch)}</strong> — a new branch at{' '}
+          <strong>{defaultBranch}</strong>&rsquo;s tip — into <strong>{action.branch}</strong>, with
+          auto-merge armed.
         </Text>
         <Text as="p" className={styles.bodyFgMuted2}>
-          Always a merge commit, never a squash: squashing the default branch into a feature
-          branch would rewrite history the two repositories share, and every later merge between
-          them would conflict against it. Nothing is merged from here — if GitHub declines to
-          queue it, that is reported rather than worked around.
+          GitHub merges it once the required checks pass. Nothing is merged from here.
         </Text>
       </>
     );

@@ -65,6 +65,22 @@ export function matchingRefsPath(owner: string, repo: string, prefix: string): s
 }
 
 /**
+ * One ref, by name — `heads/main`, `heads/feature/x`.
+ *
+ * Like {@link matchingRefsPath} the name is **not** encoded: its slashes separate path segments to
+ * this endpoint, so `feature%2Fx` resolves to nothing. Unlike the matching-refs endpoint this one
+ * answers 404 for a ref that does not exist, which is how "does this branch exist" is asked.
+ */
+export function refPath(owner: string, repo: string, ref: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/git/ref/${ref}`;
+}
+
+/** POST target for creating a ref. The body carries `ref` (full `refs/heads/...`) and `sha`. */
+export function createRefPath(owner: string, repo: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/git/refs`;
+}
+
+/**
  * What is in `head` that is not in `base`: commits and changed files.
  *
  * Each side must be a **commit SHA or a branch name with no slash in it**. A `feature/x`

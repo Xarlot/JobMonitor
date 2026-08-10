@@ -321,6 +321,56 @@ describe('nextStep', () => {
   });
 
   /**
+   * The backmerge fills the silence: recommended when the standing has nothing to say, which is
+   * also the row where a green button means something.
+   */
+  it('recommends the backmerge when there is nothing else to do', () => {
+    const step = nextStep(standing(), null, null, { behindBy: 47 });
+    expect(step).toMatchObject({
+      text: 'Bring the default branch in — the branch is 47 commits behind it',
+      target: 'sync',
+      tone: 'action',
+    });
+  });
+
+  /**
+   * And **below** the standing, deliberately. Falling behind the default branch is a continuous
+   * chore wherever that branch is busy, so leading with it would say the same sentence on every row
+   * forever and bury the thing a person wants to finish — their own work, waiting to be offered.
+   */
+  it('does not let the backmerge bury work waiting to be offered', () => {
+    const step = nextStep(
+      standing({ state: 'ahead', aheadBy: 3, ownCommits: 3, filesDiffering: 2 }),
+      null,
+      null,
+      { behindBy: 47 },
+    );
+    expect(step).toMatchObject({ text: 'Commit your changes to the upstream', target: 'offer' });
+  });
+
+  /** An open backmerge *is* the answer, so it is reported rather than a second one recommended. */
+  it('says nothing to do when a backmerge is already open', () => {
+    const step = nextStep(standing(), null, facts({ number: 99 }), { behindBy: 47 });
+    expect(step).toMatchObject({
+      text: 'Nothing to do — #99 brings the default branch in',
+      target: 'none',
+      tone: 'ok',
+    });
+  });
+
+  /** Level with the default branch, so the standing's own answer stands. */
+  it('leaves the standing alone when the branch is not behind', () => {
+    const step = nextStep(standing(), null, null, { behindBy: 0 });
+    expect(step).toMatchObject({ text: 'Nothing to do', target: 'none' });
+  });
+
+  /** Not yet compared. The recommendation must not invent a backmerge on a null. */
+  it('ignores an unknown default-branch standing', () => {
+    const step = nextStep(standing(), null, null, null);
+    expect(step).toMatchObject({ text: 'Nothing to do', target: 'none' });
+  });
+
+  /**
    * An open pull request outranks the branch's standing: whatever is wrong with it blocks
    * everything behind it, so that is what to look at.
    */
