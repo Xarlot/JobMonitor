@@ -40,8 +40,20 @@ describe('groupVerdict', () => {
    * The latest run alone. A re-run in progress hides the older failure rather than letting
    * it keep the group red — the group answers "how did it last end", not "has it ever failed".
    */
-  it('does not fall back to an older run', () => {
-    expect(groupVerdict([run('in_progress'), run('completed', 'failure')])).toBeNull();
+  /**
+   * Falls back to the last run that finished — this used to assert the opposite.
+   *
+   * Skipping a mid-build flow entirely meant a group of three showed two verdicts, and the third
+   * read as missing rather than as its last result. The tally is meant to answer "is anything broken
+   * in here", and a flow that failed and is now rebuilding is still broken.
+   */
+  it('falls back to the last run that finished', () => {
+    expect(groupVerdict([run('in_progress'), run('completed', 'failure')])).toBe('failure');
+    expect(groupVerdict([run('queued'), run('completed', 'success')])).toBe('success');
+  });
+
+  /** Newer verdicts still win over older ones. */
+  it('does not let an older verdict outrank a newer one', () => {
     expect(groupVerdict([run('completed', 'success'), run('completed', 'failure')])).toBe('success');
   });
 

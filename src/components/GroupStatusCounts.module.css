@@ -15,3 +15,21 @@
   align-items: center;
   gap: var(--base-size-4);
 }
+
+/*
+ * The tally's two colours.
+ *
+ * Classes rather than a colour passed in: the caller used to hand `sx` a Primer token name
+ * (`success.fg`), which the theme resolved. Primer 38 has no `sx`, and the same string reaching a
+ * plain `style` attribute is not valid CSS — the browser drops it and the counts render in the
+ * inherited colour, which is exactly what happened.
+ */
+.passed {
+  composes: count;
+  color: var(--fgColor-success);
+}
+
+.failed {
+  composes: count;
+  color: var(--fgColor-danger);
+}

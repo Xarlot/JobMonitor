@@ -15,9 +15,13 @@ is listed here, and every one of them is either behind an explicit click or off 
 | `POST .../actions/runs/{id}/rerun-failed-jobs` | the re-run button, or the auto-rerun engine | engine off |
 | `PATCH .../pulls/{n}` (clears the body) | the arm-auto-merge dialog only | on click |
 | `POST /graphql` — `enablePullRequestAutoMerge` | arming auto-merge, either tab | on click |
-| `POST .../pulls` | the Feature branches tab | tab off |
-| `PUT .../pulls/{n}/merge` | the Feature branches tab | tab off |
-| `POST .../merge-upstream` | the Feature branches tab | tab off |
+| `POST .../pulls` | the Feature branches tab | on click |
+| `POST .../git/refs` (the sync branch) | the Feature branches tab | on click |
+| `POST .../merge-upstream` | the Feature branches tab | on click |
+
+**Nothing in this app merges a pull request.** Every action arms auto-merge and lets GitHub do it,
+which is why `PUT .../pulls/{n}/merge` is absent from the table — the "Merge now" path it served was
+removed with the clean-versus-blocked branching in `finishMerge`.
 
 Nothing writes on a timer except the auto-rerun engine, which re-runs failed jobs and does
 nothing else. Every write control is hidden outright unless the token is *proven* able to

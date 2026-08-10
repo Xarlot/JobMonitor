@@ -24,7 +24,7 @@ import type { WorkflowRun } from '../api/types';
 import type { ResolvedFlow } from '../lib/flowPatterns';
 import type { FlowState } from '../hooks/useFlows';
 import { useFlowsFilter } from '../context/FlowsFilterContext';
-import { statusToOverall } from '../lib/status';
+import { isActiveStatus, statusToOverall } from '../lib/status';
 import { filterRuns } from '../lib/flowFilter';
 import { AnalysedBadge } from './AnalysedBadge';
 import { StatusBadge } from './StatusBadge';
@@ -351,6 +351,14 @@ export function FlowRunsGrid({
           />
         )}
         <StatusBadge status={overall} withText={false} size={18} />
+        {/*
+          The badge reports the last *result*, so "a run is in flight" would otherwise vanish from a
+          collapsed card — a different fact, and one worth keeping. A spinner beside the verdict says
+          both at once: how it last came out, and that the answer may be about to change.
+        */}
+        {runs.length > 0 && isActiveStatus(runs[0].status) && (
+          <Spinner size="small" aria-label="A run is in progress" />
+        )}
         <Heading as="h3" className={styles.large}>{flow.name}</Heading>
         <AnalysedBadge kind="flow" id={flow.id} />
         <div className={styles.flexGap1}>

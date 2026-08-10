@@ -345,9 +345,7 @@ function ActionExplanation({
           it lands once its required checks pass.
         </Text>
         <Text as="p" className={styles.bodyFgMuted2}>
-          If GitHub can already merge it, nothing is queued and nothing is merged — you get a{' '}
-          <strong>Merge now</strong> button instead. Nothing here touches{' '}
-          <strong>{defaultBranch}</strong>.
+          Nothing is merged from here, and nothing touches <strong>{defaultBranch}</strong>.
         </Text>
       </>
     );
@@ -359,8 +357,7 @@ function ActionExplanation({
         The pull request from <strong>{action.branch}</strong> into{' '}
         <strong>{defaultBranch}</strong> is already open, so this only asks GitHub to merge it
         (<Label>{mergeMethod}</Label>) once its required checks pass. Its title and description
-        are left exactly as they are. If GitHub can already merge it, nothing is queued — you
-        get a <strong>Merge now</strong> button instead.
+        are left exactly as they are.
       </Text>
     );
   }

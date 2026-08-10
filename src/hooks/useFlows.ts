@@ -21,7 +21,7 @@ import type {
 import { emptyFilterNeedsArtifacts, emptyFilterNeedsLatestJobs } from '../lib/flowEmptiness';
 import { detectNewlyCompleted, runConclusionLabel, runPhase } from '../lib/completion';
 import { sendNotification } from '../lib/notifications';
-import { aggregateStatuses, isActiveStatus, statusToOverall } from '../lib/status';
+import { isActiveStatus, latestFinalStatus } from '../lib/status';
 import { hasYamlExt, isNumericId, matchWorkflow, workflowBasename } from '../lib/workflow';
 import { isConfigComplete, type Flow } from '../storage/configStore';
 import { useConfig } from '../context/ConfigContext';
@@ -268,10 +268,10 @@ export function useFlow(flow: Flow): FlowState {
     [expand, jobsByRun, loadJobs],
   );
 
-  const overall = useMemo(
-    () => aggregateStatuses(runs.map((r) => statusToOverall(r.status, r.conclusion))),
-    [runs],
-  );
+  // The last run that *finished*, not an aggregate and not the newest run — see
+  // `latestFinalStatus`. A flow mid-build still reports its last verdict; that a run is in flight is
+  // shown separately, because it is a different fact.
+  const overall = useMemo<OverallStatus>(() => latestFinalStatus(runs), [runs]);
 
   // Desktop notification when a run in this flow finishes (opt-in via config).
   const runPhaseRef = useRef<Map<number, boolean>>(new Map());

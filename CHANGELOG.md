@@ -74,6 +74,19 @@ incremental path, so the styling layer moved in one change: **804 `sx` props, 40
   8.21 → 9.1, jsdom 29 → 30, jest-dom 6 → 7. styled-components removed.
 
 ### Fixed
+- **A flow reports the last result it reached, not what it is doing now.** Its status was an aggregate
+  over every run it held, which ranks failure first and unfinished ahead of finished: one stale queued
+  run dragged a whole flow — and its group — to *pending*, and a flow that failed five runs ago stayed
+  red after going green. Taking the newest run instead fixed that and introduced the opposite problem:
+  a flow mid-build had no verdict, so a group of three showed two and the third read as missing rather
+  than as its last result. It is now the last run that **finished**. Only unfinished runs are skipped,
+  so a flow that failed and is rebuilding still reads as failed until the rebuild says otherwise, and
+  a spinner beside the badge says a run is in flight — a different fact, kept visible.
+- **A flow's status is the same in every tab.** The Overview had always shown one run while the Flows
+  tab aggregated; the rule is one function now.
+- **The passed/failed tally in a group header is coloured again.** It passed a Primer token name
+  (`success.fg`) to a plain `style` attribute, which is not valid CSS — a leftover from the styling
+  migration, where the theme used to resolve that string and now nothing does.
 - **Tooltips are reachable by keyboard.** Primer 38 refuses to attach a tooltip to something that
   cannot be focused, which surfaced three badges — the "analysed" marker, the rate-limit badge and
   the per-depth Claude markers — whose explanations appeared on hover only and were therefore

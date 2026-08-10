@@ -49,6 +49,36 @@ const PRECEDENCE: Record<OverallStatus, number> = {
   unknown: 5,
 };
 
+/**
+ * How a flow last *finished*: the status of its most recent completed run.
+ *
+ * Deliberately not the newest run, and deliberately not {@link aggregateStatuses} over the runs a
+ * flow holds.
+ *
+ * The newest run answers "what is happening now", which is `in_progress` or `pending` for as long as
+ * it takes — so a badge built on it stops reporting a result while anything is building, and a group
+ * tally built on it omitted any flow that happened to be mid-build: a group of three showed two
+ * verdicts and the third read as missing rather than as its last result.
+ *
+ * Aggregating is worse again: it ranks failure first and unfinished ahead of finished, so a flow read
+ * as red long after going green, and one stale queued run dragged a whole group to *pending*. Runs
+ * are independent attempts, not parts of one thing. (Aggregation stays right where the parts really
+ * are parts of one whole — the check-runs of a commit.)
+ *
+ * This skips unfinished runs and reports the last verdict there was. A cancelled or skipped run
+ * counts: it is finished, and `neutral` is a final state.
+ *
+ * It is not the same as "ignore failures until something passes" — only *unfinished* runs are
+ * skipped, so a flow that failed and is now rebuilding still reads as failed until the rebuild
+ * finishes and says otherwise.
+ */
+export function latestFinalStatus(
+  runs: readonly { status: RunStatus; conclusion: RunConclusion }[],
+): OverallStatus {
+  const finished = runs.find((r) => r.status === 'completed');
+  return finished ? statusToOverall(finished.status, finished.conclusion) : 'unknown';
+}
+
 export function aggregateStatuses(statuses: OverallStatus[]): OverallStatus {
   if (statuses.length === 0) return 'unknown';
   return statuses.reduce((acc, s) => (PRECEDENCE[s] < PRECEDENCE[acc] ? s : acc), 'unknown');

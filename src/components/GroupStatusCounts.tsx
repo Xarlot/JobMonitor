@@ -1,32 +1,29 @@
 import { Text } from '@primer/react';
 import { CheckCircleFillIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { OverallStatus, WorkflowRun } from '../api/types';
-import { statusToOverall } from '../lib/status';
+import { latestFinalStatus } from '../lib/status';
 import styles from './GroupStatusCounts.module.css';
 import { Icon } from './Icon';
 
 /**
  * The verdict a group header reports for one item: passed, failed, or nothing.
  *
- * **The latest run only, and only when it reached a verdict.** A group header is read at a
- * glance to answer "is anything broken in here", and the two things that used to muddy it
- * were aggregation and intermediate states:
+ * **The last run that finished, counted only if it passed or failed.** A group header is read at a
+ * glance to answer "is anything broken in here", and three things muddied that in turn:
  *
- *  - the Flows board aggregated *every* run it held, with failure taking top precedence, so
- *    a flow that had failed five runs ago still counted as red after passing since — while
- *    the Overview, showing the same group, counted only the latest run and disagreed;
- *  - a run that is queued, in progress, cancelled or skipped has no verdict to report, and
- *    counting it as a third colour said only "something is happening", which the card itself
- *    already shows.
+ *  - the Flows board aggregated *every* run it held, failure first, so a flow that failed five runs
+ *    ago still counted as red after passing since — while the Overview, showing the same group,
+ *    disagreed;
+ *  - then the newest run alone, which meant a flow mid-build contributed nothing: a group of three
+ *    showed two verdicts, and the third read as missing rather than as its last result;
+ *  - a run that is queued or in progress has no verdict of its own, and counting it as a third
+ *    colour said only "something is happening", which the card already shows.
  *
- * So: take the last run, and count it only if it passed or failed. Everything else is absent
- * from the tally rather than represented by a shrug.
+ * So: the last *finished* run, counted when it passed or failed. Cancelled and skipped are final but
+ * are not verdicts, so they are absent from the tally rather than represented by a shrug.
  */
 export function groupVerdict(runs: readonly WorkflowRun[]): 'success' | 'failure' | null {
-  const latest = runs[0];
-  if (!latest) return null;
-  const status = statusToOverall(latest.status, latest.conclusion);
-  return status === 'success' || status === 'failure' ? status : null;
+  return finalOnly(latestFinalStatus(runs));
 }
 
 /** The same rule for an item whose status is already reduced, like a pull request. */
@@ -43,12 +40,9 @@ export function GroupStatusCounts({ verdicts }: { verdicts: ('success' | 'failur
   const failed = verdicts.filter((v) => v === 'failure').length;
   if (passed === 0 && failed === 0) return null;
 
-  const item = (icon: typeof CheckCircleFillIcon, color: string, count: number, label: string) =>
+  const item = (icon: typeof CheckCircleFillIcon, className: string, count: number, label: string) =>
     count > 0 ? (
-      <span
-        title={`${count} ${label}`}
-        className={styles.count} style={{ color }}
-      >
+      <span title={`${count} ${label}`} className={className}>
         <Icon icon={icon} size={12} />
         <Text className={styles.small}>{count}</Text>
       </span>
@@ -56,8 +50,8 @@ export function GroupStatusCounts({ verdicts }: { verdicts: ('success' | 'failur
 
   return (
     <span className={styles.centerGap2}>
-      {item(CheckCircleFillIcon, 'success.fg', passed, 'passed')}
-      {item(XCircleFillIcon, 'danger.fg', failed, 'failed')}
+      {item(CheckCircleFillIcon, styles.passed, passed, 'passed')}
+      {item(XCircleFillIcon, styles.failed, failed, 'failed')}
     </span>
   );
 }

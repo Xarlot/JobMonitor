@@ -666,18 +666,20 @@ your GitHub data goes only to `api.github.com` (plus GitHub’s log storage when
 The **desktop app** additionally sends anonymous usage and crash telemetry. The **web version is
 unaffected** — it collects nothing, stores nothing and sends nothing. Details below.
 
-Every request is a read, with exactly two exceptions, and both are hidden entirely unless your token
-is verified as able to perform them:
+Every request is a read except for a short list of writes. Each is behind an explicit click or off
+by default, and every one is hidden unless your token is verified as able to perform it:
 
 - **Re‑running failed jobs.** Off until you switch it on, and limited to workflow files you list by
   name.
-- **Arming auto‑merge on a pull request**, which also clears that PR's description. Only ever from an
-  explicit click, and only after a dialog that shows you the description it is about to delete.
+- **Arming auto‑merge on a pull request**, which also clears that PR's description. Only after a
+  dialog that shows you the description it is about to delete.
+- **The Feature branches actions** — create a sync branch, open a pull request, sync your fork from
+  its parent. Each confirms first.
 
-Nothing else is written. Job Monitor cannot start a workflow, cancel a run, push code, comment,
-merge a PR itself, or change any repository setting — those two endpoints are the only writes in the
-codebase, and every write in the app goes through a single function that refuses to run at all unless
-the token has been proven capable.
+**Job Monitor never merges anything itself.** It opens pull requests and hands them to GitHub, which
+merges them when their required checks pass. It also cannot start a workflow, cancel a run, push
+code, comment, or change a repository setting. Every write goes through one function that refuses to
+run unless the token has been proven capable — `development.md` lists each endpoint.
 
 ### Telemetry (desktop app only)
 

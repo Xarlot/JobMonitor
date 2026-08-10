@@ -23,7 +23,7 @@ import type { OverallStatus, WorkflowRun } from '../api/types';
 import type { ResolvedFlow } from '../lib/flowPatterns';
 import type { FlowGroup } from '../storage/configStore';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
-import { statusToOverall } from '../lib/status';
+import { statusToOverall, latestFinalStatus } from '../lib/status';
 import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
 import { StatusBadge } from './StatusBadge';
 import { formatRelative } from '../lib/format';
@@ -129,10 +129,6 @@ function Tile({
   );
 }
 
-function latestRun(runs: WorkflowRun[]): WorkflowRun | undefined {
-  return runs[0];
-}
-
 type Dlg =
   | { kind: 'flowSummary' | 'flowTimeline'; owner: string; repo: string; run: WorkflowRun }
   | { kind: 'prSummary' | 'prTimeline'; entry: PrEntry };
@@ -222,10 +218,9 @@ export function Overview({
   const visibleFlows = sections.flatMap((s) => s.flows.filter(isVisible));
 
   const failingPrs = prs.filter((e) => e.overall === 'failure').length;
-  const failingFlows = visibleFlows.filter((f) => {
-    const run = latestRun(flowStates.get(f.id)?.runs ?? []);
-    return run ? statusToOverall(run.status, run.conclusion) === 'failure' : false;
-  }).length;
+  const failingFlows = visibleFlows.filter(
+    (f) => latestFinalStatus(flowStates.get(f.id)?.runs ?? []) === 'failure',
+  ).length;
   const totalFailing = failingPrs + failingFlows;
 
   const checkItems = (entry: PrEntry): GanttItem[] =>
@@ -255,8 +250,9 @@ export function Overview({
 
   const renderFlowTile = (flow: ResolvedFlow) => {
     const state = flowStates.get(flow.id);
-    const run = latestRun(state?.runs ?? []);
-    const status = run ? statusToOverall(run.status, run.conclusion) : 'unknown';
+    const runs = state?.runs ?? [];
+    const run = runs[0];
+    const status = latestFinalStatus(runs);
     const fOwner = state?.owner ?? flow.owner ?? upOwner;
     const fRepo = state?.repo ?? flow.repo ?? upRepo;
     return (
