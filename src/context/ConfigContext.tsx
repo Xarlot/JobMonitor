@@ -16,6 +16,7 @@ import {
 } from '../storage/configStore';
 import { isMockMode } from '../mocks/mockMode';
 import { MOCK_CONFIG } from '../mocks/fixtures';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 interface ConfigContextValue {
   config: MonitorConfig;
@@ -26,7 +27,14 @@ interface ConfigContextValue {
 const ConfigContext = createContext<ConfigContextValue | null>(null);
 
 function initialConfig(): MonitorConfig {
-  return isMockMode() ? MOCK_CONFIG : loadConfig();
+  if (isMockMode()) return MOCK_CONFIG;
+  // Synchronous — localStorage plus a Zod parse — so it is timed by hand rather than with
+  // `measure`, which is promise-shaped. It runs before the first paint, and a slow parse here is
+  // felt as the app being slow to appear rather than as anything being slow later.
+  const startedAtMs = performance.now();
+  const config = loadConfig();
+  Telemetry.operationCompleted(Operation.CONFIG_LOAD, performance.now() - startedAtMs);
+  return config;
 }
 
 export function ConfigProvider({ children }: { children: ReactNode }) {

@@ -43,6 +43,7 @@ import { combineChecksAndStatus } from '../lib/status';
 import { forkRepo, isConfigComplete } from '../storage/configStore';
 import { needsChecks, type PrEntry } from './useGitHubDashboard';
 import { usePolling } from './usePolling';
+import { Operation } from '../lib/telemetry';
 import { useVisibility } from './useVisibility';
 
 /**
@@ -108,6 +109,27 @@ export interface FeatureBranchRow {
   offer: PrEntry | null;
   /** Where the fork's copy stands relative to the upstream's. */
   standing: ForkStanding;
+  /** How far the shared branch has fallen behind the default branch. Null until compared. */
+  mainStanding: MainStanding | null;
+}
+
+/**
+ * Where the shared branch stands against the branch it will eventually merge into.
+ *
+ * Separate from {@link ForkStanding}, which answers a different question — that one is about your
+ * copy versus the upstream's, this one is about the upstream's copy versus the default branch. A
+ * branch can be perfectly in sync with the upstream and still be two hundred commits behind `main`,
+ * and it is the second number that decides whether it is still mergeable in practice.
+ *
+ * Measured on the **upstream's** copy, because that is the shared branch and the one the sync action
+ * writes to. Your fork's local drift is the other standing's business.
+ */
+export interface MainStanding {
+  /** Commits the default branch has that this feature branch does not — how far behind it is. */
+  behindBy: number;
+  /** Commits this feature branch has that the default branch does not. */
+  aheadBy: number;
+  state: 'identical' | 'behind' | 'ahead' | 'diverged' | 'unknown';
 }
 
 /** What the repository itself permits, which decides whether an action is offerable. */
@@ -180,6 +202,8 @@ export function useFeatureBranches(): FeatureBranchesState {
   const [branches, setBranches] = useState<FeatureBranch[]>([]);
   /** Fork-vs-upstream standing per branch name; absent until compared. */
   const [standings, setStandings] = useState<Map<string, ForkStanding>>(new Map());
+  /** Branch-vs-default-branch standing, same keying. */
+  const [mainStandings, setMainStandings] = useState<Map<string, MainStanding>>(new Map());
   const [truncated, setTruncated] = useState(false);
   const [repo, setRepo] = useState<RepoCapabilities | null>(null);
   const [forkParent, setForkParent] = useState<ForkParentCheck | null>(null);
@@ -309,6 +333,51 @@ export function useFeatureBranches(): FeatureBranchesState {
     ).then((pairs) => {
       if (!current()) return;
       setStandings(new Map(pairs));
+    });
+
+    /**
+     * And how far each shared branch has fallen behind the default branch.
+     *
+     * Base is the default branch, head is the feature branch, so `behind_by` means exactly what it
+     * says — commits `main` has that this branch does not — and nothing has to be read backwards.
+     * The other order would have made the number arrive as `ahead_by`, which is how a sign quietly
+     * gets inverted six months later.
+     *
+     * Compared inside the **upstream** on its own tip: this is about the branch everyone shares,
+     * not about your copy of it, and mixing the two would answer a question nobody asked.
+     *
+     * One more request per branch per list poll, ETag-cached like the rest, and only on the list
+     * poll rather than the checks poll — this number moves when `main` moves, not when a check
+     * finishes.
+     */
+    void Promise.all(
+      tracked.map(async (b): Promise<[string, MainStanding]> => {
+        try {
+          const { data } = await ghGet<Comparison>(
+            comparePath(upstreamOwner, upstreamRepo, defaultBranch, b.upstreamSha),
+          );
+          return [
+            b.name,
+            {
+              behindBy: data.behind_by ?? 0,
+              aheadBy: data.ahead_by ?? 0,
+              state:
+                data.status === 'ahead' ||
+                data.status === 'behind' ||
+                data.status === 'identical' ||
+                data.status === 'diverged'
+                  ? data.status
+                  : 'unknown',
+            },
+          ];
+        } catch (e) {
+          devWarn('api', `feature branches: could not compare ${b.name} with ${defaultBranch}`, e);
+          return [b.name, { behindBy: 0, aheadBy: 0, state: 'unknown' }];
+        }
+      }),
+    ).then((pairs) => {
+      if (!current()) return;
+      setMainStandings(new Map(pairs));
     });
     if (tracked.length === 0) {
       setEntries((prev) => (prev.size === 0 ? prev : new Map()));
@@ -485,8 +554,18 @@ export function useFeatureBranches(): FeatureBranchesState {
     });
   }, [entries, upstreamOwner, upstreamRepo]);
 
-  const list = usePolling({ fn: fetchList, intervalMs: listIntervalMs, enabled });
-  const checks = usePolling({ fn: fetchChecks, intervalMs: checksIntervalMs, enabled });
+  const list = usePolling({
+    fn: fetchList,
+    intervalMs: listIntervalMs,
+    enabled,
+    op: Operation.GH_FEATURE_BRANCHES_POLL,
+  });
+  const checks = usePolling({
+    fn: fetchChecks,
+    intervalMs: checksIntervalMs,
+    enabled,
+    op: Operation.GH_CHECKS_POLL,
+  });
 
   /**
    * Look again as soon as the coordinates change.
@@ -543,6 +622,7 @@ export function useFeatureBranches(): FeatureBranchesState {
         branch,
         sync: entries.get(`sync:${branch.name}`) ?? null,
         offer: entries.get(`offer:${branch.name}`) ?? null,
+        mainStanding: mainStandings.get(branch.name) ?? null,
         // Equal tips need no comparison; an unequal pair reads `unknown` until one arrives.
         standing:
           branch.forkSha === branch.upstreamSha
@@ -555,7 +635,7 @@ export function useFeatureBranches(): FeatureBranchesState {
                 filesDiffering: null,
               }),
       })),
-    [branches, entries, standings],
+    [branches, entries, standings, mainStandings],
   );
 
   const prs = useMemo(() => [...entries.values()], [entries]);

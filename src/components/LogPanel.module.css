@@ -1,0 +1,52 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0px;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+  vertical-align: text-bottom;
+}
+
+.grow2 {
+  min-height: 0px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.mb2Small {
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.roundedP3 {
+  border: 1px dashed;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-16);
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+}
+
+.hidden {
+  display: none;
+}
+
+.scrollPane {
+  overflow-y: auto;
+}

@@ -67,6 +67,35 @@ contextBridge.exposeInMainWorld('desktop', {
     write: (scope, message, detail) => ipcRenderer.send('logs:write', { scope, message, detail }),
     read: (maxBytes) => ipcRenderer.invoke('logs:read', maxBytes),
   },
+  /**
+   * Anonymous usage and crash telemetry (see docs/telemetry.md).
+   *
+   * Two channels, and deliberately no more. There is no per-event channel: the renderer batches
+   * counters in memory and hands over a delta every 15 seconds, so a click never crosses IPC.
+   *
+   * Both are `send`, never `invoke` — same reason as `logs.write` above. An `invoke` returns a
+   * promise, and a promise is something a future caller will eventually await, at which point
+   * telemetry sits on the critical path of whatever it was measuring.
+   *
+   * The renderer sends only numeric ids from a fixed registry; the main process rejects anything it
+   * does not recognise, so this channel cannot be used to introduce a new dimension or free text.
+   */
+  telemetry: {
+    flush: (delta) => ipcRenderer.send('telemetry:flush', delta),
+    crash: (report) => ipcRenderer.send('telemetry:crash', report),
+    /**
+     * Everything queued locally, verbatim. The disclosure half of always-on collection: the
+     * records are returned as they will be sent, not summarised, because a summary is something
+     * the user would have to take on trust.
+     */
+    read: () => ipcRenderer.invoke('telemetry:read'),
+    /**
+     * Development-only controls. In a packaged build the main process refuses the toggle, so this
+     * cannot be used to introduce an opt-out through the renderer.
+     */
+    setCollecting: (next) => ipcRenderer.invoke('telemetry:setCollecting', next),
+    sendNow: () => ipcRenderer.invoke('telemetry:sendNow'),
+  },
   // Save already-fetched bytes to the Downloads folder (see registerDownloadIpc).
   downloads: {
     save: (filename, data) => ipcRenderer.invoke('downloads:save', { filename, data }),

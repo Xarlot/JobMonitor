@@ -12,6 +12,7 @@ import {
   MOCK_MERGED_PULLS,
   MOCK_PULLS,
   flowHasRuns,
+  mockBehindDefault,
   mockComparison,
   mockMatchingRefs,
   mockAnnotations,
@@ -110,7 +111,20 @@ export async function mockFetch(
   const refsMatch = path.match(/^\/repos\/[^/]+\/([^/]+)\/git\/matching-refs\/heads\/(.+)$/);
   if (refsMatch) return json(mockMatchingRefs(refsMatch[1], refsMatch[2]), inm);
 
-  if (/\/compare\//.test(path)) return json(mockComparison(), inm);
+  // Two different questions reach this endpoint. The fork comparison names the upstream's commit as
+  // `{owner}:{sha}`, so a base without a colon is the default-branch comparison.
+  if (path.includes('/compare/')) {
+    /*
+     * Split on the separator rather than matching the base with a character class: a base is a
+     * branch name and a branch name may contain dots — `2026.1` here — so `[^.]+` silently matched
+     * nothing and the whole comparison fell through to a 404.
+     *
+     * Percent-decoded, because the base is an escaped path segment and the colon of a
+     * cross-repository `{owner}:{sha}` therefore arrives as `%3A`.
+     */
+    const base = decodeURIComponent(path.split('/compare/')[1].split('...')[0]);
+    return json(base.includes(':') ? mockComparison() : mockBehindDefault(), inm);
+  }
 
   const jobLogsMatch = path.match(/\/actions\/jobs\/(\d+)\/logs$/);
   if (jobLogsMatch) {

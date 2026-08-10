@@ -1,0 +1,161 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.maxWidth {
+  max-width: 720px;
+}
+
+.mb3 {
+  max-width: 760px;
+  margin-bottom: var(--base-size-16);
+}
+
+.fgMutedBody {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+}
+
+.gridGap2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+}
+
+.roundedP3 {
+  border: 1px solid;
+  border-color: var(--bgColor-attention-emphasis);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-16);
+  margin-bottom: var(--base-size-16);
+  background-color: var(--bgColor-attention-muted);
+}
+
+.semiboldMb1 {
+  font-weight: var(--base-text-weight-semibold);
+  margin-bottom: var(--base-size-4);
+}
+
+.fgMutedBody2 {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+  margin-top: 0;
+  margin-bottom: var(--base-size-16);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.fgMutedSmall {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
+
+.gridGap2_2 {
+  display: grid;
+  gap: var(--base-size-8);
+}
+
+.fgMutedSmall2 {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  margin-top: var(--base-size-16);
+  max-width: 760px;
+}
+
+.roundedP2 {
+  border: 1px solid;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-8);
+}
+
+.flexCenter4 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  width: 100%;
+  background: none;
+  border: 0px;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fgColor-default);
+}
+
+.bodySemibold {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  margin-left: auto;
+}
+
+.mt2Mb0 {
+  margin-top: var(--base-size-8);
+  margin-bottom: 0;
+  padding: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  background-color: var(--bgColor-muted);
+  border-radius: var(--borderRadius-large);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.roundedP2_2 {
+  border: 1px solid;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-8);
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.value {
+  font-size: var(--text-body-size-medium);
+  word-break: break-all;
+}
+
+.valueMono {
+  composes: value;
+  font-family: var(--fontStack-monospace);
+}

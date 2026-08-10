@@ -167,7 +167,9 @@ on every push to `master` (or via **Run workflow**). One-time setup:
 
 The production build uses a **relative base** (`./`), so it works under the `/<repo>/` subpath.
 It's a static, backend-less site: each visitor enters their own PAT, encrypted in their browser;
-nothing is sent anywhere except `api.github.com`.
+nothing is sent anywhere except `api.github.com`. This stays true with telemetry in the tree —
+collection lives entirely in the Electron main process, so the hosted build has no code path that
+can record or transmit anything.
 
 ## Desktop app (Windows / macOS / Linux)
 
@@ -963,9 +965,15 @@ run, and a stale one read as authoritative is worse than none.
   server relaxes `script-src`/`connect-src` for HMR only.
 - Clickjacking guard: a small frame-buster runs in `main.tsx` (GitHub Pages can't send
   `X-Frame-Options` / a header CSP).
-- `style-src` includes `'unsafe-inline'` because Primer (styled-components v5) injects styles at
-  runtime.
-- No third-party runtime scripts, no analytics — everything is bundled by Vite.
+- `style-src` includes `'unsafe-inline'` for the handful of `style` attributes carrying values that
+  only exist at runtime — the width of a timeline bar as a percentage of a run's duration, a status
+  colour looked up from a table. It is no longer needed for Primer: since v38 the component library
+  ships plain CSS and the styled-components dependency is gone.
+- No third-party runtime scripts — everything is bundled by Vite.
+- **Telemetry runs in the Electron main process only**, so the CSP is untouched and the hosted web
+  build collects, stores and sends nothing. The renderer keeps in-memory counters and flushes deltas
+  over IPC; with no `window.desktop` bridge every call is an early return and no timer is ever
+  armed. See [docs/telemetry.md](docs/telemetry.md).
 - The **only** non-`GET` request the app can make is
   `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. It is off by default, restricted to an
   explicit list of workflow file names, and gated on a proven-writable token. Nothing else is ever

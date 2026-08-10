@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, Octicon, Spinner, Text } from '@primer/react';
+import { Button, Flash, Spinner, Text } from '@primer/react';
 import {
   CheckCircleFillIcon,
   CheckIcon,
@@ -17,13 +17,15 @@ import {
   PlayIcon,
   PlusIcon,
 } from '@primer/octicons-react';
-import { subtleScrollbarSx } from '../lib/scrollbar';
+import { subtleScrollbar } from '../lib/scrollbar';
 import { useStickToBottom } from '../hooks/useStickToBottom';
 import type { ClaudePhase } from '../storage/desktopClaude';
 import { splitIntoSentenceLines, type ClaudeDepth } from '../lib/claudePrompt';
 import { MarkdownView } from './MarkdownView';
 import type { TriageState } from '../hooks/useClaudeTriage';
 import { Modal } from './Modal';
+import styles from './ClaudeTriageDialog.module.css';
+import { Icon } from './Icon';
 
 /**
  * The first phase's label has to match what is actually happening. "Reading the log
@@ -90,33 +92,6 @@ function useElapsed(startedAt: number | null, running: boolean): number {
   return startedAt === null ? 0 : Math.max(0, Math.round((now - startedAt) / 1000));
 }
 
-/** Prose, not a terminal: the model's answer is Markdown and reads as text. */
-const proseBoxSx = {
-  p: 2,
-  bg: 'canvas.inset',
-  borderRadius: 2,
-  border: '1px solid',
-  borderColor: 'border.default',
-  ...subtleScrollbarSx,
-} as const;
-
-const logBoxSx = {
-  m: 0,
-  p: 2,
-  fontFamily: 'mono',
-  fontSize: 0,
-  lineHeight: 1.5,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  bg: 'canvas.inset',
-  color: 'fg.default',
-  borderRadius: 2,
-  border: '1px solid',
-  borderColor: 'border.default',
-  maxHeight: 260,
-  overflowY: 'auto',
-  ...subtleScrollbarSx,
-} as const;
 
 /** What each depth is for, said plainly in the dialog. */
 const DEPTH_BLURB: Record<ClaudeDepth, string> = {
@@ -144,12 +119,12 @@ const DEPTH_TITLE: Record<ClaudeDepth, string> = {
 function ActivityLine({ line }: { line: string }) {
   const m = /^(\$|read|grep|glob)\s+(.*)$/s.exec(line);
   if (!m) {
-    return <Box as="span" sx={{ display: 'block' }}>{line}</Box>;
+    return <span className={styles.block}>{line}</span>;
   }
   return (
-    <Box as="span" sx={{ display: 'block' }}>
-      <Text as="span" sx={{ color: 'accent.fg' }}>{m[1]}</Text> {m[2]}
-    </Box>
+    <span className={styles.block}>
+      <Text as="span" className={styles.accentFg}>{m[1]}</Text> {m[2]}
+    </span>
   );
 }
 
@@ -236,7 +211,7 @@ export function ClaudeTriageDialog({
         </>
       }
     >
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mt: 0, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedSmall}>
         {DEPTH_BLURB[depth]} Runs your local <code>claude</code>
         {depth === 'deep' ? (
           <>
@@ -247,52 +222,52 @@ export function ClaudeTriageDialog({
       </Text>
 
       {/* Phases, so a long wait is legible rather than a blank spinner. */}
-      <Box sx={{ mb: 3 }}>
+      <div className={styles.mb3}>
         {phases.map((phase, index) => {
           const done = active > index || finished;
           const isActive = state.running && active === index;
           return (
-            <Box
+            <div
               key={phase.id}
-              sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, fontSize: 1 }}
+              className={styles.flexCenter}
             >
               {isActive ? (
                 <Spinner size="small" />
               ) : (
-                <Octicon
+                <Icon
                   icon={done ? CheckCircleFillIcon : DotFillIcon}
                   size={16}
-                  sx={{ color: done ? 'success.fg' : 'fg.subtle' }}
+                  style={{ color: done ? 'var(--fgColor-success)' : 'var(--fgColor-muted)' }}
                 />
               )}
-              <Text sx={{ color: done || isActive ? 'fg.default' : 'fg.muted' }}>{phase.label}</Text>
+              <Text style={{ color: done || isActive ? 'var(--fgColor-default)' : 'var(--fgColor-muted)' }}>{phase.label}</Text>
               {phase.id === 'fetching-log' && state.logBytes > 0 && (
-                <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+                <Text className={styles.smallFgMuted}>
                   {formatBytes(state.logBytes)}
                 </Text>
               )}
               {phase.id === 'fetching-log' && state.retrying && (
-                <Text sx={{ fontSize: 0, color: 'attention.fg' }}>retrying…</Text>
+                <Text className={styles.smallAttentionFg}>retrying…</Text>
               )}
-            </Box>
+            </div>
           );
         })}
-      </Box>
+      </div>
 
-      <Box
-        sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, color: 'fg.muted', flexWrap: 'wrap' }}
+      <div
+        className={styles.flexCenter2}
       >
-        <Text sx={{ fontSize: 0 }}>{elapsed}s elapsed</Text>
+        <Text className={styles.small}>{elapsed}s elapsed</Text>
         {state.logSource && sourceNote(state.logSource, depth) && (
-          <Text sx={{ fontSize: 0 }}>· {sourceNote(state.logSource, depth)}</Text>
+          <Text className={styles.small}>· {sourceNote(state.logSource, depth)}</Text>
         )}
         {state.logTruncated && (
-          <Text sx={{ fontSize: 0 }}>· log was large, only its start and end were analysed</Text>
+          <Text className={styles.small}>· log was large, only its start and end were analysed</Text>
         )}
-      </Box>
+      </div>
 
       {state.toolsUnavailable && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 0 }}>
+        <Flash variant="warning" className={styles.mb3Small}>
           Your <code>claude</code> couldn’t be given tools, so this run only reads the log that was
           already fetched — it can’t pull artifacts or the diff.
         </Flash>
@@ -305,16 +280,16 @@ export function ClaudeTriageDialog({
         reopened: the trail is what the conclusion rests on.
       */}
       {state.activity.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Text sx={{ fontSize: 0, fontWeight: 'bold', color: 'fg.muted', display: 'block', mb: 1 }}>
+        <div className={styles.mb3}>
+          <Text className={styles.smallBold}>
             What Claude is doing
           </Text>
-          <Box as="pre" ref={activityRef} sx={{ ...logBoxSx, maxHeight: 160 }}>
+          <pre ref={activityRef} className={`${styles.logBoxShort} ${subtleScrollbar}`}>
             {state.activity.map((line, i) => (
               <ActivityLine key={i} line={line} />
             ))}
-          </Box>
-        </Box>
+          </pre>
+        </div>
       )}
 
       {/*
@@ -322,7 +297,7 @@ export function ClaudeTriageDialog({
         commit list may be missing the candidate it never got to.
       */}
       {state.incompleteReason && !state.running && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 0 }}>
+        <Flash variant="warning" className={styles.mb3Small}>
           Claude stopped before finishing — {state.incompleteReason}. What it wrote is below, but treat
           it as partial.{' '}
           {state.sessionId ? (
@@ -339,7 +314,7 @@ export function ClaudeTriageDialog({
       )}
 
       {state.error && (
-        <Flash variant="danger" sx={{ mb: 3, fontSize: 1 }}>
+        <Flash variant="danger" className={styles.mb3Body}>
           {state.error}
         </Flash>
       )}
@@ -351,7 +326,7 @@ export function ClaudeTriageDialog({
       */}
       {state.partial && (
         <>
-          <Text sx={{ fontSize: 0, fontWeight: 'bold', color: 'fg.muted', display: 'block', mb: 1 }}>
+          <Text className={styles.smallBold}>
             What Claude is writing
           </Text>
           {/*
@@ -359,9 +334,9 @@ export function ClaudeTriageDialog({
             the live pane shows one long paragraph per turn while the final text shows one
             sentence per line — the same content reading two different ways.
           */}
-          <Box ref={writingRef} sx={{ ...proseBoxSx, maxHeight: 260, overflowY: 'auto' }}>
+          <div ref={writingRef} className={`${styles.proseBoxScroll} ${subtleScrollbar}`}>
             <MarkdownView markdown={splitIntoSentenceLines(state.partial)} />
-          </Box>
+          </div>
         </>
       )}
 
@@ -371,14 +346,14 @@ export function ClaudeTriageDialog({
         squeezed into "problem / suggested fix", which would lose exactly that structure.
       */}
       {state.document && state.document !== state.partial.trim() && (
-        <Box sx={proseBoxSx}>
+        <div className={`${styles.proseBox} ${subtleScrollbar}`}>
           <MarkdownView markdown={state.document} />
-        </Box>
+        </div>
       )}
 
       {state.analysis && (
         <>
-          <Text as="h3" sx={{ fontSize: 1, fontWeight: 'bold', mb: 1 }}>
+          <Text as="h3" className={styles.bodyBold}>
             The problem
           </Text>
           {/*
@@ -386,24 +361,24 @@ export function ClaudeTriageDialog({
             decisive log line comes back in backticks, and as monospace text that quoting
             was invisible. A quoted log line inside it is coloured like the log itself.
           */}
-          <Box sx={{ ...proseBoxSx, mb: 3 }}>
+          <div className={`${styles.proseBoxSpaced} ${subtleScrollbar}`}>
             {state.analysis.problem ? (
               <MarkdownView markdown={state.analysis.problem} />
             ) : (
-              <Text sx={{ color: 'fg.muted' }}>(nothing returned)</Text>
+              <Text className={styles.fgMuted}>(nothing returned)</Text>
             )}
-          </Box>
-          <Text as="h3" sx={{ fontSize: 1, fontWeight: 'bold', mb: 1 }}>
+          </div>
+          <Text as="h3" className={styles.bodyBold}>
             Suggested fix
           </Text>
-          <Box sx={proseBoxSx}>
+          <div className={`${styles.proseBox} ${subtleScrollbar}`}>
             {state.analysis.solution ? (
               <MarkdownView markdown={state.analysis.solution} />
             ) : (
-              <Text sx={{ color: 'fg.muted' }}>(nothing returned)</Text>
+              <Text className={styles.fgMuted}>(nothing returned)</Text>
             )}
-          </Box>
-          <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mb: 0 }}>
+          </div>
+          <Text as="p" className={styles.fgMutedSmall2}>
             Both are now part of the report — the problem at the top, the suggested fix collapsed at
             the end.
           </Text>

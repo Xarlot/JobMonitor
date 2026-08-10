@@ -1,0 +1,85 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  display: block;
+  margin-bottom: var(--base-size-4);
+}
+
+.width {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.fgMutedMl2 {
+  color: var(--fgColor-muted);
+  margin-left: var(--base-size-8);
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.px2Small {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  width: 160px;
+}
+
+.px2Small2 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+}
+
+.px2Small3 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  color: var(--fgColor-muted);
+  white-space: nowrap;
+}
+
+.px2Small4 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  text-align: right;
+  white-space: nowrap;
+}

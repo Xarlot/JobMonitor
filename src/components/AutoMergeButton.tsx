@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { Box, Button, Flash, IconButton, Label, Octicon, Text } from '@primer/react';
+import { Button, Flash, IconButton, Label, Text } from '@primer/react';
 import { Tooltip } from '@primer/react/next';
 import { GitMergeIcon } from '@primer/octicons-react';
 import { armAutoMerge, type MergeMethod } from '../api/autoMerge';
@@ -20,6 +20,9 @@ import type { PullRequest } from '../api/types';
 import { useConfig } from '../context/ConfigContext';
 import { useTokenCapability } from '../hooks/useTokenCapability';
 import { Modal } from './Modal';
+import { Feature, Operation, Telemetry } from '../lib/telemetry';
+import styles from './AutoMergeButton.module.css';
+import { tooltipWrapFixed } from '../lib/tooltipWrap';
 
 /** Config stores the strategy lower-case; GraphQL's enum is upper-case. */
 export function toMergeMethod(setting: 'squash' | 'merge' | 'rebase'): MergeMethod {
@@ -49,7 +52,10 @@ function ArmDialog({
   const arm = async () => {
     setBusy(true);
     try {
-      const outcome = await armAutoMerge(owner, repo, pr, toMergeMethod(method));
+      const outcome = await Telemetry.measure(Operation.GH_AUTOMERGE_WRITE, () =>
+        armAutoMerge(owner, repo, pr, toMergeMethod(method)),
+      );
+      if (outcome.autoMergeEnabled) Telemetry.featureUsed(Feature.AUTOMERGE_ARMED);
       if (outcome.autoMergeEnabled) {
         setResult({ ok: true, message: `Auto-merge enabled (${method}). The description is cleared.` });
         onArmed();
@@ -75,21 +81,21 @@ function ArmDialog({
       onClose={onClose}
       width="min(560px, 94vw)"
       footer={
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <div className={styles.flexGap2}>
           <Button onClick={onClose}>{result?.ok ? 'Close' : 'Cancel'}</Button>
           {!result?.ok && (
             <Button variant="danger" disabled={busy} onClick={() => void arm()}>
               {busy ? 'Working…' : 'Clear description and enable'}
             </Button>
           )}
-        </Box>
+        </div>
       }
     >
-      <Text as="p" sx={{ fontSize: 1, mb: 2 }}>
+      <Text as="p" className={styles.bodyMb2}>
         This will do two things to <strong>#{pr.number}</strong> on GitHub:
       </Text>
-      <Box as="ol" sx={{ pl: 4, fontSize: 1, m: 0, mb: 3 }}>
-        <Box as="li" sx={{ mb: 1 }}>
+      <ol className={styles.pl4Body}>
+        <li className={styles.mb1}>
           {hasDescription ? (
             <>
               <strong>Delete the description.</strong> It cannot be recovered — a pull request
@@ -97,40 +103,26 @@ function ArmDialog({
             </>
           ) : (
             <>
-              Clear the description — <Text sx={{ color: 'fg.muted' }}>already empty.</Text>
+              Clear the description — <Text className={styles.fgMuted}>already empty.</Text>
             </>
           )}
-        </Box>
-        <Box as="li">
+        </li>
+        <li>
           <strong>Enable auto-merge</strong> with the <Label>{method}</Label> strategy, so
           GitHub merges it when the checks pass — immediately, if they already have.
-        </Box>
-      </Box>
+        </li>
+      </ol>
 
       {hasDescription && (
-        <Box
-          as="pre"
-          sx={{
-            m: 0,
-            mb: 3,
-            p: 2,
-            maxHeight: 160,
-            overflow: 'auto',
-            fontFamily: 'mono',
-            fontSize: 0,
-            bg: 'canvas.inset',
-            borderRadius: 2,
-            border: '1px solid',
-            borderColor: 'border.muted',
-            whiteSpace: 'pre-wrap',
-          }}
+        <pre
+          className={styles.m0Mb3}
         >
           {pr.body}
-        </Box>
+        </pre>
       )}
 
       {result && (
-        <Flash variant={result.ok ? 'success' : 'danger'} sx={{ fontSize: 0 }}>
+        <Flash variant={result.ok ? 'success' : 'danger'} className={styles.small}>
           {result.message}
         </Flash>
       )}
@@ -162,33 +154,22 @@ function ArmedLabel({ pr }: { pr: PullRequest }) {
   ].join('\n');
 
   return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        flexShrink: 0,
-        '& [role="tooltip"]': {
-          textAlign: 'left',
-          whiteSpace: 'pre-line',
-          maxWidth: 340,
-          lineHeight: 1.5,
-          padding: '8px 10px',
-        },
-      }}
+    <div
+      className={tooltipWrapFixed}
     >
       <Tooltip text={tip} type="description">
-        <Box
-          as="button"
+        <button
           type="button"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          sx={{ all: 'unset', display: 'inline-flex', alignItems: 'center', cursor: 'default' }}
+          className={styles.centerDefault}
         >
           <Label variant="done">
-            <Octicon icon={GitMergeIcon} size={12} sx={{ mr: 1 }} />
+            <GitMergeIcon size={12} className={styles.mr1} />
             auto-merge
           </Label>
-        </Box>
+        </button>
       </Tooltip>
-    </Box>
+    </div>
   );
 }
 
@@ -219,7 +200,7 @@ export function AutoMergeButton({
   if (pr.state !== 'open') return null;
 
   return (
-    <Box as="span" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+    <span onClick={(e: React.MouseEvent) => e.stopPropagation()}>
       <IconButton
         size={size}
         variant="invisible"
@@ -236,6 +217,6 @@ export function AutoMergeButton({
           onArmed={onArmed}
         />
       )}
-    </Box>
+    </span>
   );
 }

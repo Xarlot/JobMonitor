@@ -3,6 +3,7 @@
 import { repoPath, repoRunsPath, rerunFailedJobsPath, workflowsPath } from './endpoints';
 import { ghGet, ghPost, GitHubApiError } from './githubClient';
 import { recordPushAccess, recordWriteRefused } from './tokenCapability';
+import { Operation, Telemetry } from '../lib/telemetry';
 import type {
   Repository,
   Workflow,
@@ -29,6 +30,10 @@ const MAX_WORKFLOW_PAGES = 20;
  * would become two derived flows with the same id.
  */
 export async function fetchWorkflows(owner: string, repo: string): Promise<Workflow[]> {
+  return Telemetry.measure(Operation.GH_WORKFLOW_LIST, () => fetchWorkflows__impl(owner, repo));
+}
+
+async function fetchWorkflows__impl(owner: string, repo: string): Promise<Workflow[]> {
   const byId = new Map<number, Workflow>();
   for (let page = 1; page <= MAX_WORKFLOW_PAGES; page++) {
     const { data } = await ghGet<WorkflowsResponse>(workflowsPath(owner, repo, page));

@@ -12,9 +12,10 @@
  * these lists re-render on every poll.
  */
 
-import { Box, Octicon, Text, Tooltip } from '@primer/react';
+import { Text, Tooltip } from '@primer/react';
 import { SparkleFillIcon } from '@primer/octicons-react';
 import { analysedOrigins } from '../storage/failureCaches';
+import styles from './AnalysedBadge.module.css';
 
 /** `pr:37977` / `flow:abc-123` — the prefix `FailedJobRef.key` is built from. */
 export function originKey(kind: 'pr' | 'flow', id: string | number): string {
@@ -36,21 +37,10 @@ export function AnalysedBadge({
 
   return (
     <Tooltip text="Claude has already analysed a failure here" direction="n">
-      <Box
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1,
-          borderRadius: 2,
-          bg: 'done.subtle',
-          color: 'done.fg',
-          flexShrink: 0,
-        }}
-      >
-        <Octicon icon={SparkleFillIcon} size={12} />
-        <Text sx={{ fontSize: 0 }}>analysed</Text>
-      </Box>
+      <button type="button" className={`${styles.trigger} ${styles.centerGap1}`}>
+        <SparkleFillIcon size={12} />
+        <Text className={styles.small}>analysed</Text>
+      </button>
     </Tooltip>
   );
 }

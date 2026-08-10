@@ -1,3 +1,22 @@
+import { ghGetBlob } from '../api/githubClient';
+import { artifactZipPath } from '../api/endpoints';
+import { Operation, Telemetry } from './telemetry';
+
+/**
+ * Fetch one artifact's zip.
+ *
+ * The single download and the bundle both pull artifacts the same way, so the timing lives here
+ * rather than at either call site. Measuring it in both would count each bundled artifact under an
+ * operation that also means "a person downloaded one thing", and the two are not comparable: a
+ * bundle of twelve would look like twelve downloads, and the median would drift towards whatever
+ * bundles happen to contain.
+ */
+export function fetchArtifactZip(owner: string, repo: string, artifactId: number): Promise<Blob> {
+  return Telemetry.measure(Operation.GH_ARTIFACT_DOWNLOAD, () =>
+    ghGetBlob(artifactZipPath(owner, repo, artifactId)),
+  );
+}
+
 /** Make a filesystem-safe `.zip` name from an artifact name. */
 export function artifactFileName(name: string): string {
   const base = name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'artifact';

@@ -4,6 +4,59 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [3.0.0]
+
+**Everything this app is built on moved a major version at once** — React, Primer, Electron,
+TypeScript and the table library. Nothing about what the app *does* has changed; this is the release
+that pays off six accumulated upgrades so the next feature is written against current parts. It is a
+major version because the user interface was rewritten to get there, not because the product was
+redesigned.
+
+The upgrades are not independent: Primer 36 requires React 18 exactly, so React 19 is unreachable
+without Primer 38 — which removes the `sx` prop, `Box` and `Octicon` outright. There is no
+incremental path, so the styling layer moved in one change: **804 `sx` props, 402 `Box` elements and
+53 `Octicon` elements across 41 files**, now 43 CSS module files.
+
+### Changed
+- **Styles are a stylesheet rather than generated in the browser.** Primer 38 ships plain CSS, so the
+  app no longer builds its own at startup through styled-components — and that dependency is gone.
+- **How far each feature branch is behind the default branch**, shown in warning colour next to the
+  fork standing — `47 commits behind 2026.1`. A branch can match the upstream exactly and still have
+  drifted months behind the branch it merges into, and of the two numbers on that row only this one
+  gets worse while nobody touches anything. Measured on the upstream's copy, since that is the shared
+  branch, and absent when the branch is level or ahead. One more comparison per branch per poll,
+  ETag-cached like the rest.
+- **The Feature branches tab is on by default.** It costs two requests per poll to establish that a
+  repository has no shared branches under the prefix — cheap enough that defaulting to off mainly
+  meant the tab went unfound by the people it was built for. Switching it off under **Settings → PR
+  automation** stops all of it, and an existing installation keeps whatever it had set.
+- **Flows and Feature branches swapped places** in the navigation, which now reads
+  Overview · Pull requests · Flows · Feature branches · Failures. Feature branches sat next to Pull
+  requests because that is what it deals in; in practice Flows is the everyday tab of the two.
+- **Some components look slightly different** because Primer restyled them — labels have an outline
+  they did not have, and some spacing shifted a pixel or two. Nothing moved.
+- **The runs grid moved to the TanStack Table v9 API**, not to the compatibility entry point the
+  package also ships: features are opt-in, the row model is constructed rather than passed as a
+  getter, and the cell accessor changed. A compatibility shim is a decision to do the work later with
+  less context.
+- **Dependencies**: React 18.3 → 19.2, Primer 36.27 → 38.35, Electron 42.5 → 43.3 (Chromium 150,
+  Node 24.18), TypeScript 6.0 → 7.0 (the native compiler; no source changes needed), TanStack Table
+  8.21 → 9.1, jsdom 29 → 30, jest-dom 6 → 7. styled-components removed.
+
+### Fixed
+- **Tooltips are reachable by keyboard.** Primer 38 refuses to attach a tooltip to something that
+  cannot be focused, which surfaced three badges — the "analysed" marker, the rate-limit badge and
+  the per-depth Claude markers — whose explanations appeared on hover only and were therefore
+  invisible to anyone not using a mouse. They are focusable controls now.
+- **Navigation icons stay at every window width.** Primer 38 hides them below 1440px by default to
+  make room in a crowded nav; this one has five tabs that fit at any size the window can be.
+
+### Added
+- **A test for the runs grid**, which had none. Column definitions are data, so a table configured
+  with the wrong feature set builds a valid object that typechecks and renders nothing — the new test
+  asserts output rather than construction: rows arrive, in order, carrying the values the accessors
+  were supposed to reach.
+
 ## [2.2.0]
 
 **Long-lived feature branches get a tab of their own, and it answers "why is this sitting there".** Work

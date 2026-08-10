@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, BranchName, Flash, Label, Select, Spinner, Text, TextInput } from '@primer/react';
+import { BranchName, Flash, Label, Select, Spinner, Text, TextInput } from '@primer/react';
 import { SearchIcon } from '@primer/octicons-react';
 import type { WorkflowRun, WorkflowRunsResponse } from '../api/types';
 import { ghGet, GitHubApiError } from '../api/githubClient';
@@ -9,6 +9,7 @@ import { recentFlowsFromRuns, sinceCreated, type FlowPick, type RecentFlow } fro
 import { formatRelative } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
+import styles from './WorkflowBrowserDialog.module.css';
 
 export type { FlowPick };
 
@@ -16,16 +17,6 @@ type LoadState =
   | { phase: 'loading' }
   | { phase: 'loaded'; combos: RecentFlow[] }
   | { phase: 'error'; message: string };
-
-const cellSx = {
-  px: 2,
-  py: '8px',
-  borderColor: 'border.muted',
-  borderBottomWidth: 1,
-  borderBottomStyle: 'solid',
-  fontSize: 1,
-  verticalAlign: 'middle',
-} as const;
 
 const WINDOW_HOURS = 24;
 const PER_PAGE = 100;
@@ -115,29 +106,29 @@ export function WorkflowBrowserDialog({
   return (
     <Modal title="Browse recent workflows" subtitle={subtitle} onClose={onClose}>
       {state.phase === 'loading' && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, color: 'fg.muted' }}>
+        <div className={styles.flexCenter}>
           <Spinner size="small" /> <Text>Loading recent runs…</Text>
-        </Box>
+        </div>
       )}
       {state.phase === 'error' && (
-        <Flash variant="danger" sx={{ fontSize: 1 }}>{state.message}</Flash>
+        <Flash variant="danger" className={styles.body}>{state.message}</Flash>
       )}
       {state.phase === 'loaded' && state.combos.length === 0 && (
-        <Text sx={{ color: 'fg.muted' }}>No workflow runs in the last {WINDOW_HOURS} hours.</Text>
+        <Text className={styles.fgMuted}>No workflow runs in the last {WINDOW_HOURS} hours.</Text>
       )}
       {state.phase === 'loaded' && state.combos.length > 0 && (
         <>
-          <Text as="p" sx={{ fontSize: 0, color: 'fg.muted', mb: 2 }}>
+          <Text as="p" className={styles.smallFgMuted}>
             Pick a workflow to fill the flow’s name, file, branch and event.
           </Text>
-          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className={styles.flexGap2}>
             <TextInput
               leadingVisual={SearchIcon}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search name or file…"
               aria-label="Search workflows"
-              sx={{ flex: 1, minWidth: 200 }}
+              className={styles.grow}
             />
             <Select
               value={eventFilter}
@@ -159,26 +150,25 @@ export function WorkflowBrowserDialog({
                 <Select.Option key={b} value={b}>{b}</Select.Option>
               ))}
             </Select>
-          </Box>
+          </div>
           {filtered.length === 0 ? (
-            <Text sx={{ color: 'fg.muted' }}>No workflows match your search.</Text>
+            <Text className={styles.fgMuted}>No workflows match your search.</Text>
           ) : (
-          <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
-            <Box as="thead">
-              <Box as="tr">
-                <Box as="th" sx={{ ...cellSx, width: 140, textAlign: 'left', color: 'fg.muted' }}>Status</Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'left', color: 'fg.muted' }}>Workflow</Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'left', color: 'fg.muted' }}>Trigger</Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'left', color: 'fg.muted' }}>Branch</Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'right', color: 'fg.muted', whiteSpace: 'nowrap' }}>
+          <table className={styles.width}>
+            <thead>
+              <tr>
+                <th className={styles.px2Body}>Status</th>
+                <th className={styles.px2Body2}>Workflow</th>
+                <th className={styles.px2Body2}>Trigger</th>
+                <th className={styles.px2Body2}>Branch</th>
+                <th className={styles.px2Body3}>
                   Last run
-                </Box>
-              </Box>
-            </Box>
-            <Box as="tbody">
+                </th>
+              </tr>
+            </thead>
+            <tbody>
               {filtered.map((c) => (
-                <Box
-                  as="tr"
+                <tr
                   key={c.key}
                   role="button"
                   tabIndex={0}
@@ -186,37 +176,37 @@ export function WorkflowBrowserDialog({
                   onKeyDown={(e: React.KeyboardEvent) =>
                     (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), pick(c))
                   }
-                  sx={{ cursor: 'pointer', ':hover': { bg: 'canvas.subtle' } }}
+                  className={styles.clickableRow}
                 >
-                  <Box as="td" sx={cellSx}>
+                  <td className={styles.px2Body4}>
                     <StatusBadge status={statusToOverall(c.latest.status, c.latest.conclusion)} />
-                  </Box>
-                  <Box as="td" sx={cellSx}>
-                    <Text sx={{ fontWeight: 'bold', display: 'block' }}>{c.name}</Text>
+                  </td>
+                  <td className={styles.px2Body4}>
+                    <Text className={styles.boldBlock}>{c.name}</Text>
                     {c.workflowFile && (
-                      <Text sx={{ color: 'fg.muted', fontSize: 0 }}>{c.workflowFile}</Text>
+                      <Text className={styles.fgMutedSmall}>{c.workflowFile}</Text>
                     )}
-                  </Box>
-                  <Box as="td" sx={cellSx}>
+                  </td>
+                  <td className={styles.px2Body4}>
                     <Label variant="secondary">{c.event}</Label>
-                  </Box>
-                  <Box as="td" sx={cellSx}>
+                  </td>
+                  <td className={styles.px2Body4}>
                     {c.branch ? (
-                      <BranchName as="span" sx={{ fontSize: 0 }}>{c.branch}</BranchName>
+                      <BranchName as="span" className={styles.small}>{c.branch}</BranchName>
                     ) : (
-                      <Text sx={{ color: 'fg.muted' }}>—</Text>
+                      <Text className={styles.fgMuted}>—</Text>
                     )}
-                  </Box>
-                  <Box as="td" sx={{ ...cellSx, textAlign: 'right', color: 'fg.muted', whiteSpace: 'nowrap' }}>
+                  </td>
+                  <td className={styles.px2Body3}>
                     {formatRelative(c.latest.run_started_at ?? c.latest.created_at)}
                     {c.count > 1 && (
-                      <Text sx={{ display: 'block', fontSize: 0 }}>{c.count} runs</Text>
+                      <Text className={styles.blockSmall}>{c.count} runs</Text>
                     )}
-                  </Box>
-                </Box>
+                  </td>
+                </tr>
               ))}
-            </Box>
-          </Box>
+            </tbody>
+          </table>
           )}
         </>
       )}

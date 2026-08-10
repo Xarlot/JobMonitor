@@ -58,6 +58,7 @@ import { useTokenCapability } from './useTokenCapability';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
 import type { PrEntry } from './useGitHubDashboard';
+import { Feature, Telemetry, Operation } from '../lib/telemetry';
 
 /** One thing the engine did, for the activity log in the UI. */
 export interface RerunEvent {
@@ -507,10 +508,15 @@ export function usePrAutoRerun(
               at: Date.now(),
             });
           }
+          // The refusals are the more interesting half of the auto-rerun story: knowing how
+          // often the engine wanted to act and declined says more about the policy than the
+          // firings do. Counted once per verdict — `logSkip` already suppresses the repeats.
+          if (logged) Telemetry.featureUsed(Feature.RERUN_AUTO_SUPPRESSED);
           continue;
         }
 
         fired += 1;
+        Telemetry.featureUsed(Feature.RERUN_AUTO_FIRED);
         await requestRerun({
           entry, run, fingerprint, owner, repo,
           notify,
@@ -526,7 +532,7 @@ export function usePrAutoRerun(
 
   const intervalMs =
     (visible ? config.polling.checksSeconds : config.polling.hiddenSeconds) * 1000;
-  const { refresh } = usePolling({ fn: tick, intervalMs, enabled: armed });
+  const { refresh } = usePolling({ fn: tick, intervalMs, enabled: armed, op: Operation.GH_AUTO_RERUN_POLL });
 
   /**
    * React as soon as a candidate PR appears or its checks change, rather than

@@ -1,0 +1,127 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.block {
+  display: block;
+}
+
+.accentFg {
+  color: var(--fgColor-accent);
+}
+
+.fgMutedSmall {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  margin-top: 0;
+  margin-bottom: var(--base-size-16);
+}
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+  font-size: var(--text-body-size-medium);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.smallAttentionFg {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-attention);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+  color: var(--fgColor-muted);
+  flex-wrap: wrap;
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.mb3Small {
+  margin-bottom: var(--base-size-16);
+  font-size: var(--text-body-size-small);
+}
+
+.smallBold {
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-muted);
+  display: block;
+  margin-bottom: var(--base-size-4);
+}
+
+.mb3Body {
+  margin-bottom: var(--base-size-16);
+  font-size: var(--text-body-size-medium);
+}
+
+.bodyBold {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  margin-bottom: var(--base-size-4);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.fgMutedSmall2 {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  margin-bottom: 0;
+}
+
+.proseBox {
+  padding: var(--base-size-8);
+  background-color: var(--bgColor-inset);
+  border-radius: var(--borderRadius-large);
+  border: 1px solid var(--borderColor-default);
+}
+
+.logBox {
+  margin: 0;
+  padding: var(--base-size-8);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--bgColor-inset);
+  color: var(--fgColor-default);
+  border-radius: var(--borderRadius-large);
+  border: 1px solid var(--borderColor-default);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* The same box, shorter — the live log while the model is still working. */
+.logBoxShort {
+  composes: logBox;
+  max-height: 160px;
+}
+
+/* Scrolls on its own, for the finished answer. */
+.proseBoxScroll {
+  composes: proseBox;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.proseBoxSpaced {
+  composes: proseBox;
+  margin-bottom: var(--base-size-16);
+}

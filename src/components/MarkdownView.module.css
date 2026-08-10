@@ -1,0 +1,136 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.accentFg {
+  font-style: italic;
+  color: var(--fgColor-accent);
+}
+
+.boldSevereFg {
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-severe);
+  background-color: var(--bgColor-severe-muted);
+  border-radius: var(--borderRadius-large);
+  padding-left: var(--base-size-4);
+  padding-right: var(--base-size-4);
+  white-space: nowrap;
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+  line-height: 1.5;
+}
+
+.mb2 {
+  margin-bottom: var(--base-size-8);
+}
+
+.m0Mb2 {
+  margin: 0;
+  margin-bottom: var(--base-size-8);
+  padding: var(--base-size-8);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--bgColor-inset);
+  border-radius: var(--borderRadius-large);
+}
+
+.pl3Mt0 {
+  padding-left: var(--base-size-16);
+  margin-top: 0;
+  margin-bottom: var(--base-size-8);
+}
+
+.mb1 {
+  margin-bottom: var(--base-size-4);
+}
+
+.small {
+  border-collapse: collapse;
+  font-size: var(--text-body-size-small);
+  width: 100%;
+}
+
+.textLeftBold {
+  text-align: left;
+  font-weight: var(--base-text-weight-semibold);
+  padding: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+  white-space: nowrap;
+}
+
+.p2 {
+  padding: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-muted);
+  vertical-align: top;
+}
+
+.mb2Rounded {
+  margin-bottom: var(--base-size-8);
+  border: 1px solid;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-8);
+}
+
+.pointerBody {
+  cursor: pointer;
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+}
+
+.mt2 {
+  margin-top: var(--base-size-8);
+}
+
+.mt0Mb2 {
+  margin-top: 0;
+  margin-bottom: var(--base-size-8);
+  white-space: pre-wrap;
+}
+
+.monoSmall {
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  background-color: var(--bgColor-neutral-muted);
+  border-radius: var(--borderRadius-medium);
+  padding-left: var(--base-size-4);
+  padding-right: var(--base-size-4);
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+.scrollX {
+  overflow-x: auto;
+  margin-bottom: var(--base-size-8);
+}
+
+.heading {
+  font-weight: var(--base-text-weight-semibold);
+  font-size: var(--text-body-size-medium);
+  margin-top: var(--base-size-16);
+  margin-bottom: var(--base-size-8);
+}
+
+/*
+ * Only two visual weights: deeper nesting than that is noise in a pane this size, and the model is
+ * asked for `##` anyway.
+ */
+.headingMajor {
+  composes: heading;
+  font-size: var(--text-body-size-large);
+  padding-bottom: var(--base-size-4);
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+
+/* The first heading in the pane has nothing above it to be separated from. */
+.headingFirst {
+  margin-top: 0;
+}

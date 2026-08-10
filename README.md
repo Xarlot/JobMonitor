@@ -43,10 +43,12 @@ that lives in the tray and pops a notification when something finishes.
   name.
 - **An arm auto‑merge button** on every open PR — clears the description and hands the PR to GitHub
   to merge once its checks pass, after confirming.
-- **A Feature branches tab** (opt‑in) — for long‑lived branches shared between your fork and the
+- **A Feature branches tab** — for long‑lived branches shared between your fork and the
   upstream. Shows *where each merge has stopped* rather than merely that a pull request exists,
-  and offers three actions: bring the default branch into a feature branch, take a feature branch
-  into the default branch, and pull the upstream's copy of a branch down into your fork.
+  and offers three actions: bring the default branch into a feature branch, pull the upstream's copy
+  of a branch down into your fork, and commit your fork's branch to the upstream's branch of the same
+  name. None of them targets the default branch — getting a feature branch into `main` stays
+  somebody else's decision.
 - **Explain with Claude** (desktop app) — turn a failed job's log into a readable problem statement
   and a suggested fix, using the `gh` and `claude` CLIs already on your machine. Two depths: a
   **quick read** in about a minute, or a **deep analysis** that goes and investigates. It also
@@ -365,6 +367,79 @@ GitHub token (`gh` uses its own). Downloads land in a temp directory that's dele
 
 > This is the one feature that sends data outside GitHub — see [Privacy](#privacy).
 
+### Feature branches
+
+Some work lives on a branch that stays around for weeks — a release branch, a big refactor — shared
+between your fork and the upstream. **The Pull requests tab cannot show that work at all**: its pull
+requests have both ends in the upstream, and that tab filters on your fork being the head. So this
+tab exists. It is **on by default**; switch it off under **Settings → PR automation** if your
+repositories have no such branches, and nothing is polled or written for it thereafter.
+
+A feature branch is one under a prefix — `feature/` by default — that exists in **both** repositories.
+A branch only one of them has is not shared work and does not appear: you cannot pull a branch into a
+fork that hasn't got it, and a branch only you have is not something to ship.
+
+![Feature branches](docs/screenshots/feature-branches.png)
+
+Each branch says, in one line, **what to do about it** — and that is the point of the tab. A pull
+request that is merely "open" tells you nothing; the line here is either an action worth taking or
+*Nothing to do*, followed by how your fork stands against the upstream: *your fork matches the
+upstream*, or *up to date, plus 3 commits of your own (2 files differ)*.
+
+A branch that has fallen behind the branch it will merge into gets a warning next to that:
+**`47 commits behind 2026.1`**. This is the number that gets worse on its own — the fork standing
+beside it only moves when somebody pushes — and it is what the *bring the default branch in* action
+is for. It is measured on the **upstream's** copy of the branch, since that is the shared one, and it
+is absent when the branch is level or ahead: a label that appeared on every healthy row would train
+you to stop reading it.
+
+Where a pull request exists, a **stage strip** shows how far the merge has actually got:
+
+> **Pull request opened** `#38100` · **Checks** *1 of 2 passed* · **Mergeable** *waiting on required
+> checks or a review* · **Auto‑merge** *enabled · squash* · **Merged**
+
+When it is stuck, the reason is spelled out rather than left to be inferred — *behind the base
+branch*, *conflicts — this one needs a working copy*, *some checks failed, but none of them are
+required*.
+
+#### The three actions
+
+They are the icons on the right of each branch row. Hover one for a sentence naming **both ends** of
+what is about to happen — including *why* it is unavailable, since a disabled control that explains
+nothing is a dead end.
+
+| | What it does |
+|---|---|
+| **Bring the default branch in** | Merges e.g. `2026.1` into the feature branch, so the branch is not left behind |
+| **Pull into your fork** | Brings the upstream's copy of the branch down into your fork |
+| **Commit to the upstream** | Opens a pull request from your fork's branch into the upstream's branch of the same name |
+
+Each one **confirms first** and tells you what it is about to do:
+
+![Committing a feature branch to the upstream](docs/screenshots/feature-branch-offer.png)
+
+Two things worth knowing about all three:
+
+- **None of them merge, and none of them touch the default branch.** Every action opens a pull
+  request and arms auto‑merge; GitHub does the merging once the required checks pass. Landing
+  directly in a protected branch is forbidden by branch protection, so a merge button here would be a
+  route around the rule that forbids it. Getting a feature branch into `main` stays somebody else's
+  decision.
+- **They report which of their steps ran**, not just success or failure. These are multi‑step
+  writes — "it didn't work" is not a useful thing to be told when a pull request now exists.
+
+On the desktop app, **Claude writes the title and description** of the pull request you commit to the
+upstream, from the commits and diff of the branch (see
+[Explain with Claude](#explain-with-claude-desktop-app)). You edit it before anything is published.
+In a browser, or with the AI integration off, you get the template shown above instead — and issue
+references are stripped from whatever comes back either way, since a stray `Fixes #123` closes
+somebody's issue the moment the pull request merges.
+
+**Auto‑rerun covers these pull requests too.** They arm auto‑merge, and the dashboard cannot see
+them, so without that a single flaky check would park one indefinitely. Every brake applies unchanged
+— the workflow allowlist, the attempt ceiling, the identical‑failure streak, the run‑age window and
+the rate‑limit throttle.
+
 ### Merged pull requests
 
 A failure that landed anyway is easy to lose track of once the PR closes, so Job Monitor keeps the
@@ -560,9 +635,11 @@ so does the auto‑rerun, at the slower background polling rate.
 
 ## Privacy
 
-Job Monitor is **backend‑less**. Your token is encrypted locally, and the app talks only to
-`api.github.com` (plus GitHub’s log storage when you open logs). No analytics, no third‑party
-servers.
+Job Monitor is **backend‑less** for everything it does for you. Your token is encrypted locally, and
+your GitHub data goes only to `api.github.com` (plus GitHub’s log storage when you open logs).
+
+The **desktop app** additionally sends anonymous usage and crash telemetry. The **web version is
+unaffected** — it collects nothing, stores nothing and sends nothing. Details below.
 
 Every request is a read, with exactly two exceptions, and both are hidden entirely unless your token
 is verified as able to perform them:
@@ -576,6 +653,52 @@ Nothing else is written. Job Monitor cannot start a workflow, cancel a run, push
 merge a PR itself, or change any repository setting — those two endpoints are the only writes in the
 codebase, and every write in the app goes through a single function that refuses to run at all unless
 the token has been proven capable.
+
+### Telemetry (desktop app only)
+
+The desktop app reports anonymous usage and crash data so we can see which features are worth
+keeping and which releases broke something. **It is always on and there is no opt‑out.** Since you
+can't turn it off, you can at least see all of it: **Settings → Diagnostics → Telemetry** shows the
+exact records queued on your machine, before and after they are sent.
+
+**What is sent**
+
+- A random 128‑bit **installation ID**, generated on first run. It is not derived from your
+  username, hostname, MAC address, machine GUID, or any hardware identifier, and there is no mapping
+  anywhere from it back to a person. It identifies an installation, not you.
+- **Feature counters** — how many times each feature was used, as numbers against a fixed list
+  (`flows`, `artifacts`, `auto‑rerun`, …). There is no free‑text field anywhere in the format, so
+  nothing about *your* repositories can travel in one.
+- **Operation timings**, as histograms — counts per duration bucket, plus sum and max. Individual
+  timings are never sent.
+- **Usage summaries** in one‑hour buckets — app starts, sessions, foreground time, running time,
+  clean shutdowns.
+- **Crashes** — the exception *type*, a fingerprint, and a sanitized stack trace.
+
+**What is never sent**
+
+Your GitHub token. Repository, branch, PR, workflow, job or artifact names. Log or annotation
+contents. File paths, filenames, usernames, hostnames, IP addresses, command‑line arguments or
+environment variables. Exception *messages* — only the type — because a message is the one place a
+path or a token realistically leaks into a crash report. Stack traces are stripped of absolute
+paths, home directories and usernames before they are written to disk, and the server rejects
+anything that still looks like a path, URL, email or token.
+
+**How it is sent**
+
+Counters are accumulated in memory and written to a local queue every 15 minutes. About once an
+hour the queue is encrypted and published through [Ably](https://ably.com), a managed pub/sub
+service that carries the payload without being able to read it. The queue is capped at a few megabytes and 7
+days; if you are offline it simply waits, and if it fills up it drops the oldest records. **A failed
+send never affects the app.**
+
+The raw queue lives next to the diagnostics log, under your user data directory
+(`%APPDATA%\Job Monitor\telemetry` on Windows, `~/Library/Application Support/Job Monitor/telemetry`
+on macOS, `~/.config/Job Monitor/telemetry` on Linux). It is newline‑delimited JSON — readable with
+any text editor.
+
+Full field‑by‑field documentation, including the wire schema, is in
+**[docs/telemetry.md](docs/telemetry.md)**.
 
 ---
 

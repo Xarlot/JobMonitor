@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Box, IconButton } from '@primer/react';
+import { IconButton } from '@primer/react';
 import { FileZipIcon } from '@primer/octicons-react';
 import { ArtifactsDialog } from './ArtifactsDialog';
+import styles from './ArtifactsButton.module.css';
 
 /**
  * Icon button that opens the artifacts dialog for a run. Artifacts are a per-run
@@ -27,7 +28,7 @@ export function ArtifactsButton({
   const [open, setOpen] = useState(false);
   return (
     // Stop clicks from reaching an enclosing row (which would toggle expansion).
-    <Box as="span" sx={{ display: 'inline-flex' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+    <span className={styles.display} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
       <IconButton
         size={size}
         variant="invisible"
@@ -46,6 +47,6 @@ export function ArtifactsButton({
           onClose={() => setOpen(false)}
         />
       )}
-    </Box>
+    </span>
   );
 }

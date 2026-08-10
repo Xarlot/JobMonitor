@@ -1,22 +1,14 @@
 import { Fragment, useMemo, useState } from 'react';
 import {
+  coreFeatures,
   createColumnHelper,
+  createCoreRowModel,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from '@tanstack/react-table';
-import {
-  Box,
-  BranchName,
-  Button,
-  Flash,
-  Heading,
-  IconButton,
-  Label,
-  Octicon,
-  Spinner,
-  Text,
-} from '@primer/react';
+import type { ColumnDef } from '@tanstack/react-table';
+import { BranchName, Button, Flash, Heading, IconButton, Label, Spinner, Text } from '@primer/react';
 import {
   ChecklistIcon,
   ChevronDownIcon,
@@ -39,6 +31,9 @@ import { StatusBadge } from './StatusBadge';
 import { JobsTable } from './JobsTable';
 import { ArtifactsButton } from './ArtifactsButton';
 import { formatDuration, formatRelative } from '../lib/format';
+import styles from './FlowRunsGrid.module.css';
+import { Icon } from './Icon';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 interface TableMeta {
   isExpanded: (runId: number) => boolean;
@@ -48,26 +43,32 @@ interface TableMeta {
   repo: string;
 }
 
-const columnHelper = createColumnHelper<WorkflowRun>();
+/**
+ * The feature set this grid actually uses.
+ *
+ * v9 requires features to be declared rather than inferred: sorting, filtering, pagination and the
+ * rest are opt-in, and anything not listed here is absent from both the runtime table and its type.
+ * This grid renders every run it is given in the order it receives them — filtering happens upstream
+ * in `filterRuns` — so the core feature set plus a row model is the whole of it.
+ */
+const gridFeatures = tableFeatures({
+  ...coreFeatures,
+  coreRowModel: createCoreRowModel(),
+});
 
-const headerCellSx = {
-  px: 2,
-  py: 2,
-  fontSize: 0,
-  fontWeight: 'bold',
-  color: 'fg.muted',
-  textAlign: 'left',
-  borderBottom: '1px solid',
-  borderColor: 'border.default',
-} as const;
+const columnHelper = createColumnHelper<typeof gridFeatures, WorkflowRun>();
 
-const bodyCellSx = {
-  px: 2,
-  py: 2,
-  fontSize: 1,
-  verticalAlign: 'middle',
-  borderColor: 'border.muted',
-} as const;
+/**
+ * A column of this grid, with the accessor's value type deliberately left open.
+ *
+ * The columns below return different things — a status string, a timestamp, nothing at all for the
+ * display-only ones — and each `columnHelper` call bakes its own value type into the result. An
+ * array of them therefore has a union type that satisfies no single `ColumnDef`, so the array has
+ * to be annotated with the value slot widened. This is the shape TanStack's own examples use for a
+ * heterogeneous column list; it costs nothing, because a column's value type is consumed inside the
+ * cell renderer that produced it and is never read from here.
+ */
+type GridColumn = ColumnDef<typeof gridFeatures, WorkflowRun, any>;
 
 function eventVariant(event: string): 'accent' | 'done' | 'secondary' {
   if (event === 'workflow_dispatch') return 'accent';
@@ -129,7 +130,7 @@ export function FlowRunsGrid({
     [runs, filter, jobsByRun],
   );
 
-  const columns = useMemo(
+  const columns = useMemo<GridColumn[]>(
     () => [
       columnHelper.display({
         id: 'expander',
@@ -137,10 +138,10 @@ export function FlowRunsGrid({
         cell: (info) => {
           const open = (info.table.options.meta as TableMeta).isExpanded(info.row.original.id);
           return (
-            <Octicon
+            <Icon
               icon={open ? ChevronDownIcon : ChevronRightIcon}
               size={16}
-              sx={{ color: 'fg.muted' }}
+              className={styles.fgMuted}
             />
           );
         },
@@ -156,13 +157,13 @@ export function FlowRunsGrid({
         cell: (info) => {
           const r = info.row.original;
           return (
-            <Box>
-              <Text sx={{ fontWeight: 'bold' }}>{r.display_title || r.name || 'Workflow run'}</Text>
-              <Text sx={{ color: 'fg.muted', ml: 2, fontSize: 0 }}>
+            <div>
+              <Text className={styles.bold}>{r.display_title || r.name || 'Workflow run'}</Text>
+              <Text className={styles.fgMutedMl2}>
                 #{r.run_number}
                 {r.run_attempt > 1 ? ` · attempt ${r.run_attempt}` : ''}
               </Text>
-            </Box>
+            </div>
           );
         },
       }),
@@ -171,9 +172,9 @@ export function FlowRunsGrid({
         header: 'Branch',
         cell: (info) =>
           info.getValue() ? (
-            <BranchName as="span" sx={{ fontSize: 0 }}>{info.getValue()}</BranchName>
+            <BranchName as="span" className={styles.small}>{info.getValue()}</BranchName>
           ) : (
-            <Text sx={{ color: 'fg.muted' }}>—</Text>
+            <Text className={styles.fgMuted}>—</Text>
           ),
       }),
       columnHelper.accessor('event', {
@@ -190,7 +191,7 @@ export function FlowRunsGrid({
           const start = r.run_started_at ?? r.created_at;
           const end = r.status === 'completed' ? r.updated_at : null;
           return (
-            <Text sx={{ color: 'fg.muted', whiteSpace: 'nowrap' }}>
+            <Text className={styles.fgMutedNowrap}>
               {formatDuration(start, end)}
             </Text>
           );
@@ -200,7 +201,7 @@ export function FlowRunsGrid({
         id: 'started',
         header: 'Started',
         cell: (info) => (
-          <Text sx={{ color: 'fg.muted', whiteSpace: 'nowrap' }}>
+          <Text className={styles.fgMutedNowrap}>
             {formatRelative(info.getValue())}
           </Text>
         ),
@@ -212,7 +213,7 @@ export function FlowRunsGrid({
           const r = info.row.original;
           const meta = info.table.options.meta as TableMeta;
           return (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+            <div className={styles.flexCenter}>
               <IconButton
                 size="small"
                 variant="invisible"
@@ -251,7 +252,7 @@ export function FlowRunsGrid({
                   window.open(r.html_url, '_blank', 'noopener');
                 }}
               />
-            </Box>
+            </div>
           );
         },
       }),
@@ -259,15 +260,21 @@ export function FlowRunsGrid({
     [],
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features: gridFeatures,
     data: visibleRuns,
     columns,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => String(row.id),
     meta: {
       isExpanded,
-      onTimeline: setTimelineRun,
-      onSummary: setSummaryRun,
+      onTimeline: (run: WorkflowRun) => {
+        Telemetry.featureUsed(Feature.LOGS_TIMELINE_OPENED);
+        setTimelineRun(run);
+      },
+      onSummary: (run: WorkflowRun) => {
+        Telemetry.featureUsed(Feature.LOGS_OVERALL_SUMMARY_OPENED);
+        setSummaryRun(run);
+      },
       owner,
       repo,
     } satisfies TableMeta,
@@ -277,7 +284,7 @@ export function FlowRunsGrid({
   const filteredOut = runs.length > 0 && visibleRuns.length === 0;
 
   return (
-    <Box
+    <div
       id={`flow-${flow.id}`}
       onDragOver={
         dnd
@@ -299,41 +306,26 @@ export function FlowRunsGrid({
             }
           : undefined
       }
-      sx={{
-        border: '1px solid',
-        borderColor: highlight ? 'accent.emphasis' : 'border.default',
-        boxShadow: dnd?.dropBefore
-          ? 'inset 0 3px 0 0 var(--fgColor-accent, #2f81f7)'
+      className={
+        dnd?.dropBefore
+          ? styles.cardDropBefore
           : dnd?.dropAfter
-            ? 'inset 0 -3px 0 0 var(--fgColor-accent, #2f81f7)'
-            : highlight
-              ? '0 0 0 2px var(--bgColor-accent-muted, rgba(9,105,218,0.3))'
-              : 'none',
-        borderRadius: 2,
-        mb: 2,
-        overflow: 'hidden',
-        opacity: dnd?.dragging ? 0.4 : 1,
-        transition: 'box-shadow 0.12s, border-color 0.3s, opacity 0.2s',
-      }}
+            ? styles.cardDropAfter
+            : dnd?.dragging
+              ? styles.cardDragging
+              : highlight
+                ? styles.cardHighlight
+                : styles.card
+      }
     >
-      <Box
+      <div
         onClick={onToggle}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          px: 3,
-          py: 2,
-          bg: 'canvas.subtle',
-          borderBottom: expanded ? '1px solid' : 'none',
-          borderColor: 'border.default',
-          flexWrap: 'wrap',
-          cursor: onToggle ? 'pointer' : 'default',
-        }}
+        className={`${expanded ? styles.cardHeaderExpanded : styles.cardHeader} ${
+          onToggle ? styles.cardHeaderClickable : ''
+        }`}
       >
         {dnd && (
-          <Box
-            as="span"
+          <span
             draggable
             title="Drag to reorder"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
@@ -346,28 +338,28 @@ export function FlowRunsGrid({
               dnd.onDragStart();
             }}
             onDragEnd={() => dnd.onDragEnd()}
-            sx={{ display: 'flex', alignItems: 'center', cursor: 'grab', color: 'fg.muted' }}
+            className={styles.flexCenter2}
           >
-            <Octicon icon={GrabberIcon} size={16} />
-          </Box>
+            <GrabberIcon size={16} />
+          </span>
         )}
         {onToggle && (
-          <Octicon
+          <Icon
             icon={expanded ? ChevronDownIcon : ChevronRightIcon}
             size={16}
-            sx={{ color: 'fg.muted' }}
+            className={styles.fgMuted}
           />
         )}
         <StatusBadge status={overall} withText={false} size={18} />
-        <Heading as="h3" sx={{ fontSize: 2 }}>{flow.name}</Heading>
+        <Heading as="h3" className={styles.large}>{flow.name}</Heading>
         <AnalysedBadge kind="flow" id={flow.id} />
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <div className={styles.flexGap1}>
           {flow.branches.map((b) => (
-            <BranchName key={b} as="span" sx={{ fontSize: 0 }}>{b}</BranchName>
+            <BranchName key={b} as="span" className={styles.small}>{b}</BranchName>
           ))}
-        </Box>
+        </div>
         <Text
-          sx={{ fontSize: 0, color: 'fg.muted' }}
+          className={styles.smallFgMuted}
           title={
             flow.source
               ? `Matched by the regex /${flow.source.pattern}/ of flow “${flow.source.patternName}”`
@@ -379,14 +371,14 @@ export function FlowRunsGrid({
           {flow.repo || ''} · {flow.source?.workflow.file ?? flow.workflowFile}
           {flow.source ? ' · regex' : ''}
         </Text>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
         {!expanded && runs.length > 0 && (
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+          <Text className={styles.smallFgMuted}>
             {runs.length} {runs.length === 1 ? 'run' : 'runs'}
           </Text>
         )}
         {runsUpdatedAt && (
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+          <Text className={styles.smallFgMuted}>
             updated {formatRelative(new Date(runsUpdatedAt).toISOString())}
           </Text>
         )}
@@ -401,78 +393,78 @@ export function FlowRunsGrid({
         >
           Refresh
         </Button>
-      </Box>
+      </div>
 
       {expanded && runsError && (
-        <Flash variant="danger" sx={{ m: 2, fontSize: 0 }}>
+        <Flash variant="danger" className={styles.m2Small}>
           Failed to load runs: {runsError.message}
         </Flash>
       )}
 
       {expanded && (
-      <Box sx={{ overflowX: 'auto' }}>
-        <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
-          <Box as="thead">
+      <div className={styles.overflowX}>
+        <table className={styles.width}>
+          <thead>
             {table.getHeaderGroups().map((hg) => (
-              <Box as="tr" key={hg.id}>
+              <tr key={hg.id}>
                 {hg.headers.map((h) => (
-                  <Box as="th" key={h.id} sx={headerCellSx}>
+                  <th key={h.id} className={styles.px2Py2}>
                     {h.isPlaceholder
                       ? null
                       : flexRender(h.column.columnDef.header, h.getContext())}
-                  </Box>
+                  </th>
                 ))}
-              </Box>
+              </tr>
             ))}
-          </Box>
-          <Box as="tbody">
+          </thead>
+          <tbody>
             {visibleRuns.length === 0 ? (
-              <Box as="tr">
-                <Box as="td" colSpan={colSpan} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+              <tr>
+                <td colSpan={colSpan} className={styles.p4TextCenter}>
                   {filteredOut
                     ? 'No runs match the current filter.'
                     : isFetchingRuns
                       ? 'Loading runs…'
                       : 'No runs found for the configured branches/events.'}
-                </Box>
-              </Box>
+                </td>
+              </tr>
             ) : (
               table.getRowModel().rows.map((row) => {
                 const open = isExpanded(row.original.id);
                 return (
                   <Fragment key={row.id}>
-                    <Box
-                      as="tr"
-                      onClick={() => onToggleRun(row.original)}
-                      sx={{
-                        cursor: 'pointer',
-                        ':hover': { bg: 'canvas.subtle' },
-                        borderBottom: '1px solid',
-                        borderColor: 'border.muted',
+                    <tr
+                      onClick={() => {
+                        // Expanding a run is how someone goes from "it is red" to "which job".
+                        if (!open) Telemetry.featureUsed(Feature.FLOW_RUN_EXPANDED);
+                        onToggleRun(row.original);
                       }}
+                      className={styles.runRow}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <Box as="td" key={cell.id} sx={bodyCellSx}>
+                      {/* `getAllCells`, not `getVisibleCells`: column visibility is a v9 feature
+                          this grid does not register, and every column here is always shown. */}
+                      {row.getAllCells().map((cell) => (
+                        <td key={cell.id} className={styles.px2Py2_2}>
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </Box>
+                        </td>
                       ))}
-                    </Box>
+                    </tr>
                     {open && (
-                      <Box as="tr">
-                        <Box as="td" colSpan={colSpan} sx={{ p: 0, bg: 'canvas.inset' }}>
-                          <Box sx={{ pl: 4, py: 2 }}>
+                      <tr>
+                        <td colSpan={colSpan} className={styles.p0BgCanvasInset}>
+                          <div className={styles.pl4Py2}>
                             <JobsTable entry={jobsByRun[row.original.id]} owner={owner} repo={repo} />
-                          </Box>
-                        </Box>
-                      </Box>
+                          </div>
+                        </td>
+                      </tr>
                     )}
                   </Fragment>
                 );
               })
             )}
-          </Box>
-        </Box>
-      </Box>
+          </tbody>
+        </table>
+      </div>
       )}
 
       {timelineRun && (
@@ -491,6 +483,6 @@ export function FlowRunsGrid({
           onClose={() => setSummaryRun(null)}
         />
       )}
-    </Box>
+    </div>
   );
 }

@@ -1,0 +1,12 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
+
+.label {
+  font-size: var(--text-body-size-small);
+  white-space: nowrap;
+}

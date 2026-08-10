@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 /**
  * Catches render/lifecycle errors anywhere below it and shows the message
@@ -15,6 +16,14 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   componentDidCatch(error: Error, info: ErrorInfo) {
     // eslint-disable-next-line no-console
     console.error('Job Monitor crashed:', error, info.componentStack);
+    // The highest-value crash source in the app: this is the failure a user actually sees, and
+    // the component stack usually says which view caused it. The message is deliberately not
+    // passed — only the type, the stack and the component path (see docs/telemetry.md).
+    Telemetry.reportCrash({
+      name: error.name,
+      stack: error.stack,
+      componentStack: info.componentStack ?? undefined,
+    });
   }
 
   render() {
@@ -39,6 +48,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
           <button
             onClick={() => {
               try {
+                // Worth knowing how often people reach for the escape hatch: a rising count is a
+                // signal about storage bugs that nothing else in the telemetry would show.
+                Telemetry.featureUsed(Feature.LOCAL_DATA_RESET);
                 localStorage.clear();
                 indexedDB.deleteDatabase('job-monitor');
               } catch {

@@ -1,0 +1,175 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+}
+
+.width {
+  width: 16px;
+  height: 16px;
+}
+
+.p3 {
+  padding: var(--base-size-16);
+  border-top: 1px solid;
+  border-color: var(--borderColor-muted);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+}
+
+.boldFgDefault {
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-default);
+  font-size: var(--text-body-size-medium);
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.flexGap1 {
+  display: flex;
+  gap: var(--base-size-4);
+  flex-shrink: 0;
+}
+
+.flexBgCanvasSubtle {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--base-size-24);
+  background-color: var(--bgColor-muted);
+  border-radius: var(--borderRadius-large);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+}
+
+.smallMt2 {
+  font-size: var(--text-body-size-small);
+  margin-top: var(--base-size-8);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.flexGap2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-8);
+  min-width: 0px;
+}
+
+.flexGap1_2 {
+  display: flex;
+  gap: var(--base-size-4);
+  flex-wrap: wrap;
+}
+
+.px3Pb3 {
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-bottom: var(--base-size-16);
+}
+
+.mb3Body {
+  margin-bottom: var(--base-size-16);
+  font-size: var(--text-body-size-medium);
+}
+
+.flexCenter4 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  margin-bottom: var(--base-size-16);
+}
+
+.title {
+  font-size: var(--text-title-size-medium);
+}
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.tipWide {
+  --tooltip-max: 360px;
+}
+
+.card {
+  border: 1px solid var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  background-color: var(--bgColor-default);
+  margin-bottom: var(--base-size-16);
+}
+
+.stage {
+  font-size: var(--text-body-size-medium);
+  white-space: nowrap;
+  color: var(--fgColor-default);
+}
+
+/* A stage nothing has reached yet. */
+.stagePending {
+  composes: stage;
+  color: var(--fgColor-muted);
+}
+
+.stageNote {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.stageNoteStuck {
+  composes: stageNote;
+  color: var(--fgColor-danger);
+}
+
+.step {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  white-space: nowrap;
+}
+
+/* Nothing to do here — the row is present but not inviting a click. */
+.disabled {
+  color: var(--fgColor-muted);
+  cursor: not-allowed;
+}

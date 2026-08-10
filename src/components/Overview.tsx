@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Box, BranchName, Button, Heading, IconButton, Label, Octicon, Spinner, Text } from '@primer/react';
+import { BranchName, Button, Heading, IconButton, Label, Spinner, Text } from '@primer/react';
 import {
   ChecklistIcon,
   CheckCircleFillIcon,
@@ -35,24 +35,19 @@ import { RerunFailedJobsButton } from './RerunFailedJobsButton';
 import { PromptDialog } from './PromptDialog';
 import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { runIdFromUrl } from '../api/endpoints';
+import styles from './Overview.module.css';
+import { Icon } from './Icon';
+import { Feature, Telemetry } from '../lib/telemetry';
 
+/** The card's left edge, keyed by status. A CSS value, since it is chosen at runtime. */
 const STATUS_BORDER: Record<OverallStatus, string> = {
-  success: 'success.emphasis',
-  failure: 'danger.emphasis',
-  pending: 'attention.emphasis',
-  in_progress: 'attention.emphasis',
-  neutral: 'border.default',
-  unknown: 'border.default',
+  success: 'var(--bgColor-success-emphasis)',
+  failure: 'var(--bgColor-danger-emphasis)',
+  pending: 'var(--bgColor-attention-emphasis)',
+  in_progress: 'var(--bgColor-attention-emphasis)',
+  neutral: 'var(--borderColor-default)',
+  unknown: 'var(--borderColor-default)',
 };
-
-const titleSx = {
-  fontWeight: 'bold',
-  flex: 1,
-  minWidth: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-} as const;
 
 function open(url: string | null | undefined) {
   if (url) window.open(url, '_blank', 'noopener');
@@ -81,7 +76,7 @@ function Tile({
   dnd?: TileDnd;
 }) {
   return (
-    <Box
+    <div
       id={dnd ? `flow-tile-${dnd.flowId}` : undefined}
       onDragOver={
         dnd
@@ -103,52 +98,34 @@ function Tile({
             }
           : undefined
       }
-      sx={{
-        position: 'relative',
-        bg: 'canvas.default',
-        color: 'fg.default',
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderLeft: '4px solid',
-        borderLeftColor: STATUS_BORDER[status],
-        borderRadius: 2,
-        p: 3,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-        opacity: dnd?.dragging ? 0.4 : 1,
-        boxShadow: dnd?.dropBefore
-          ? 'inset 3px 0 0 0 var(--fgColor-accent, #2f81f7)'
+      className={
+        dnd?.dropBefore
+          ? styles.cardDropBefore
           : dnd?.dropAfter
-            ? 'inset -3px 0 0 0 var(--fgColor-accent, #2f81f7)'
-            : 'none',
-        ':hover': { borderColor: 'border.muted' },
-      }}
+            ? styles.cardDropAfter
+            : dnd?.dragging
+              ? styles.cardDragging
+              : styles.card
+      }
+      style={{ borderLeftColor: STATUS_BORDER[status] }}
     >
-      <Box
+      <div
         role="button"
         tabIndex={0}
         onClick={onOpen}
         onKeyDown={(e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && onOpen()}
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', flex: 1 }}
+        className={styles.flexCol}
       >
         {children}
-      </Box>
+      </div>
       {actions && (
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 1,
-            pt: 2,
-            borderTop: '1px solid',
-            borderColor: 'border.muted',
-          }}
+        <div
+          className={styles.flexEnd}
         >
           {actions}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -310,9 +287,8 @@ export function Overview({
           ) : undefined
         }
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box
-            as="span"
+        <div className={styles.flexCenter}>
+          <span
             draggable
             title="Drag to reorder"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
@@ -324,61 +300,61 @@ export function Overview({
               setDragId(flow.id);
             }}
             onDragEnd={resetDrag}
-            sx={{ display: 'flex', flexShrink: 0, cursor: 'grab', color: 'fg.muted' }}
+            className={styles.flexGrab}
           >
-            <Octicon icon={GrabberIcon} size={16} />
-          </Box>
+            <GrabberIcon size={16} />
+          </span>
           <StatusBadge status={status} withText={false} size={18} />
-          <Text sx={titleSx}>{flow.name}</Text>
-          <Octicon icon={ChevronRightIcon} size={14} sx={{ color: 'fg.muted' }} />
-        </Box>
+          <Text className={styles.boldGrow}>{flow.name}</Text>
+          <ChevronRightIcon size={14} className={styles.fgMuted} />
+        </div>
         {run ? (
           <>
-            <Text sx={{ fontSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Text className={styles.smallNowrap}>
               latest: {run.display_title || run.name || 'run'}{' '}
-              <Text as="span" sx={{ color: 'fg.muted' }}>#{run.run_number}</Text>
+              <Text as="span" className={styles.fgMuted}>#{run.run_number}</Text>
             </Text>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
+            <div className={styles.flexCenter2}>
               <Label variant="secondary">{run.event}</Label>
-              <Text sx={{ fontSize: 0 }}>{formatRelative(run.run_started_at ?? run.created_at)}</Text>
-            </Box>
+              <Text className={styles.small}>{formatRelative(run.run_started_at ?? run.created_at)}</Text>
+            </div>
           </>
         ) : (
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>{state ? 'no runs yet' : 'loading…'}</Text>
+          <Text className={styles.smallFgMuted}>{state ? 'no runs yet' : 'loading…'}</Text>
         )}
       </Tile>
     );
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
-        <Octicon
+    <div>
+      <div className={styles.flexCenter3}>
+        <Icon
           icon={totalFailing > 0 ? WorkflowIcon : CheckCircleFillIcon}
           size={20}
-          sx={{ color: totalFailing > 0 ? 'danger.fg' : 'success.fg' }}
+          className={totalFailing > 0 ? styles.failingCountBad : styles.failingCount}
         />
-        <Heading as="h2" sx={{ fontSize: 3 }}>
+        <Heading as="h2" className={styles.title}>
           {totalFailing > 0 ? `${totalFailing} failing` : 'All green'}
         </Heading>
-        <Text sx={{ color: 'fg.muted' }}>
+        <Text className={styles.fgMuted}>
           across {prs.length} PRs and {visibleFlows.length} flows
         </Text>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
         {(isFetchingList || isFetchingChecks) && <Spinner size="small" />}
         <Button leadingVisual={SyncIcon} size="small" onClick={refreshEverything}>
           Refresh
         </Button>
-      </Box>
+      </div>
 
-      <Heading as="h3" sx={{ fontSize: 1, color: 'fg.muted', mb: 2 }}>
-        <Octicon icon={GitPullRequestIcon} size={14} sx={{ mr: 1 }} />
+      <Heading as="h3" className={styles.bodyFgMuted}>
+        <GitPullRequestIcon size={14} className={styles.mr1} />
         Pull requests
       </Heading>
       {prs.length === 0 ? (
-        <Text sx={{ color: 'fg.muted' }}>No open pull requests.</Text>
+        <Text className={styles.fgMuted}>No open pull requests.</Text>
       ) : (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2, mb: 4 }}>
+        <div className={styles.gridGap2}>
           {prs.map((entry) => (
             <Tile
               key={entry.pr.number}
@@ -412,38 +388,41 @@ export function Overview({
                 </>
               }
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <div className={styles.flexCenter}>
                 <StatusBadge status={entry.overall} withText={false} size={18} />
-                <Text sx={titleSx}>{entry.pr.title}</Text>
-                <Octicon icon={ChevronRightIcon} size={14} sx={{ color: 'fg.muted' }} />
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-                <Text sx={{ fontSize: 0 }}>#{entry.pr.number}</Text>
-                <BranchName as="span" sx={{ fontSize: 0 }}>{entry.pr.head.ref}</BranchName>
-              </Box>
+                <Text className={styles.boldGrow}>{entry.pr.title}</Text>
+                <ChevronRightIcon size={14} className={styles.fgMuted} />
+              </div>
+              <div className={styles.flexCenter2}>
+                <Text className={styles.small}>#{entry.pr.number}</Text>
+                <BranchName as="span" className={styles.small}>{entry.pr.head.ref}</BranchName>
+              </div>
             </Tile>
           ))}
-        </Box>
+        </div>
       )}
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        <Heading as="h3" sx={{ fontSize: 1, color: 'fg.muted' }}>
-          <Octicon icon={WorkflowIcon} size={14} sx={{ mr: 1 }} />
+      <div className={styles.flexCenter4}>
+        <Heading as="h3" className={styles.bodyFgMuted2}>
+          <WorkflowIcon size={14} className={styles.mr1} />
           Flows
         </Heading>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
         <Button
           leadingVisual={PlusIcon}
           size="small"
-          onClick={() => setGroupPrompt({ mode: 'create' })}
+          onClick={() => {
+                Telemetry.featureUsed(Feature.FLOW_GROUP_CREATED);
+                setGroupPrompt({ mode: 'create' });
+              }}
         >
           New group
         </Button>
-      </Box>
+      </div>
       {config.flows.length === 0 ? (
-        <Text sx={{ color: 'fg.muted' }}>No flows configured — add one in Settings.</Text>
+        <Text className={styles.fgMuted}>No flows configured — add one in Settings.</Text>
       ) : flows.length === 0 && resolving ? (
-        <Text sx={{ color: 'fg.muted' }}>Matching workflows against the configured regex…</Text>
+        <Text className={styles.fgMuted}>Matching workflows against the configured regex…</Text>
       ) : (
         sections.map((section) => {
           const group = section.group;
@@ -454,7 +433,7 @@ export function Overview({
           const collapsed = group?.collapsed ?? false;
           const isDropTarget = Boolean(dragId) && dropGroup === groupKey;
           return (
-            <Box
+            <div
               key={groupKey || '__ungrouped'}
               onDragOver={
                 dragId
@@ -473,31 +452,23 @@ export function Overview({
                     }
                   : undefined
               }
-              sx={{
-                mb: 2,
-                py: 1,
-                borderRadius: 2,
-                border: '1px dashed',
-                borderColor: isDropTarget ? 'accent.emphasis' : 'transparent',
-                bg: isDropTarget ? 'accent.subtle' : 'transparent',
-                transition: 'border-color 0.12s, background-color 0.12s',
-              }}
+              className={isDropTarget ? styles.dropZoneActive : styles.dropZone}
             >
               {/* With no groups at all, there's just one ungrouped list — skip the header. */}
               {(group || config.groups.length > 0) && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 1 }}>
+                <div className={collapsed ? styles.groupHeaderCollapsed : styles.groupHeader}>
                   <IconButton
                     size="small"
                     variant="invisible"
                     aria-label={collapsed ? 'Expand group' : 'Collapse group'}
                     icon={collapsed ? ChevronRightIcon : ChevronDownIcon}
                     onClick={() => group && setCollapsed(group.id, !collapsed)}
-                    sx={{ visibility: group ? 'visible' : 'hidden' }}
+                    className={group ? undefined : styles.hiddenControl}
                   />
-                  <Heading as="h4" sx={{ fontSize: 0, color: group ? 'fg.default' : 'fg.muted' }}>
+                  <Heading as="h4" className={group ? styles.groupNameNamed : styles.groupName}>
                     {group ? group.name : 'Ungrouped'}
                   </Heading>
-                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
+                  <Text className={styles.smallFgMuted}>· {visible.length}</Text>
                   <GroupStatusCounts
                     verdicts={visible.map((f) => groupVerdict(flowStates.get(f.id)?.runs ?? []))}
                   />
@@ -506,14 +477,17 @@ export function Overview({
                     <Button
                       size="small"
                       variant="invisible"
-                      sx={{ color: 'attention.fg', fontSize: 0 }}
+                      className={styles.attentionFgSmall}
                       title={`Placed here but not available right now:\n${section.pinnedMissing.map(describeId).join('\n')}\n\nClick to review / remove.`}
-                      onClick={() => setCleanupOpen(true)}
+                      onClick={() => {
+                        Telemetry.featureUsed(Feature.FLOW_UNMATCHED_DIALOG_OPENED);
+                        setCleanupOpen(true);
+                      }}
                     >
                       {section.pinnedMissing.length} unmatched
                     </Button>
                   )}
-                  <Box sx={{ flex: 1 }} />
+                  <div className={styles.grow} />
                   {group && (
                     <>
                       <IconButton
@@ -521,7 +495,10 @@ export function Overview({
                         variant="invisible"
                         aria-label="Rename group"
                         icon={PencilIcon}
-                        onClick={() => setGroupPrompt({ mode: 'rename', group })}
+                        onClick={() => {
+                          Telemetry.featureUsed(Feature.FLOW_EDITED);
+                          setGroupPrompt({ mode: 'rename', group });
+                        }}
                       />
                       <IconButton
                         size="small"
@@ -535,29 +512,21 @@ export function Overview({
                       />
                     </>
                   )}
-                </Box>
+                </div>
               )}
               {!collapsed &&
                 (visible.length > 0 ? (
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 2 }}>
+                  <div className={styles.gridGap2_2}>
                     {visible.map(renderFlowTile)}
-                  </Box>
+                  </div>
                 ) : (
-                  <Box
-                    sx={{
-                      p: 3,
-                      textAlign: 'center',
-                      color: 'fg.muted',
-                      fontSize: 0,
-                      border: '1px dashed',
-                      borderColor: 'border.muted',
-                      borderRadius: 2,
-                    }}
+                  <div
+                    className={styles.p3TextCenter}
                   >
                     {group ? 'Drop flows here' : 'No ungrouped flows'}
-                  </Box>
+                  </div>
                 ))}
-            </Box>
+            </div>
           );
         })
       )}
@@ -607,6 +576,6 @@ export function Overview({
           onClose={() => setGroupPrompt(null)}
         />
       )}
-    </Box>
+    </div>
   );
 }

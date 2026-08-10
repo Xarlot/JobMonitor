@@ -1,0 +1,140 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexGap2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.monoFgMuted {
+  font-family: var(--fontStack-monospace);
+  color: var(--fgColor-muted);
+  flex-shrink: 0;
+}
+
+.flexShrink {
+  flex-shrink: 0;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.m0Mt1 {
+  margin: 0;
+  margin-top: var(--base-size-4);
+  margin-left: 18px;
+  padding: var(--base-size-8);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  background-color: var(--bgColor-inset);
+  border-radius: var(--borderRadius-large);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.flexGap2_2 {
+  display: flex;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.maxWidth {
+  max-width: 720px;
+}
+
+.titleMb2 {
+  font-size: var(--text-title-size-medium);
+  margin-bottom: var(--base-size-8);
+}
+
+.flexGap3 {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+  margin-bottom: var(--base-size-16);
+}
+
+.width {
+  width: 260px;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-bottom: var(--base-size-4);
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.flexGap2_3 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-8);
+  flex-wrap: wrap;
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.rounded {
+  border: 1px solid;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  overflow: hidden;
+}
+
+.record {
+  border-bottom: 1px solid var(--borderColor-muted);
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+}
+
+.record:hover {
+  background-color: var(--bgColor-muted);
+}
+
+/* A bare disclosure caret: no button chrome, just the arrow. */
+.caret {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  width: 16px;
+  flex-shrink: 0;
+  cursor: default;
+  color: var(--fgColor-muted);
+}
+
+.caretActive {
+  composes: caret;
+  cursor: pointer;
+}
+
+.scope {
+  font-family: var(--fontStack-monospace);
+  flex-shrink: 0;
+  min-width: 130px;
+}
+
+.message {
+  word-break: break-word;
+  color: var(--fgColor-default);
+}
+
+/* A record the log could not parse: shown, but visibly not trusted. */
+.messageMalformed {
+  composes: message;
+  color: var(--fgColor-muted);
+}

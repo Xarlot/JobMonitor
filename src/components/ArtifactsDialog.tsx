@@ -1,30 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Checkbox, Flash, IconButton, Label, Spinner, Text } from '@primer/react';
+import { Button, Checkbox, Flash, IconButton, Label, Spinner, Text } from '@primer/react';
 import { DownloadIcon, FileZipIcon } from '@primer/octicons-react';
 import type { Artifact, ArtifactsResponse } from '../api/types';
-import { ghGet, ghGetBlob, GitHubApiError } from '../api/githubClient';
-import { artifactZipPath, runArtifactsPath } from '../api/endpoints';
-import { artifactFileName } from '../lib/downloadArtifact';
+import { ghGet, GitHubApiError } from '../api/githubClient';
+import { runArtifactsPath } from '../api/endpoints';
+import { artifactFileName, fetchArtifactZip } from '../lib/downloadArtifact';
 import { bundleArtifacts, type BundleProgress } from '../lib/artifactBundle';
 import { formatBytes } from '../lib/format';
 import { useDownloads } from '../context/DownloadsContext';
 import { isDesktop } from '../storage/desktopSecret';
 import { Modal } from './Modal';
+import { Feature, Operation, Telemetry } from '../lib/telemetry';
+import styles from './ArtifactsDialog.module.css';
 
 type LoadState =
   | { phase: 'loading' }
   | { phase: 'loaded'; artifacts: Artifact[] }
   | { phase: 'error'; message: string };
-
-const cellSx = {
-  px: 2,
-  py: '8px',
-  borderColor: 'border.muted',
-  borderBottomWidth: 1,
-  borderBottomStyle: 'solid',
-  fontSize: 1,
-  verticalAlign: 'middle',
-} as const;
 
 /**
  * Lists a run's artifacts in a scrollable grid (sorted by name) and downloads
@@ -57,7 +49,9 @@ export function ArtifactsDialog({
 
   useEffect(() => {
     let active = true;
-    ghGet<ArtifactsResponse>(runArtifactsPath(owner, repo, runId))
+    void Telemetry.measure(Operation.GH_ARTIFACT_LIST, () =>
+      ghGet<ArtifactsResponse>(runArtifactsPath(owner, repo, runId)),
+    )
       .then(({ data }) => {
         if (!active) return;
         const sorted = [...(data.artifacts ?? [])].sort((a, b) => a.name.localeCompare(b.name));
@@ -91,9 +85,10 @@ export function ArtifactsDialog({
     setSelected(allSelected ? new Set() : new Set(usable.map((a) => a.id)));
 
   const downloadOne = (a: Artifact) => {
+    Telemetry.featureUsed(Feature.ARTIFACT_DOWNLOADED);
     const filename = artifactFileName(a.name);
     const producer = async () => ({
-      data: await ghGetBlob(artifactZipPath(owner, repo, a.id)),
+      data: await fetchArtifactZip(owner, repo, a.id),
       filename,
     });
     // Desktop: hand off to the downloads panel and close this dialog so the panel
@@ -113,6 +108,7 @@ export function ArtifactsDialog({
   const downloadBundle = (items: Artifact[]) => {
     if (items.length === 0) return;
     const filename = bundleName.toLowerCase().endsWith('.zip') ? bundleName : `${bundleName}.zip`;
+    Telemetry.featureUsed(Feature.ARTIFACT_BUNDLE_DOWNLOADED);
     const producer = (report: (p: { done?: number; total?: number; phase?: string }) => void) =>
       bundleArtifacts(owner, repo, items, (p) => {
         report({ done: p.done, total: p.total, phase: p.current });
@@ -136,7 +132,7 @@ export function ArtifactsDialog({
 
   const footer = state.phase === 'loaded' && usable.length > 0 && (
     <>
-      <Text sx={{ fontSize: 0, color: 'fg.muted', alignSelf: 'center', mr: 'auto' }}>
+      <Text className={styles.smallFgMuted}>
         {bundling
           ? `Bundling ${bundling.done}/${bundling.total}…`
           : `${selectedUsable.length} selected`}
@@ -162,65 +158,59 @@ export function ArtifactsDialog({
   return (
     <Modal title={title} subtitle={subtitle} onClose={onClose} footer={footer || undefined}>
       {state.phase === 'loading' && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, color: 'fg.muted' }}>
+        <div className={styles.flexCenter}>
           <Spinner size="small" /> <Text>Loading artifacts…</Text>
-        </Box>
+        </div>
       )}
       {state.phase === 'error' && (
-        <Flash variant="danger" sx={{ fontSize: 1 }}>{state.message}</Flash>
+        <Flash variant="danger" className={styles.body}>{state.message}</Flash>
       )}
       {state.phase === 'loaded' && artifacts.length === 0 && (
-        <Text sx={{ color: 'fg.muted' }}>No artifacts for this run.</Text>
+        <Text className={styles.fgMuted}>No artifacts for this run.</Text>
       )}
       {state.phase === 'loaded' && artifacts.length > 0 && (
         <>
-          {error && <Flash variant="danger" sx={{ mb: 2, fontSize: 1 }}>{error}</Flash>}
-          <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
-            <Box as="thead">
-              <Box as="tr">
-                <Box as="th" sx={{ ...cellSx, width: 36, fontWeight: 'bold' }}>
+          {error && <Flash variant="danger" className={styles.mb2Body}>{error}</Flash>}
+          <table className={styles.width}>
+            <thead>
+              <tr>
+                <th className={styles.px2Body}>
                   <Checkbox
                     checked={allSelected}
                     indeterminate={!allSelected && selectedUsable.length > 0}
                     onChange={toggleAll}
                     aria-label="Select all artifacts"
                   />
-                </Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'left', color: 'fg.muted' }}>Name</Box>
-                <Box as="th" sx={{ ...cellSx, textAlign: 'right', color: 'fg.muted', width: 110 }}>Size</Box>
-                <Box as="th" sx={{ ...cellSx, width: 56 }} />
-              </Box>
-            </Box>
-            <Box as="tbody">
+                </th>
+                <th className={styles.px2Body2}>Name</th>
+                <th className={styles.px2Body3}>Size</th>
+                <th className={styles.px2Body4} />
+              </tr>
+            </thead>
+            <tbody>
               {artifacts.map((a) => (
-                <Box as="tr" key={a.id}>
-                  <Box as="td" sx={cellSx}>
+                <tr key={a.id}>
+                  <td className={styles.px2Body5}>
                     <Checkbox
                       checked={selected.has(a.id)}
                       disabled={a.expired || busy}
                       onChange={() => toggle(a.id)}
                       aria-label={`Select ${a.name}`}
                     />
-                  </Box>
-                  <Box as="td" sx={cellSx}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  </td>
+                  <td className={styles.px2Body5}>
+                    <div className={styles.flexCenter2}>
                       <FileZipIcon />
-                      <Text sx={{ fontWeight: 'bold' }}>{a.name}</Text>
+                      <Text className={styles.bold}>{a.name}</Text>
                       {a.expired && <Label variant="secondary">expired</Label>}
-                    </Box>
-                  </Box>
-                  <Box as="td" sx={{ ...cellSx, textAlign: 'right', color: 'fg.muted', whiteSpace: 'nowrap' }}>
+                    </div>
+                  </td>
+                  <td className={styles.px2Body6}>
                     {formatBytes(a.size_in_bytes)}
-                  </Box>
-                  <Box as="td" sx={{ ...cellSx, textAlign: 'right' }}>
-                    <Box
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 28,
-                        height: 28,
-                      }}
+                  </td>
+                  <td className={styles.px2Body7}>
+                    <div
+                      className={styles.centerCentred}
                     >
                       {downloadingId === a.id ? (
                         <Spinner size="small" />
@@ -234,12 +224,12 @@ export function ArtifactsDialog({
                           onClick={() => void downloadOne(a)}
                         />
                       )}
-                    </Box>
-                  </Box>
-                </Box>
+                    </div>
+                  </td>
+                </tr>
               ))}
-            </Box>
-          </Box>
+            </tbody>
+          </table>
         </>
       )}
     </Modal>

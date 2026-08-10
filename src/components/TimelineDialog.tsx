@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, Spinner, Text } from '@primer/react';
+import { Button, Flash, Spinner, Text } from '@primer/react';
 import type { OverallStatus, WorkflowRun } from '../api/types';
 import { fetchAllRunJobs } from '../api/jobs';
 import { statusToOverall } from '../lib/status';
 import { formatDuration } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
+import styles from './TimelineDialog.module.css';
 
 export interface GanttItem {
   id: string | number;
@@ -21,16 +22,19 @@ export interface GanttItem {
 }
 
 const BAR_COLOR: Record<OverallStatus, string> = {
-  success: 'success.emphasis',
-  failure: 'danger.emphasis',
-  in_progress: 'attention.emphasis',
-  pending: 'attention.emphasis',
-  neutral: 'neutral.emphasis',
-  unknown: 'neutral.muted',
+  success: 'var(--bgColor-success-emphasis)',
+  failure: 'var(--bgColor-danger-emphasis)',
+  in_progress: 'var(--bgColor-attention-emphasis)',
+  pending: 'var(--bgColor-attention-emphasis)',
+  neutral: 'var(--bgColor-neutral-emphasis)',
+  unknown: 'var(--bgColor-neutral-muted)',
 };
 
 const LABEL_W = 220;
 const DUR_W = 72;
+
+/** Label, bar, duration — shared so the legend and the rows line up by construction. */
+const TIMELINE_COLUMNS = `${LABEL_W}px 1fr ${DUR_W}px`;
 const ALLOC_HATCH =
   'repeating-linear-gradient(45deg, var(--fgColor-muted, rgba(110,118,129,0.6)) 0 3px, transparent 3px 6px)';
 
@@ -48,7 +52,7 @@ function GanttChart({ items }: { items: GanttItem[] }) {
   });
   const valid = timed.filter((i) => !Number.isNaN(i.start));
   if (valid.length === 0) {
-    return <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No timing data available.</Text>;
+    return <Text className={styles.smallFgMuted}>No timing data available.</Text>;
   }
 
   const minStart = Math.min(...valid.map((i) => i.start));
@@ -63,40 +67,33 @@ function GanttChart({ items }: { items: GanttItem[] }) {
   });
 
   return (
-    <Box>
+    <div>
       {/* axis */}
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: `${LABEL_W}px 1fr ${DUR_W}px`,
-          alignItems: 'center',
-          mb: 2,
-          fontSize: 0,
-          color: 'fg.muted',
-        }}
+      <div
+        className={styles.legend} style={{ gridTemplateColumns: TIMELINE_COLUMNS }}
       >
         <Text>Item</Text>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div className={styles.flexBetween}>
           <span>0s</span>
           <span>total {formatDuration(minStartIso, maxEndIso)}</span>
-        </Box>
-        <Text sx={{ textAlign: 'right' }}>Duration</Text>
-      </Box>
+        </div>
+        <Text className={styles.textRight}>Duration</Text>
+      </div>
 
       {anyAlloc && (
-        <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', mb: 2, fontSize: 0, color: 'fg.muted' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 16, height: 10, borderRadius: 1, bg: 'neutral.muted', backgroundImage: ALLOC_HATCH }} />
+        <div className={styles.flexGap3}>
+          <div className={styles.flexCenter}>
+            <div className={styles.swatch} style={{ backgroundImage: ALLOC_HATCH }} />
             runner allocation (queue + setup)
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 16, height: 10, borderRadius: 1, bg: 'accent.emphasis' }} />
+          </div>
+          <div className={styles.flexCenter}>
+            <div className={styles.roundedBgAccentEmphasis} />
             payload (work)
-          </Box>
-        </Box>
+          </div>
+        </div>
       )}
 
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <div className={styles.flexCol}>
         {sorted.map((i) => {
           const hasTime = !Number.isNaN(i.start);
           const allocEnd = i.allocationEndIso ? Date.parse(i.allocationEndIso) : NaN;
@@ -123,74 +120,44 @@ function GanttChart({ items }: { items: GanttItem[] }) {
             : `starts +${offsetLabel} · runs ${payloadLabel}`;
 
           return (
-            <Box
+            <div
               key={i.id}
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: `${LABEL_W}px 1fr ${DUR_W}px`,
-                alignItems: 'center',
-                gap: 2,
-              }}
+              className={styles.row} style={{ gridTemplateColumns: TIMELINE_COLUMNS }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+              <div className={styles.flexCenter2}>
                 <StatusBadge status={i.status} withText={false} size={14} />
                 <Text
-                  sx={{ fontSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  className={styles.smallNowrap}
                   title={i.label}
                 >
                   {i.label}
                 </Text>
-              </Box>
-              <Box
+              </div>
+              <div
                 title={barTitle}
-                sx={{
-                  position: 'relative',
-                  height: 18,
-                  bg: 'canvas.subtle',
-                  borderRadius: 2,
-                  backgroundImage:
-                    'linear-gradient(90deg, var(--borderColor-muted, rgba(0,0,0,0.08)) 0 1px, transparent 1px)',
-                  backgroundSize: '25% 100%',
-                }}
+                className={styles.relativeBgCanvasSubtle}
               >
                 {hasSplit && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: 2,
-                      height: 14,
-                      left: `${startPct}%`,
-                      width: `${allocWidthPct}%`,
-                      minWidth: '1px',
-                      bg: 'neutral.muted',
-                      backgroundImage: ALLOC_HATCH,
-                      borderRadius: 2,
-                    }}
+                  <div
+                    className={styles.barAlloc}
+                style={{ left: `${startPct}%`, width: `${allocWidthPct}%`, backgroundImage: ALLOC_HATCH }}
                   />
                 )}
                 {hasTime && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: 2,
-                      height: 14,
-                      left: `${payloadLeftPct}%`,
-                      width: `${payloadWidthPct}%`,
-                      minWidth: '2px',
-                      bg: BAR_COLOR[i.status],
-                      borderRadius: 2,
-                    }}
+                  <div
+                    className={styles.barPayload}
+                style={{ left: `${payloadLeftPct}%`, width: `${payloadWidthPct}%`, backgroundColor: BAR_COLOR[i.status] }}
                   />
                 )}
-              </Box>
-              <Text sx={{ fontSize: 0, color: 'fg.muted', textAlign: 'right', whiteSpace: 'nowrap' }}>
+              </div>
+              <Text className={styles.smallFgMuted2}>
                 {payloadLabel}
               </Text>
-            </Box>
+            </div>
           );
         })}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
@@ -217,15 +184,15 @@ export function TimelineDialog({
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
     >
-      <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', mb: 3 }}>
+      <Text className={styles.smallFgMuted3}>
         Bars show each item’s start offset and duration relative to the earliest start.
       </Text>
       {loading ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-          <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading…</Text>
-        </Box>
+        <div className={styles.flexCenter3}>
+          <Spinner size="small" /> <Text className={styles.small}>Loading…</Text>
+        </div>
       ) : error ? (
-        <Flash variant="danger" sx={{ fontSize: 0 }}>{error}</Flash>
+        <Flash variant="danger" className={styles.small}>{error}</Flash>
       ) : (
         <GanttChart items={items} />
       )}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, Spinner, Text } from '@primer/react';
+import { Button, Flash, Spinner, Text } from '@primer/react';
 import type { Job } from '../api/types';
 import { ghGet } from '../api/githubClient';
 import { singleJobPath } from '../api/endpoints';
 import { Modal } from './Modal';
 import { JobSummaryDialog } from './JobSummaryDialog';
 import { JobLogsDialog } from './JobLogsDialog';
+import styles from './CheckRunDialog.module.css';
 
 /**
  * For a PR check-run that maps to an Actions job, fetch the single job (to get
@@ -40,16 +41,16 @@ export function CheckRunDialog({
   if (error) {
     return (
       <Modal title="Check" onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
-        <Flash variant="danger" sx={{ fontSize: 0 }}>{error}</Flash>
+        <Flash variant="danger" className={styles.small}>{error}</Flash>
       </Modal>
     );
   }
   if (!job) {
     return (
       <Modal title="Loading…" onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-          <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading job…</Text>
-        </Box>
+        <div className={styles.flexCenter}>
+          <Spinner size="small" /> <Text className={styles.small}>Loading job…</Text>
+        </div>
       </Modal>
     );
   }

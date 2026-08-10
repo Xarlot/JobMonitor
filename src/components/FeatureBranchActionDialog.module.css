@@ -1,0 +1,77 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+  font-size: var(--text-body-size-medium);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.flexGap2 {
+  display: flex;
+  gap: var(--base-size-8);
+}
+
+.bodyMb3 {
+  font-size: var(--text-body-size-medium);
+  margin-bottom: var(--base-size-16);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+}
+
+.bodyFgMuted {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+}
+
+.smallMb3 {
+  font-size: var(--text-body-size-small);
+  margin-bottom: var(--base-size-16);
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.bodyMb2 {
+  font-size: var(--text-body-size-medium);
+  margin-bottom: var(--base-size-8);
+}
+
+.bodyFgMuted2 {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+  margin-bottom: 0;
+}
+
+.bodyMb0 {
+  font-size: var(--text-body-size-medium);
+  margin-bottom: 0;
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}

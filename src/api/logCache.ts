@@ -8,6 +8,7 @@
 import { ghGetText } from './githubClient';
 import { jobLogsPath } from './endpoints';
 import { devLog, devWarn } from '../lib/devLog';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 interface LogEntry {
   text: string;
@@ -58,6 +59,15 @@ export function hasCachedLog(
 }
 
 export async function fetchJobLog(
+  owner: string,
+  repo: string,
+  jobId: number,
+  ttlMs: number,
+): Promise<string> {
+  return Telemetry.measure(Operation.GH_JOB_LOG_FETCH, () => fetchJobLog__impl(owner, repo, jobId, ttlMs));
+}
+
+async function fetchJobLog__impl(
   owner: string,
   repo: string,
   jobId: number,

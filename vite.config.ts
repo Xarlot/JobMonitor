@@ -10,9 +10,14 @@ const appVersion: string = JSON.parse(
 /**
  * Content-Security-Policy for the app.
  *
- * Production: locked down. The token is only ever sent to api.github.com, so
- * connect-src is restricted to it. styled-components (used by @primer/react v36)
- * injects <style> tags at runtime, hence style-src needs 'unsafe-inline'.
+ * Production: locked down. The token is only ever sent to api.github.com, so connect-src is
+ * restricted to it.
+ *
+ * `style-src` still allows 'unsafe-inline', but no longer because of styled-components — Primer 38
+ * ships plain CSS and that dependency is gone. What needs it now is the handful of `style`
+ * attributes carrying values that only exist at runtime: the width of a timeline bar as a
+ * percentage of a run's duration, a status colour looked up from a table. Those cannot become
+ * classes, so tightening this further would mean giving up the geometry, not just moving it.
  *
  * Dev: Vite's HMR needs inline/eval scripts and a websocket connection, so we
  * relax script-src and connect-src for `vite serve` only.
@@ -65,12 +70,12 @@ export default defineConfig(({ command }) => ({
          *
          * Not for the sake of a smaller download — the whole thing is ~290 KB gzipped
          * either way — but for **caching**. In one chunk, a one-line change to a component
-         * invalidates React, Primer and styled-components along with it, so every release
-         * re-downloads all of them. They change a few times a year; this app changes weekly.
+         * invalidates React and Primer along with it, so every release re-downloads all of
+         * them. They change a few times a year; this app changes weekly.
          *
-         * Grouped by how they version rather than by size: Primer and styled-components
-         * move together (Primer v36 renders through styled-components), and the two
-         * single-purpose libraries are separated because each is used by exactly one part
+         * Grouped by how they version rather than by size. Primer 38 renders through its own
+         * CSS modules, so the styled-components chunk that used to sit beside it is gone; the
+         * two single-purpose libraries stay separated because each is used by exactly one part
          * of the app and neither changes.
          */
         codeSplitting: {
@@ -79,12 +84,6 @@ export default defineConfig(({ command }) => ({
             // The icon set is its own package and its own release cadence, and it is large
             // enough to be worth not re-downloading with the component library.
             { name: 'octicons', test: /node_modules[\\/]@primer[\\/]octicons-react[\\/]/ },
-            // styled-components v5 is effectively frozen, so it is worth its own chunk
-            // rather than being invalidated whenever Primer moves.
-            {
-              name: 'styled',
-              test: /node_modules[\\/](styled-components|@styled-system|@emotion)[\\/]/,
-            },
             { name: 'primer', test: /node_modules[\\/]@primer[\\/]/ },
             { name: 'table', test: /node_modules[\\/]@tanstack[\\/]/ },
             { name: 'zip', test: /node_modules[\\/]fflate[\\/]/ },
@@ -98,5 +97,20 @@ export default defineConfig(({ command }) => ({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    server: {
+      deps: {
+        // Primer 38 components import their own CSS modules. Left external, Node loads them
+        // directly and throws `Unknown file extension ".css"`; inlining routes them through Vite,
+        // which resolves them the same way the app build does. Primer 36 needed nothing here
+        // because styled-components generated its styles in JavaScript.
+        inline: [/@primer[\\/]react/],
+      },
+    },
+    // The workspace packages carry their own vitest config and their own environment matrix — the
+    // telemetry schema runs its suite under both node and jsdom, which this single-environment
+    // config cannot express. Without this they would also be picked up here and run once more
+    // under the app's jsdom setup, which passes but means a failure gets reported twice from two
+    // different configurations. `npm run test:schema` runs them properly.
+    exclude: ['node_modules/**', 'dist/**', 'release/**', 'packages/**', 'server/**'],
   },
 }));

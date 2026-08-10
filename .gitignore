@@ -14,3 +14,23 @@ build/icon.png
 build/icon.ico
 build/icon.icns
 electron/tray.png
+
+# Telemetry build-time credentials: the Ably publish key, the receiver public key and the
+# deployment id. Baked into the bundle at build time (see vite.telemetry.config.ts) and never
+# committed. `.env.telemetry.example` documents the shape.
+.env.telemetry
+
+# Main-process telemetry bundle — generated from electron/telemetry/** by
+# vite.telemetry.config.ts. Built as part of `npm run build`, so it is always present in a
+# packaged app but never committed.
+electron/telemetry.bundle.cjs
+electron/telemetry.bundle.cjs.map
+
+# Receiver secrets for the Azure deploy scripts (server/azure/set-secrets.sh).
+server/azure/.env.receiver
+
+# Local development for the telemetry server: its database and its secrets. Neither is ever
+# committed — `.env.local.example` documents the shape.
+server/telemetry-receiver/.data/
+server/telemetry-receiver/.env.local
+server/telemetry-receiver/.next/

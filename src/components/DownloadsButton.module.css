@@ -1,0 +1,131 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.relative {
+  position: relative;
+  display: inline-flex;
+}
+
+.width {
+  width: 360px;
+  max-width: 90vw;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.grow {
+  flex: 1;
+}
+
+.blockP3 {
+  display: block;
+  padding: var(--base-size-16);
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+}
+
+.px3Py2 {
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-muted);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.successFg {
+  color: var(--fgColor-success);
+}
+
+.dangerFg {
+  color: var(--fgColor-danger);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.growBody {
+  flex: 1;
+  min-width: 0px;
+  font-size: var(--text-body-size-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt1Ml4 {
+  margin-top: var(--base-size-4);
+  margin-left: var(--base-size-24);
+}
+
+.mb1 {
+  margin-bottom: var(--base-size-4);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.blockMt1 {
+  display: block;
+  margin-top: var(--base-size-4);
+  margin-left: var(--base-size-24);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.blockMt1_2 {
+  display: block;
+  margin-top: var(--base-size-4);
+  margin-left: var(--base-size-24);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-danger);
+}
+
+.mt1Ml3 {
+  margin-top: var(--base-size-4);
+  margin-left: var(--base-size-16);
+}
+
+.list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding-left: var(--base-size-4);
+  padding-right: var(--base-size-4);
+  background-color: var(--bgColor-accent-emphasis);
+  color: var(--fgColor-onEmphasis);
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}

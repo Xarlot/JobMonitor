@@ -1,20 +1,12 @@
 /**
- * A thin, subtle scrollbar for scrollable overlays/dialogs — replaces the chunky
- * default OS scrollbar that looks out of place inside a modal. Themed via Primer's
- * CSS variables so it works in light and dark modes.
+ * The subtle-scrollbar class.
+ *
+ * This was an `sx` fragment spread into half a dozen scrollable panes. Primer 38 has no `sx`, and
+ * the rules are `::-webkit-scrollbar` pseudo-elements besides — which never belonged in an inline
+ * style object, because a pseudo-element cannot be expressed as one at all. It is a class now, and
+ * the call sites compose it alongside their own.
  */
-export const subtleScrollbarSx = {
-  scrollbarWidth: 'thin',
-  scrollbarColor: 'var(--borderColor-muted, rgba(110,118,129,0.4)) transparent',
-  '&::-webkit-scrollbar': { width: '10px', height: '10px' },
-  '&::-webkit-scrollbar-track': { background: 'transparent' },
-  '&::-webkit-scrollbar-thumb': {
-    backgroundColor: 'var(--borderColor-muted, rgba(110,118,129,0.4))',
-    borderRadius: '8px',
-    border: '3px solid transparent',
-    backgroundClip: 'content-box',
-  },
-  '&::-webkit-scrollbar-thumb:hover': {
-    backgroundColor: 'var(--fgColor-muted, rgba(110,118,129,0.7))',
-  },
-} as const;
+
+import styles from './scrollbar.module.css';
+
+export const subtleScrollbar = styles.subtleScrollbar;

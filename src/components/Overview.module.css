@@ -1,0 +1,220 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-8);
+  cursor: pointer;
+  flex: 1;
+}
+
+.flexEnd {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--base-size-4);
+  padding-top: var(--base-size-8);
+  border-top: 1px solid;
+  border-color: var(--borderColor-muted);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.flexGrab {
+  display: flex;
+  flex-shrink: 0;
+  cursor: grab;
+  color: var(--fgColor-muted);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.smallNowrap {
+  font-size: var(--text-body-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-24);
+}
+
+.title {
+  font-size: var(--text-title-size-medium);
+}
+
+.grow {
+  flex: 1;
+}
+
+.bodyFgMuted {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+  margin-bottom: var(--base-size-8);
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.gridGap2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-24);
+}
+
+.flexCenter4 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+}
+
+.bodyFgMuted2 {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+}
+
+.attentionFgSmall {
+  color: var(--fgColor-attention);
+  font-size: var(--text-body-size-small);
+}
+
+.gridGap2_2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--base-size-8);
+}
+
+.p3TextCenter {
+  padding: var(--base-size-16);
+  text-align: center;
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  border: 1px dashed;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+}
+
+.boldGrow {
+  font-weight: var(--base-text-weight-semibold);
+  flex: 1;
+  min-width: 0px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropZone {
+  margin-bottom: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+  border-radius: var(--borderRadius-large);
+  border: 1px dashed transparent;
+  background-color: transparent;
+  transition: border-color 120ms, background-color 120ms;
+}
+
+.dropZoneActive {
+  composes: dropZone;
+  border-color: var(--bgColor-accent-emphasis);
+  background-color: var(--bgColor-accent-muted);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  margin-bottom: var(--base-size-4);
+}
+
+/* Collapsed, the header is the whole row and has nothing beneath it to be spaced from. */
+.groupHeaderCollapsed {
+  composes: groupHeader;
+  margin-bottom: 0;
+}
+
+/* Kept in the layout so the rows below do not shift when a group has no handle. */
+.hiddenControl {
+  visibility: hidden;
+}
+
+.groupName {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.groupNameNamed {
+  composes: groupName;
+  color: var(--fgColor-default);
+}
+
+.failingCount {
+  color: var(--fgColor-success);
+}
+
+.failingCountBad {
+  composes: failingCount;
+  color: var(--fgColor-danger);
+}
+
+.card {
+  position: relative;
+  background-color: var(--bgColor-default);
+  color: var(--fgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-left: 4px solid;
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-8);
+  box-shadow: none;
+}
+
+.card:hover {
+  border-color: var(--borderColor-muted);
+}
+
+/* Dragged: faded, so the gap it will leave is visible under it. */
+.cardDragging {
+  composes: card;
+  opacity: 0.4;
+}
+
+/* An inset edge marks which side of this card the drop will land on. */
+.cardDropBefore {
+  composes: card;
+  box-shadow: inset 3px 0 0 0 var(--fgColor-accent, #2f81f7);
+}
+
+.cardDropAfter {
+  composes: card;
+  box-shadow: inset -3px 0 0 0 var(--fgColor-accent, #2f81f7);
+}

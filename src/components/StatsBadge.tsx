@@ -1,8 +1,10 @@
-import { Box, Label, Octicon } from '@primer/react';
+import { Label } from '@primer/react';
 import { Tooltip } from '@primer/react/next';
 import { PulseIcon } from '@primer/octicons-react';
 import { useRequestStats } from '../hooks/useRequestStats';
 import { useRateLimit } from '../hooks/useRateLimit';
+import styles from './StatsBadge.module.css';
+import { tooltipWrap } from '../lib/tooltipWrap';
 
 /**
  * Requests made in the last hour (sliding window). The headline counts only
@@ -40,30 +42,20 @@ export function StatsBadge() {
     // TooltipV2 hardcodes centered/nowrap-collapsing text with a 250px cap;
     // override it via a higher-specificity nested selector (class + [role]) so
     // the multi-line breakdown reads left-aligned with real line breaks.
-    <Box
-      sx={{
-        display: 'inline-flex',
-        '& [role="tooltip"]': {
-          textAlign: 'left',
-          whiteSpace: 'pre-line',
-          maxWidth: 340,
-          lineHeight: 1.5,
-          padding: '8px 10px',
-        },
-      }}
+    <div
+      className={tooltipWrap}
     >
       <Tooltip text={tip} type="description">
-        <Box
-          as="button"
+        <button
           type="button"
-          sx={{ all: 'unset', display: 'inline-flex', alignItems: 'center', cursor: 'default' }}
+          className={styles.centerDefault}
         >
           <Label variant={variant}>
-            <Octicon icon={PulseIcon} size={14} sx={{ mr: 1 }} />
+            <PulseIcon size={14} className={styles.mr1} />
             {label}
           </Label>
-        </Box>
+        </button>
       </Tooltip>
-    </Box>
+    </div>
   );
 }

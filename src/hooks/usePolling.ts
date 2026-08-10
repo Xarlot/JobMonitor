@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Telemetry, categorizeError, type Operation } from '../lib/telemetry';
 
 export interface UsePollingOptions {
   /** The async work to run on each tick and on manual refresh. */
@@ -7,6 +8,14 @@ export interface UsePollingOptions {
   enabled?: boolean;
   /** Run once immediately when first enabled. */
   runOnMount?: boolean;
+  /**
+   * Record this poll's duration and failures as a telemetry operation.
+   *
+   * Instrumented here rather than at each call site because this hook already owns exactly the two
+   * facts telemetry wants — how long the work took, and whether it threw — for every poller in the
+   * app. One optional field covers the PR list, checks, flow runs and feature branches.
+   */
+  op?: Operation;
 }
 
 export interface UsePollingResult {
@@ -26,9 +35,12 @@ export function usePolling({
   intervalMs,
   enabled = true,
   runOnMount = true,
+  op,
 }: UsePollingOptions): UsePollingResult {
   const fnRef = useRef(fn);
   fnRef.current = fn;
+  const opRef = useRef(op);
+  opRef.current = op;
 
   const [isFetching, setIsFetching] = useState(false);
   const [lastError, setLastError] = useState<Error | null>(null);
@@ -39,12 +51,17 @@ export function usePolling({
     if (inFlight.current) return;
     inFlight.current = true;
     setIsFetching(true);
+    // Not Date.now(): a poll straddling an NTP correction would otherwise report a negative or
+    // wildly inflated duration, and this hook runs on a timer for the whole life of the app.
+    const started = performance.now();
     try {
       await fnRef.current();
       setLastError(null);
       setLastUpdated(Date.now());
+      if (opRef.current) Telemetry.operationCompleted(opRef.current, performance.now() - started);
     } catch (e) {
       setLastError(e instanceof Error ? e : new Error(String(e)));
+      if (opRef.current) Telemetry.operationFailed(opRef.current, categorizeError(e));
     } finally {
       inFlight.current = false;
       setIsFetching(false);

@@ -8,6 +8,7 @@
 import { checkRunAnnotationsPath, checkRunIdFromUrl } from './endpoints';
 import { ghGet } from './githubClient';
 import type { Annotation, Job } from './types';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 export async function fetchAnnotations(
   owner: string,
@@ -40,6 +41,14 @@ export async function fetchAnnotationsOrEmpty(
  * job carries no check-run link.
  */
 export async function fetchJobAnnotations(
+  owner: string,
+  repo: string,
+  job: Job,
+): Promise<Annotation[]> {
+  return Telemetry.measure(Operation.GH_ANNOTATIONS_FETCH, () => fetchJobAnnotations__impl(owner, repo, job));
+}
+
+async function fetchJobAnnotations__impl(
   owner: string,
   repo: string,
   job: Job,

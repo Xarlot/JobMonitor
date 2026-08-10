@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, SegmentedControl, Spinner, Text } from '@primer/react';
+import { Button, Flash, SegmentedControl, Spinner, Text } from '@primer/react';
 import { SparkleFillIcon, SyncIcon } from '@primer/octicons-react';
 import { fetchJobLog, logTtlMs } from '../api/logCache';
 import { fetchRunLogViaGh } from '../storage/desktopClaude';
@@ -26,6 +26,7 @@ import { runLogCache, runLogKey } from '../storage/failureCaches';
 import { devLog, devWarn } from '../lib/devLog';
 import { LogLines } from './LogLines';
 import { MarkdownView } from './MarkdownView';
+import styles from './LogPanel.module.css';
 
 export type LogTab = 'job' | 'run' | 'claude';
 
@@ -134,8 +135,8 @@ export function LogPanel({
   const runTabReady = runLog !== null;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+    <div className={styles.flexCol}>
+      <div className={styles.flexCenter}>
         <SegmentedControl aria-label="Which log to show" size="small">
           <SegmentedControl.Button selected={tab === 'job'} onClick={() => setTab('job')}>
             Job log
@@ -145,7 +146,7 @@ export function LogPanel({
             onClick={() => setTab('run')}
             // Hidden rather than shown-and-broken: without the desktop bridge there is no
             // gh to ask, so the tab could never have content.
-            sx={{ display: ghAvailable ? undefined : 'none' }}
+            className={ghAvailable ? undefined : styles.hidden}
           >
             Whole run
           </SegmentedControl.Button>
@@ -153,13 +154,13 @@ export function LogPanel({
             selected={tab === 'claude'}
             onClick={() => setTab('claude')}
             // Gone entirely when AI is switched off, like every other AI control.
-            sx={{ display: aiAvailable ? undefined : 'none' }}
+            className={aiAvailable ? undefined : styles.hidden}
           >
             {rewrittenLog ? 'Claude ✓' : 'Claude'}
           </SegmentedControl.Button>
         </SegmentedControl>
 
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
 
         {tab !== 'claude' && (
           <Button
@@ -180,7 +181,7 @@ export function LogPanel({
           >
             {runLogState.loading ? (
               <>
-                <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+                <Spinner size="small" className={styles.mr1} />
                 Fetching…
               </>
             ) : runTabReady ? (
@@ -199,7 +200,7 @@ export function LogPanel({
           >
             {rewriteRunning ? (
               <>
-                <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+                <Spinner size="small" className={styles.mr1} />
                 Rewriting…
               </>
             ) : rewrittenLog ? (
@@ -209,9 +210,9 @@ export function LogPanel({
             )}
           </Button>
         )}
-      </Box>
+      </div>
 
-      <Box sx={{ minHeight: 0, overflowY: 'auto', flex: 1 }}>
+      <div className={styles.grow2}>
         {tab === 'job' &&
           (jobLog.text ? (
             <LogLines text={jobLog.text} showTimestamps={showTimestamps} maxHeight={maxHeight} />
@@ -226,12 +227,12 @@ export function LogPanel({
         {tab === 'run' && (
           <>
             {runLogState.error && (
-              <Flash variant="warning" sx={{ mb: 2, fontSize: 0 }}>
+              <Flash variant="warning" className={styles.mb2Small}>
                 {runLogState.error}
               </Flash>
             )}
             {runLog?.truncated && (
-              <Flash variant="warning" sx={{ mb: 2, fontSize: 0 }}>
+              <Flash variant="warning" className={styles.mb2Small}>
                 The log was very large, so only its start was kept.
               </Flash>
             )}
@@ -249,9 +250,9 @@ export function LogPanel({
 
         {tab === 'claude' &&
           (rewrittenLog ? (
-            <Box sx={{ maxHeight, overflowY: 'auto' }}>
+            <div className={styles.scrollPane} style={{ maxHeight }}>
               <MarkdownView markdown={rewrittenLog} />
-            </Box>
+            </div>
           ) : (
             <Placeholder>
               {rewriteRunning
@@ -259,24 +260,17 @@ export function LogPanel({
                 : 'The same log with the decisive lines first, the noise cut, and a short note where a line needs one. Costs one model call.'}
             </Placeholder>
           ))}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return (
-    <Box
-      sx={{
-        border: '1px dashed',
-        borderColor: 'border.default',
-        borderRadius: 2,
-        p: 3,
-        color: 'fg.muted',
-        fontSize: 1,
-      }}
+    <div
+      className={styles.roundedP3}
     >
       <Text>{children}</Text>
-    </Box>
+    </div>
   );
 }

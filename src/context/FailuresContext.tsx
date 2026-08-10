@@ -18,6 +18,7 @@ import {
 import { useFlowFailures } from '../hooks/useFlowFailures';
 import { useConfig } from './ConfigContext';
 import { useDashboard } from './DashboardContext';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 interface FailuresValue {
   /** Every failing job: open PRs, then merged PRs, then flows. */
@@ -34,7 +35,14 @@ export function FailuresProvider({ children }: { children: ReactNode }) {
   const flowFailures = useFlowFailures();
 
   const failures = useMemo(
-    () => collectFailedJobs(prs, mergedPrs, flowFailures, config.upstream),
+    () => {
+      // Re-derived on every poll across every PR and flow, so a regression here shows up as the
+      // whole app feeling sluggish rather than as one slow request.
+      const startedAtMs = performance.now();
+      const failures = collectFailedJobs(prs, mergedPrs, flowFailures, config.upstream);
+      Telemetry.operationCompleted(Operation.FAILURES_SCAN, performance.now() - startedAtMs);
+      return failures;
+    },
     [prs, mergedPrs, flowFailures, config.upstream],
   );
   const groups = useMemo(() => groupFailures(failures), [failures]);

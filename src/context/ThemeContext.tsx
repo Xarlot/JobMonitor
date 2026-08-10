@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { BaseStyles, ThemeProvider } from '@primer/react';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
 
@@ -44,6 +45,9 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(loadMode);
 
   const setMode = useCallback((m: ThemeMode) => {
+    // Every caller is a click — the toggle in the header or a radio in settings — so this is an
+    // event handler despite living in a context.
+    Telemetry.featureUsed(Feature.THEME_CHANGED);
     setModeState(m);
     try {
       localStorage.setItem(STORAGE_KEY, m);

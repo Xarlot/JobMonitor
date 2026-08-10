@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, Label, Link, Octicon, Spinner, Text } from '@primer/react';
+import { Button, Flash, Label, Link, Spinner, Text } from '@primer/react';
 import { AlertIcon, InfoIcon, LinkExternalIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { Annotation, Job } from '../api/types';
 import { checkRunIdFromUrl } from '../api/endpoints';
@@ -8,21 +8,13 @@ import { statusToOverall } from '../lib/status';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
 import { formatDuration, formatTime } from '../lib/format';
+import styles from './JobSummaryDialog.module.css';
+import { Icon } from './Icon';
 
 const LEVEL_STYLE = {
-  failure: { icon: XCircleFillIcon, color: 'danger.fg' },
-  warning: { icon: AlertIcon, color: 'attention.fg' },
-  notice: { icon: InfoIcon, color: 'accent.fg' },
-} as const;
-
-const cellSx = {
-  px: 2,
-  py: '6px',
-  fontSize: 0,
-  verticalAlign: 'middle',
-  borderColor: 'border.muted',
-  borderBottomWidth: 1,
-  borderBottomStyle: 'solid',
+  failure: { icon: XCircleFillIcon, color: 'var(--fgColor-danger)' },
+  warning: { icon: AlertIcon, color: 'var(--fgColor-attention)' },
+  notice: { icon: InfoIcon, color: 'var(--fgColor-accent)' },
 } as const;
 
 export function JobSummaryDialog({
@@ -76,83 +68,83 @@ export function JobSummaryDialog({
         </>
       }
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', mb: 3 }}>
+      <div className={styles.flexCenter}>
         <StatusBadge status={statusToOverall(job.status, job.conclusion)} />
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text className={styles.smallFgMuted}>
           duration {formatDuration(job.started_at, job.completed_at)}
         </Text>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>started {formatTime(job.started_at)}</Text>
-        <Box sx={{ flex: 1 }} />
+        <Text className={styles.smallFgMuted}>started {formatTime(job.started_at)}</Text>
+        <div className={styles.grow} />
         {job.html_url && (
           <Link href={job.html_url} target="_blank" rel="noreferrer">
-            <Octicon icon={LinkExternalIcon} size={14} sx={{ mr: 1 }} />
+            <LinkExternalIcon size={14} className={styles.mr1} />
             Open on GitHub
           </Link>
         )}
-      </Box>
+      </div>
 
-      <Text as="h3" sx={{ fontSize: 1, fontWeight: 'bold', color: 'fg.muted', mb: 2 }}>
+      <Text as="h3" className={styles.bodyBold}>
         Annotations{annotations ? ` (${annotations.length})` : ''}
       </Text>
       {checkRunId == null ? (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No check-run linked to this job.</Text>
+        <Text className={styles.smallFgMuted}>No check-run linked to this job.</Text>
       ) : loading ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-          <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading annotations…</Text>
-        </Box>
+        <div className={styles.flexCenter2}>
+          <Spinner size="small" /> <Text className={styles.small}>Loading annotations…</Text>
+        </div>
       ) : error ? (
-        <Flash variant="danger" sx={{ fontSize: 0 }}>{error}</Flash>
+        <Flash variant="danger" className={styles.small}>{error}</Flash>
       ) : annotations && annotations.length > 0 ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div className={styles.flexCol}>
           {annotations.map((a, i) => {
             const style = LEVEL_STYLE[a.annotation_level ?? 'notice'] ?? LEVEL_STYLE.notice;
             return (
-              <Box key={i} sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, p: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                  <Octicon icon={style.icon} size={14} sx={{ color: style.color }} />
-                  {a.title && <Text sx={{ fontWeight: 'bold', fontSize: 0 }}>{a.title}</Text>}
+              <div key={i} className={styles.roundedP2}>
+                <div className={styles.flexCenter3}>
+                  <Icon icon={style.icon} size={14} style={{ color: style.color }} />
+                  {a.title && <Text className={styles.boldSmall}>{a.title}</Text>}
                   {a.path && a.path !== '.github' && (
                     <Label variant="secondary">
                       {a.path}
                       {a.start_line ? `:${a.start_line}` : ''}
                     </Label>
                   )}
-                </Box>
-                <Box as="pre" sx={{ m: 0, fontFamily: 'mono', fontSize: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                </div>
+                <pre className={styles.m0Mono}>
                   {a.message ?? ''}
-                </Box>
-              </Box>
+                </pre>
+              </div>
             );
           })}
-        </Box>
+        </div>
       ) : (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No annotations reported.</Text>
+        <Text className={styles.smallFgMuted}>No annotations reported.</Text>
       )}
 
-      <Text as="h3" sx={{ fontSize: 1, fontWeight: 'bold', color: 'fg.muted', mt: 3, mb: 2 }}>
+      <Text as="h3" className={styles.bodyBold2}>
         Steps ({steps.length})
       </Text>
       {steps.length === 0 ? (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No steps (job was skipped or not started).</Text>
+        <Text className={styles.smallFgMuted}>No steps (job was skipped or not started).</Text>
       ) : (
-        <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
-          <Box as="tbody">
+        <table className={styles.width}>
+          <tbody>
             {steps.map((step) => (
-              <Box as="tr" key={`${step.number}-${step.name}`}>
-                <Box as="td" sx={{ ...cellSx, width: 150 }}>
+              <tr key={`${step.number}-${step.name}`}>
+                <td className={styles.px2Small}>
                   <StatusBadge status={statusToOverall(step.status, step.conclusion)} />
-                </Box>
-                <Box as="td" sx={cellSx}>
-                  <Text as="span" sx={{ color: 'fg.muted', mr: 2 }}>{step.number}.</Text>
+                </td>
+                <td className={styles.px2Small2}>
+                  <Text as="span" className={styles.fgMutedMr2}>{step.number}.</Text>
                   {step.name}
-                </Box>
-                <Box as="td" sx={{ ...cellSx, color: 'fg.muted', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                </td>
+                <td className={styles.px2Small3}>
                   {formatDuration(step.started_at, step.completed_at)}
-                </Box>
-              </Box>
+                </td>
+              </tr>
             ))}
-          </Box>
-        </Box>
+          </tbody>
+        </table>
       )}
     </Modal>
   );

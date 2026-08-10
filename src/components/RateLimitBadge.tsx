@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Box, Label, Octicon, Text, Tooltip } from '@primer/react';
+import { Label, Text, Tooltip } from '@primer/react';
 import { AlertIcon, ClockIcon, GraphIcon } from '@primer/octicons-react';
 import { useRateLimit } from '../hooks/useRateLimit';
 import { isLow, isThrottled, throttledUntil } from '../api/rateLimit';
 import { useConfig } from '../context/ConfigContext';
 import { formatCountdown } from '../lib/format';
+import styles from './RateLimitBadge.module.css';
+import { Icon } from './Icon';
 
 /** Shows remaining/limit + reset countdown; warns when low or throttled. */
 export function RateLimitBadge() {
@@ -21,7 +23,7 @@ export function RateLimitBadge() {
   if (info.remaining == null) {
     return (
       <Label variant="secondary">
-        <Octicon icon={GraphIcon} size={14} sx={{ mr: 1 }} />
+        <GraphIcon size={14} className={styles.mr1} />
         rate limit: —
       </Label>
     );
@@ -37,25 +39,28 @@ export function RateLimitBadge() {
 
   return (
     <Tooltip
-      aria-label={
+      type="description"
+      text={
         throttled
           ? `Throttled — requests resume in ${formatCountdown(resetSecs, now)}`
           : `${info.remaining}/${info.limit} core requests remaining; resets in ${formatCountdown(info.reset, now)}`
       }
     >
-      <Label variant={variant}>
-        <Octicon icon={icon} size={14} sx={{ mr: 1 }} />
-        <Box as="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-          <Text sx={{ fontWeight: 'bold' }}>{info.remaining}</Text>
-          <Text sx={{ opacity: 0.8 }}>/ {info.limit ?? '—'}</Text>
+      <button type="button" className={styles.trigger}>
+        <Label variant={variant}>
+        <Icon icon={icon} size={14} className={styles.mr1} />
+        <span className={styles.centerGap1}>
+          <Text className={styles.bold}>{info.remaining}</Text>
+          <Text className={styles.opacity}>/ {info.limit ?? '—'}</Text>
           {(throttled || low) && (
-            <Text sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, ml: 1 }}>
-              <Octicon icon={ClockIcon} size={12} />
+            <Text className={styles.centerGap1_2}>
+              <ClockIcon size={12} />
               {formatCountdown(resetSecs, now)}
             </Text>
           )}
-        </Box>
+        </span>
       </Label>
+      </button>
     </Tooltip>
   );
 }

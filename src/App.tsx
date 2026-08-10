@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Box, Button, Flash, Heading, IconButton, Octicon, Spinner, Text, UnderlineNav } from '@primer/react';
+import { Button, Flash, Heading, IconButton, Spinner, Text, UnderlineNav } from '@primer/react';
 import {
   AppsIcon,
   ArrowLeftIcon,
@@ -39,38 +39,31 @@ import { FeatureBranchesView } from './components/FeatureBranchesView';
 import { SettingsPage } from './components/SettingsPage';
 import { setAutoUpdateEnabled } from './storage/desktopUpdates';
 import { isDesktop } from './storage/desktopSecret';
+import { Feature, Telemetry } from './lib/telemetry';
+import styles from './App.module.css';
 
-type View = 'overview' | 'prs' | 'branches' | 'flows' | 'failures' | 'diagnostics';
+type View = 'overview' | 'prs' | 'flows' | 'branches' | 'failures' | 'diagnostics';
 
 const THEME_ICON = { auto: DeviceDesktopIcon, light: SunIcon, dark: MoonIcon } as const;
 
 function Header({ onSettings, settingsActive }: { onSettings: () => void; settingsActive: boolean }) {
   const { mode, cycle } = useTheme();
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2,
-        px: 3,
-        py: 2,
-        bg: 'canvas.inset',
-        borderBottom: '1px solid',
-        borderColor: 'border.default',
-      }}
+    <div
+      className={styles.flexCenter}
     >
-      <Octicon icon={MarkGithubIcon} size={28} />
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-        <Heading as="h1" sx={{ fontSize: 2 }}>Job Monitor</Heading>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>GitHub Actions dashboard</Text>
+      <MarkGithubIcon size={28} />
+      <div className={styles.flexGap2}>
+        <Heading as="h1" className={styles.large}>Job Monitor</Heading>
+        <Text className={styles.smallFgMuted}>GitHub Actions dashboard</Text>
         <Text
-          sx={{ fontSize: 0, color: 'fg.muted', fontFamily: 'mono' }}
+          className={styles.smallFgMuted2}
           title={`Job Monitor v${__APP_VERSION__}`}
         >
           v{__APP_VERSION__}
         </Text>
-      </Box>
-      <Box sx={{ flex: 1 }} />
+      </div>
+      <div className={styles.grow} />
       <StatsBadge />
       <DownloadsButton />
       <IconButton
@@ -85,9 +78,19 @@ function Header({ onSettings, settingsActive }: { onSettings: () => void; settin
         variant={settingsActive ? 'default' : 'invisible'}
         onClick={onSettings}
       />
-    </Box>
+    </div>
   );
 }
+
+/** Which feature id each view records. Mirrors the nav items below. */
+const VIEW_FEATURE: Partial<Record<View, Feature>> = {
+  overview: Feature.VIEW_OVERVIEW,
+  prs: Feature.VIEW_PRS,
+  branches: Feature.VIEW_BRANCHES,
+  flows: Feature.VIEW_FLOWS,
+  failures: Feature.VIEW_FAILURES,
+  diagnostics: Feature.VIEW_DIAGNOSTICS,
+};
 
 export function App() {
   const { status } = useAuth();
@@ -122,9 +125,9 @@ export function App() {
 
   if (status === 'loading') {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}>
+      <div className={styles.flexCentred}>
         <Spinner />
-      </Box>
+      </div>
     );
   }
 
@@ -158,8 +161,14 @@ export function App() {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bg: 'canvas.default', color: 'fg.default' }}>
-      <Header onSettings={() => setSettingsOpen((v) => !v)} settingsActive={showSettings} />
+    <div className={styles.bgCanvasDefaultFgDefault}>
+      <Header onSettings={() =>
+          setSettingsOpen((v) => {
+            // Opening only. Closing is the same button and would count the visit twice.
+            if (!v) Telemetry.featureUsed(Feature.SETTINGS_OPENED);
+            return !v;
+          })
+        } settingsActive={showSettings} />
 
       {status === 'locked' ? (
         <UnlockDialog />
@@ -172,34 +181,26 @@ export function App() {
           <NavigationProvider value={{ openPr, openFailure }}>
           {showSettings ? (
             <>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  px: 3,
-                  py: 2,
-                  borderBottom: '1px solid',
-                  borderColor: 'border.default',
-                }}
+              <div
+                className={styles.flexCenter2}
               >
-                <Octicon icon={GearIcon} size={18} sx={{ color: 'fg.muted' }} />
-                <Heading as="h2" sx={{ fontSize: 2 }}>Settings</Heading>
-                <Box sx={{ flex: 1 }} />
+                <GearIcon size={18} className={styles.fgMuted} />
+                <Heading as="h2" className={styles.large}>Settings</Heading>
+                <div className={styles.grow} />
                 {status !== 'needs-setup' && (
                   <Button leadingVisual={ArrowLeftIcon} onClick={() => setSettingsOpen(false)}>
                     Back to dashboard
                   </Button>
                 )}
-              </Box>
-              <Box sx={{ p: 4, maxWidth: 1440, mx: 'auto' }}>
+              </div>
+              <div className={styles.p4}>
                 {status === 'needs-setup' && (
-                  <Flash variant="warning" sx={{ mb: 4 }}>
+                  <Flash variant="warning" className={styles.mb4}>
                     Add a GitHub token below to start monitoring.
                   </Flash>
                 )}
                 <SettingsPage />
-              </Box>
+              </div>
             </>
           ) : (
             <>
@@ -220,7 +221,7 @@ export function App() {
                 rows and the flow editor, not the text fields, which carry their own widths
                 and stay readable however wide the window gets.
               */}
-              <Box sx={{ p: 4 }}>
+              <div className={styles.p4_2}>
                 {view === 'overview' &&
                   (complete ? <Overview onOpenFlow={openFlow} onOpenPrs={openPrs} /> : <ConfigHint />)}
                 {view === 'prs' &&
@@ -242,13 +243,13 @@ export function App() {
                   an unconfigured app is a state you might well be diagnosing.
                 */}
                 {view === 'diagnostics' && showDiagnostics && <DiagnosticsView />}
-              </Box>
+              </div>
             </>
           )}
           </NavigationProvider>
         </DataProviders>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -276,23 +277,33 @@ function MainNav({
     { key: 'overview', label: 'Overview', icon: AppsIcon },
     { key: 'prs', label: 'Pull requests', icon: GitPullRequestIcon },
   ];
-  // Next to Pull requests, since that is what it deals in — just the ones the PR tab
-  // cannot show, because both their ends are in the upstream.
+  navItems.push({ key: 'flows', label: 'Flows', icon: WorkflowIcon });
+  // After Flows rather than next to Pull requests. It deals in pull requests, but it is the
+  // occasional tab of the two — the ones the PR tab cannot show, because both their ends are in
+  // the upstream — and the everyday ones read better adjacent.
   if (showBranches) {
     navItems.push({ key: 'branches', label: 'Feature branches', icon: GitBranchIcon });
   }
-  navItems.push(
-    { key: 'flows', label: 'Flows', icon: WorkflowIcon },
-    { key: 'failures', label: 'Failures', icon: BugIcon, counter: failureCount || undefined },
-  );
+  navItems.push({
+    key: 'failures',
+    label: 'Failures',
+    icon: BugIcon,
+    counter: failureCount || undefined,
+  });
   // Last, and only when asked for: it is about the app rather than about the work.
   if (showDiagnostics) {
     navItems.push({ key: 'diagnostics', label: 'Diagnostics', icon: TerminalIcon });
   }
 
   return (
-    <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'border.default' }}>
-      <UnderlineNav aria-label="Main navigation">
+    <div className={styles.px3Pt2}>
+      <UnderlineNav
+        aria-label="Main navigation"
+        // Primer 38 hides item icons below `xxlarge` by default, to make room when there are many
+        // tabs. There are five here and they fit at any width the window can be, so the icons stay:
+        // they are how the nav is scanned, and losing them below 1440px is a regression, not a saving.
+        hideIconsBreakpoint={null}
+      >
         {navItems.map((item) => (
           <UnderlineNav.Item
             key={item.key}
@@ -301,14 +312,19 @@ function MainNav({
             aria-current={view === item.key ? 'page' : undefined}
             onSelect={(e) => {
               e.preventDefault();
-              if (!disabled) onSelect(item.key);
+              if (disabled) return;
+              // From the click handler, never from render or an effect: StrictMode double-invokes
+              // effects in development, which would make dev counts twice production's.
+              const feature = VIEW_FEATURE[item.key];
+              if (feature) Telemetry.featureUsed(feature);
+              onSelect(item.key);
             }}
           >
             {item.label}
           </UnderlineNav.Item>
         ))}
       </UnderlineNav>
-    </Box>
+    </div>
   );
 }
 

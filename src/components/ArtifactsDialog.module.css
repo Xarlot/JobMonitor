@@ -1,0 +1,148 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  align-self: center;
+  margin-right: auto;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.body {
+  font-size: var(--text-body-size-medium);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.mb2Body {
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-medium);
+}
+
+.width {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.centerCentred {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.px2Body {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  width: 36px;
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.px2Body2 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  text-align: left;
+  color: var(--fgColor-muted);
+}
+
+.px2Body3 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  text-align: right;
+  color: var(--fgColor-muted);
+  width: 110px;
+}
+
+.px2Body4 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  width: 56px;
+}
+
+.px2Body5 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+}
+
+.px2Body6 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  text-align: right;
+  color: var(--fgColor-muted);
+  white-space: nowrap;
+}
+
+.px2Body7 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  text-align: right;
+}

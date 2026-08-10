@@ -1,0 +1,196 @@
+// The telemetry wire format.
+//
+// This file is the contract between the desktop client and the ingest receiver. Both sides
+// generate from it, so there is exactly one definition of what may travel.
+//
+// Two rules govern changes here:
+//
+//   1. Field numbers are permanent. Never renumber, never reuse; `reserved` a removed one.
+//   2. `schema_version` bumps only for STRUCTURAL changes. Adding a feature or operation id is
+//      not structural — ids are data, carried in the registry, and an unrecognised id is mapped
+//      to `unknown(<id>)` by the receiver rather than rejected.
+//
+// The privacy property of this format is that it is almost entirely numeric. There are five
+// string fields in total and a build-time test walks the generated descriptor to keep it that
+// way — see test/descriptor.test.ts. A numeric-only format cannot carry free text, which is a
+// stronger guarantee than any amount of sanitizing would be.
+
+syntax = "proto3";
+
+package jobmonitor.telemetry.v1;
+
+// One reporting period from one installation. This is the unit of encryption, transmission and
+// deduplication.
+message TelemetryBatch {
+  // 16 random bytes. The receiver deduplicates on this, which is what makes at-least-once
+  // delivery safe to retry.
+  bytes batch_id = 1;
+
+  // Structural version of this message. See the header.
+  uint32 schema_version = 2;
+
+  // 16 random bytes generated on first run. Not derived from any user, account or hardware
+  // identifier, and travels only inside the encrypted payload. Identifies an installation.
+  bytes installation_id = 3;
+
+  // 16 bytes baked into the build. Not an identifier of anything — it exists so that a stranger
+  // who extracts the receiver's public key from a shipped binary still cannot write into our
+  // dashboards.
+  bytes deployment_id = 4;
+
+  string app_version = 5;
+
+  // Closed enumerations rather than `process.platform` / `process.arch` strings, so the field
+  // cannot carry anything unexpected.
+  Platform platform = 6;
+  Arch arch = 7;
+
+  string electron_version = 8;
+
+  uint64 period_start_ms = 9;
+  uint64 period_end_ms = 10;
+
+  repeated FeatureUsage features = 11;
+
+  // The order features were used in, one entry per bucket. Additive to `features`, never a
+  // replacement: the counters stay authoritative, and a batch whose trails were dropped for size
+  // still reports correct totals.
+  repeated FeatureTrail trails = 16;
+  repeated OperationUsage operations = 12;
+  repeated UsageSummary usage = 13;
+  repeated CrashRecord crashes = 14;
+
+  // Records the client's local queue evicted before they could be sent. Carried so that gaps in
+  // the server-side data are visible as a number rather than as silence.
+  uint32 dropped_records = 15;
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_WIN32 = 1;
+  PLATFORM_DARWIN = 2;
+  PLATFORM_LINUX = 3;
+}
+
+enum Arch {
+  ARCH_UNSPECIFIED = 0;
+  ARCH_X64 = 1;
+  ARCH_ARM64 = 2;
+}
+
+// How many times one feature was used. Aggregated over the whole batch — feature counts are
+// additive, so there is no reason to keep them per hour.
+message FeatureUsage {
+  uint32 feature_id = 1;
+  uint32 count = 2;
+}
+
+// The sequence of features used within one bucket.
+//
+// Counters answer "how much"; this answers "after what". Without it the finest ordering available
+// is between one reporting period and the next, which is about an hour — too coarse to show that
+// people open a failure and then reach for the log, rather than doing the two things in the same
+// hour for unrelated reasons.
+//
+// Two deliberate limits, both about size and both also about how identifying this is. Offsets are
+// whole seconds, not milliseconds: nothing here is measuring latency, and a millisecond-resolution
+// trail is a far sharper fingerprint for no analytical gain. And a bucket stops recording after
+// MAX_TRAIL_EVENTS, so a long session contributes a bounded prefix rather than an unbounded diary.
+message FeatureTrail {
+  uint64 bucket_start_ms = 1;
+
+  // Parallel arrays rather than repeated sub-messages: a message per event would spend a tag and a
+  // length byte on every one, roughly doubling the cost of the thing being recorded.
+  repeated uint32 feature_ids = 2 [packed = true];
+
+  // Seconds since the previous event, the first being since `bucket_start_ms`. Deltas rather than
+  // absolute offsets because consecutive actions are seconds apart: almost every delta is a single
+  // varint byte, where an absolute offset into a 15-minute bucket costs two for most of it.
+  repeated uint32 offset_deltas_s = 3 [packed = true];
+
+  // The bucket hit MAX_TRAIL_EVENTS and stopped ordering. Without this a truncated trail is
+  // indistinguishable from a short one, and the busiest sessions would quietly look like the
+  // shortest ones on any chart built from trail length.
+  bool truncated = 4;
+}
+
+// One operation's timing distribution. Individual durations are never transmitted.
+message OperationUsage {
+  uint32 operation_id = 1;
+
+  // Successful completions. Failures are counted separately in `failures`.
+  uint32 count = 2;
+
+  uint64 duration_sum_ms = 3;
+  uint32 duration_max_ms = 4;
+
+  // Exactly 8 entries, matching DURATION_BUCKET_BOUNDS_MS in limits.ts. The receiver rejects a
+  // record whose length differs or whose sum does not equal `count`.
+  repeated uint32 buckets = 5;
+
+  repeated FailureCount failures = 6;
+}
+
+message FailureCount {
+  uint32 error_category = 1;
+  uint32 count = 2;
+}
+
+// Session and activity totals for one UTC hour.
+//
+// UTC rather than local time because a local-time bucket is 25 hours long at a DST transition and
+// negative across a timezone change.
+message UsageSummary {
+  uint64 bucket_start_ms = 1;
+
+  uint32 app_starts = 2;
+  uint32 session_count = 3;
+
+  // Window visible AND focused.
+  uint32 foreground_seconds = 4;
+
+  // Wall time the process was alive, credited by a heartbeat and clamped to one interval per
+  // tick — so a sleeping laptop reports nothing rather than the whole nap.
+  uint32 running_seconds = 5;
+
+  uint32 clean_shutdowns = 6;
+
+  // Detected at the NEXT launch, from a session sentinel that outlived its process.
+  uint32 unclean_exits = 7;
+}
+
+message CrashRecord {
+  uint64 occurred_at_ms = 1;
+
+  // Per-record as well as per-batch: the app auto-updates and restarts, so a crash is routinely
+  // recorded under one version and transmitted under another.
+  string app_version = 2;
+
+  CrashSource source = 3;
+
+  // `error.name` only. The message is never collected — it is the likeliest place for a path or a
+  // token to reach a crash report, and a field that does not exist needs no sanitizer.
+  string exception_type = 4;
+
+  // sha256(exception_type + top 5 normalized frames), first 16 bytes.
+  bytes fingerprint = 5;
+
+  // Sanitized: absolute paths, home directories, usernames and token-shaped strings removed, and
+  // Vite content hashes stripped so a fingerprint survives a release.
+  string stack = 6;
+
+  // Occurrences collapsed into this record. A crash loop reports a count, not a thousand rows.
+  uint32 count = 7;
+}
+
+enum CrashSource {
+  CRASH_SOURCE_UNSPECIFIED = 0;
+  CRASH_SOURCE_MAIN_UNCAUGHT = 1;
+  CRASH_SOURCE_MAIN_REJECTION = 2;
+  CRASH_SOURCE_RENDERER_GONE = 3;
+  CRASH_SOURCE_REACT_BOUNDARY = 4;
+  CRASH_SOURCE_WINDOW_ERROR = 5;
+  CRASH_SOURCE_RENDERER_REJECTION = 6;
+  CRASH_SOURCE_CHILD_PROCESS_GONE = 7;
+  CRASH_SOURCE_UNCLEAN_EXIT = 8;
+}

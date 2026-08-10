@@ -36,6 +36,7 @@ import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
+import { Operation } from '../lib/telemetry';
 
 export interface PrEntry {
   pr: PullRequest;
@@ -266,8 +267,18 @@ export function useGitHubDashboard(): DashboardState {
     setMergedPrs(applyUpdates);
   }, [prs, mergedPrs, config]);
 
-  const list = usePolling({ fn: fetchList, intervalMs: listIntervalMs, enabled });
-  const checks = usePolling({ fn: fetchChecks, intervalMs: checksIntervalMs, enabled });
+  const list = usePolling({
+    fn: fetchList,
+    intervalMs: listIntervalMs,
+    enabled,
+    op: Operation.GH_PR_LIST_POLL,
+  });
+  const checks = usePolling({
+    fn: fetchChecks,
+    intervalMs: checksIntervalMs,
+    enabled,
+    op: Operation.GH_CHECKS_POLL,
+  });
 
   // Promptly fetch checks when the set of PRs (or their heads) changes, rather than
   // waiting for the next checks tick. `watchUntil` is part of the signature so that

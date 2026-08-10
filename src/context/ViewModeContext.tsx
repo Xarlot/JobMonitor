@@ -8,6 +8,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { OverallStatus } from '../api/types';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 const STORAGE_KEY = 'job-monitor.compact';
 
@@ -32,6 +33,7 @@ export function ViewModeProvider({ children }: { children: ReactNode }) {
     }
   });
   const setCompact = useCallback((next: boolean) => {
+    Telemetry.featureUsed(Feature.COMPACT_MODE_TOGGLED);
     setCompactState(next);
     try {
       localStorage.setItem(STORAGE_KEY, next ? '1' : '0');

@@ -10,12 +10,15 @@
  * Renders nothing at all when there is nothing to say, so a quiet PR stays quiet.
  */
 
-import { Box, Label, Octicon } from '@primer/react';
+import { Label } from '@primer/react';
 import { Tooltip } from '@primer/react/next';
 import { AlertIcon, SyncIcon } from '@primer/octicons-react';
 import { useAutoRerun } from '../context/AutoRerunContext';
 import type { AutoRerunState } from '../hooks/usePrAutoRerun';
 import { formatRelative } from '../lib/format';
+import styles from './AutoRerunLabel.module.css';
+import { Icon } from './Icon';
+import { tooltipWrapFixed } from '../lib/tooltipWrap';
 
 /**
  * Why the engine is idle, if it is — kept because "it re-ran this twice and then stopped"
@@ -83,32 +86,21 @@ export function AutoRerunLabel({ prNumber }: { prNumber: number }) {
     // Same shape as StatsBadge: TooltipV2 needs an interactive trigger to be reachable by
     // keyboard and to render in the top layer, and its default centred single-line styling
     // has to be overridden for a multi-line hint to read as a list.
-    <Box
-      sx={{
-        display: 'inline-flex',
-        flexShrink: 0,
-        '& [role="tooltip"]': {
-          textAlign: 'left',
-          whiteSpace: 'pre-line',
-          maxWidth: 420,
-          lineHeight: 1.5,
-          padding: '8px 10px',
-        },
-      }}
+    <div
+      className={`${tooltipWrapFixed} ${styles.tipWide}`}
     >
       <Tooltip text={tip} type="description">
-        <Box
-          as="button"
+        <button
           type="button"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          sx={{ all: 'unset', display: 'inline-flex', alignItems: 'center', cursor: 'default' }}
+          className={styles.centerDefault}
         >
           <Label variant={bad ? 'danger' : 'attention'}>
-            <Octicon icon={bad ? AlertIcon : SyncIcon} size={12} sx={{ mr: 1 }} />
+            <Icon icon={bad ? AlertIcon : SyncIcon} size={12} className={styles.mr1} />
             {summary}
           </Label>
-        </Box>
+        </button>
       </Tooltip>
-    </Box>
+    </div>
   );
 }

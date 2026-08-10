@@ -1,7 +1,8 @@
 import { unzipSync, zipSync, type Zippable } from 'fflate';
-import { ghGetBlob } from '../api/githubClient';
-import { artifactZipPath } from '../api/endpoints';
+
 import type { Artifact } from '../api/types';
+import { Operation, Telemetry } from './telemetry';
+import { fetchArtifactZip } from './downloadArtifact';
 
 /** Folder-safe name derived from an artifact name (no extension, no separators). */
 export function artifactFolderName(name: string): string {
@@ -35,7 +36,7 @@ export async function bundleArtifacts(
   for (const a of usable) {
     onProgress?.({ done, total: usable.length, current: a.name });
 
-    const blob = await ghGetBlob(artifactZipPath(owner, repo, a.id));
+    const blob = await fetchArtifactZip(owner, repo, a.id);
     const bytes = new Uint8Array(await blob.arrayBuffer());
 
     // Disambiguate duplicate artifact names so folders don't collide.
@@ -59,6 +60,11 @@ export async function bundleArtifacts(
     onProgress?.({ done, total: usable.length, current: a.name });
   }
 
+  // Timed on its own, separately from the downloads above. Zipping is the one part of a bundle
+  // that runs on the main thread and blocks the window, so a slow bundle caused by a big artifact
+  // and one caused by the packing itself need telling apart.
+  const zipStartedAtMs = performance.now();
   const zipped = zipSync(entries);
+  Telemetry.operationCompleted(Operation.ARTIFACT_BUNDLE_ZIP, performance.now() - zipStartedAtMs);
   return new Blob([zipped], { type: 'application/zip' });
 }

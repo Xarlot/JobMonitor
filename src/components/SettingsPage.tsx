@@ -1,23 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Box,
-  Button,
-  Checkbox,
-  Flash,
-  FormControl,
-  Heading,
-  IconButton,
-  Label,
-  Link,
-  Octicon,
-  SegmentedControl,
-  Select,
-  Spinner,
-  Text,
-  TextInput,
-  Textarea,
-  UnderlineNav,
-} from '@primer/react';
+import { Button, Checkbox, Flash, FormControl, Heading, IconButton, Label, Link, SegmentedControl, Select, Spinner, Text, TextInput, Textarea, UnderlineNav } from '@primer/react';
 import {
   BellIcon,
   BugIcon,
@@ -84,14 +66,9 @@ import { isMockMode } from '../mocks/mockMode';
 import { useTokenCapability } from '../hooks/useTokenCapability';
 import { useWorkflowList } from '../hooks/useWorkflowList';
 import type { TokenCapability } from '../api/tokenCapability';
-
-const sectionSx = {
-  border: '1px solid',
-  borderColor: 'border.default',
-  borderRadius: 2,
-  p: 4,
-  mb: 4,
-} as const;
+import { Feature, Telemetry } from '../lib/telemetry';
+import styles from './SettingsPage.module.css';
+import { Icon } from './Icon';
 
 /**
  * Plain-language summary of what the token may do, so that re-run controls being
@@ -193,14 +170,14 @@ function TokenSection() {
   };
 
   return (
-    <Box sx={sectionSx}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        <Octicon icon={ShieldLockIcon} size={20} sx={{ color: 'accent.fg' }} />
-        <Heading as="h2" sx={{ fontSize: 3 }}>GitHub token</Heading>
+    <div className={styles.roundedP4}>
+      <div className={styles.flexCenter}>
+        <ShieldLockIcon size={20} className={styles.accentFg} />
+        <Heading as="h2" className={styles.title}>GitHub token</Heading>
         {status === 'unlocked' && <Label variant="success">loaded in memory</Label>}
         {status === 'unlocked' && <Label variant={readout.variant}>{readout.text}</Label>}
-      </Box>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      </div>
+      <Text as="p" className={styles.fgMutedBody}>
         Use a{' '}
         <Link
           href="https://github.com/settings/tokens/new?scopes=repo&description=Job%20Monitor"
@@ -221,12 +198,12 @@ function TokenSection() {
       ) : (
         <>
           {(localError || error) && (
-            <Flash variant="danger" sx={{ mb: 3 }}>{localError ?? error}</Flash>
+            <Flash variant="danger" className={styles.mb3}>{localError ?? error}</Flash>
           )}
-          {saved && <Flash variant="success" sx={{ mb: 3 }}>Token encrypted and stored.</Flash>}
+          {saved && <Flash variant="success" className={styles.mb3}>Token encrypted and stored.</Flash>}
 
-          <Box as="form" onSubmit={onSave}>
-            <FormControl sx={{ mb: 3 }}>
+          <form onSubmit={onSave}>
+            <FormControl className={styles.mb3}>
               <FormControl.Label>Personal access token</FormControl.Label>
               <TextInput
                 type="password"
@@ -237,8 +214,8 @@ function TokenSection() {
                 autoComplete="off"
               />
             </FormControl>
-            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-              <FormControl sx={{ mb: 3, flex: 1, minWidth: 200 }}>
+            <div className={styles.flexGap3}>
+              <FormControl className={styles.mb3Grow}>
                 <FormControl.Label>Passphrase</FormControl.Label>
                 <TextInput
                   type="password"
@@ -248,7 +225,7 @@ function TokenSection() {
                   autoComplete="new-password"
                 />
               </FormControl>
-              <FormControl sx={{ mb: 3, flex: 1, minWidth: 200 }}>
+              <FormControl className={styles.mb3Grow}>
                 <FormControl.Label>Confirm passphrase</FormControl.Label>
                 <TextInput
                   type="password"
@@ -259,9 +236,9 @@ function TokenSection() {
                   validationStatus={mismatch ? 'error' : undefined}
                 />
               </FormControl>
-            </Box>
+            </div>
             {canRemember && (
-              <FormControl sx={{ mb: 3 }}>
+              <FormControl className={styles.mb3}>
                 <Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 <FormControl.Label>Remember on this device</FormControl.Label>
                 <FormControl.Caption>
@@ -269,7 +246,7 @@ function TokenSection() {
                 </FormControl.Caption>
               </FormControl>
             )}
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <div className={styles.flexGap2}>
               <Button type="submit" variant="primary" disabled={busy}>
                 {busy ? 'Saving…' : status === 'unlocked' ? 'Replace token' : 'Encrypt & store token'}
               </Button>
@@ -284,11 +261,11 @@ function TokenSection() {
                   Forget token
                 </Button>
               )}
-            </Box>
-          </Box>
+            </div>
+          </form>
         </>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -322,32 +299,32 @@ function EventsField({
   const toggle = (ev: string, on: boolean) =>
     onChange(on ? [...events, ev] : events.filter((e) => e !== ev));
   return (
-    <Box>
-      <Text as="label" sx={{ display: 'block', fontSize: 1, fontWeight: 'bold', mb: 1 }}>
+    <div>
+      <Text as="label" className={styles.blockBody}>
         Events (optional)
       </Text>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 1 }}>
+      <div className={styles.flex}>
         {options.map((ev) => (
           <FormControl key={ev}>
             <Checkbox
               checked={events.includes(ev)}
               onChange={(e) => toggle(ev, e.target.checked)}
             />
-            <FormControl.Label sx={{ fontWeight: 'normal' }}>
+            <FormControl.Label className={styles.normal}>
               {ev}
               {EVENT_HINTS[ev] && (
-                <Text as="span" sx={{ color: 'fg.muted', ml: 1 }}>
+                <Text as="span" className={styles.fgMutedMl1}>
                   ({EVENT_HINTS[ev]})
                 </Text>
               )}
             </FormControl.Label>
           </FormControl>
         ))}
-      </Box>
-      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 1 }}>
+      </div>
+      <Text className={styles.blockSmall}>
         None selected = any event
       </Text>
-    </Box>
+    </div>
   );
 }
 
@@ -375,38 +352,38 @@ function PatternPreview({
   const patternError = compileFlowPattern(match).error;
   if (patternError) {
     return (
-      <Flash variant="danger" sx={{ mt: 2, fontSize: 1 }}>
+      <Flash variant="danger" className={styles.mt2Body}>
         Invalid regex: {patternError}
       </Flash>
     );
   }
   if (!match.pattern.trim()) {
     return (
-      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+      <Text className={styles.blockSmall2}>
         Enter a regex to see which workflows it matches.
       </Text>
     );
   }
   if (!owner || !repo) {
     return (
-      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+      <Text className={styles.blockSmall2}>
         Set an upstream repo (or this flow’s owner/repo) to preview the matches.
       </Text>
     );
   }
   if (error) {
     return (
-      <Flash variant="warning" sx={{ mt: 2, fontSize: 1 }}>
+      <Flash variant="warning" className={styles.mt2Body}>
         Couldn’t load the workflow list: {error}
       </Flash>
     );
   }
   if (!workflows) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+      <div className={styles.flexCenter2}>
         {loading && <Spinner size="small" />}
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>Loading the repo’s workflows…</Text>
-      </Box>
+        <Text className={styles.smallFgMuted}>Loading the repo’s workflows…</Text>
+      </div>
     );
   }
 
@@ -415,8 +392,8 @@ function PatternPreview({
   const shown = matched.slice(0, match.maxMatches);
 
   return (
-    <Box sx={{ mt: 2 }}>
-      <Text sx={{ fontSize: 0, color: matched.length === 0 ? 'attention.fg' : 'fg.muted' }}>
+    <div className={styles.mt2}>
+      <Text className={matched.length === 0 ? styles.smallAttention : styles.smallFgMuted}>
         Matches <strong>{matched.length}</strong> of {workflows.length} workflows
         {matched.length > shown.length &&
           (matched.length > MAX_FLOW_MATCHES
@@ -424,32 +401,20 @@ function PatternPreview({
             : ` · showing ${shown.length} (raise “Max matches”)`)}
       </Text>
       {shown.length > 0 && (
-        <Box
-          as="ul"
-          sx={{
-            listStyle: 'none',
-            m: 0,
-            mt: 1,
-            p: 2,
-            maxHeight: 160,
-            overflowY: 'auto',
-            border: '1px solid',
-            borderColor: 'border.muted',
-            borderRadius: 2,
-            bg: 'canvas.subtle',
-          }}
+        <ul
+          className={styles.m0Mt1}
         >
           {shown.map((w) => (
-            <Box as="li" key={w.id} sx={{ fontSize: 0, display: 'flex', gap: 2 }}>
-              <Text sx={{ fontWeight: 'bold' }}>{w.name}</Text>
-              <Text sx={{ color: 'fg.muted', fontFamily: 'mono' }}>
+            <li key={w.id} className={styles.smallFlex}>
+              <Text className={styles.bold}>{w.name}</Text>
+              <Text className={styles.fgMutedMono}>
                 {workflowBasename(w.path)}
               </Text>
-            </Box>
+            </li>
           ))}
-        </Box>
+        </ul>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -466,15 +431,15 @@ function PatternFields({
   onChange: (next: FlowMatch) => void;
 }) {
   return (
-    <Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '2fr 1fr'], columnGap: 3, rowGap: 3 }}>
+    <div>
+      <div className={styles.gridWide}>
         <FormControl>
           <FormControl.Label>Regex</FormControl.Label>
           <TextInput
             value={match.pattern}
             onChange={(e) => onChange({ ...match, pattern: e.target.value })}
             placeholder="^check-.*|tests?$"
-            sx={{ fontFamily: 'mono' }}
+            className={styles.mono}
             block
           />
           <FormControl.Caption>
@@ -495,8 +460,8 @@ function PatternFields({
             ))}
           </Select>
         </FormControl>
-      </Box>
-      <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start', mt: 3, flexWrap: 'wrap' }}>
+      </div>
+      <div className={styles.flexGap4}>
         <FormControl>
           <Checkbox
             checked={match.caseSensitive}
@@ -504,7 +469,7 @@ function PatternFields({
           />
           <FormControl.Label>Case sensitive</FormControl.Label>
         </FormControl>
-        <FormControl sx={{ width: 130 }}>
+        <FormControl className={styles.width}>
           <FormControl.Label>Max matches</FormControl.Label>
           <TextInput
             type="number"
@@ -519,9 +484,9 @@ function PatternFields({
             block
           />
         </FormControl>
-      </Box>
+      </div>
       <PatternPreview owner={owner} repo={repo} match={match} />
-    </Box>
+    </div>
   );
 }
 
@@ -567,26 +532,26 @@ function FlowEditor({
   };
 
   return (
-    <Box sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, p: 3, mb: 3 }}>
+    <div className={styles.roundedP3}>
       {/* Header: name + remove */}
-      <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-end', mb: 3 }}>
+      <div className={styles.flexGap3_2}>
         {/* A flow name is a short label; `flex: 1` alone stretched it across the card. */}
-        <FormControl sx={{ flex: 1, maxWidth: 420 }}>
+        <FormControl className={styles.grow}>
           <FormControl.Label>Name</FormControl.Label>
           <TextInput value={flow.name} onChange={(e) => set('name', e.target.value)} block />
         </FormControl>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow2} />
         <IconButton
           aria-label="Remove flow"
           icon={TrashIcon}
           variant="danger"
           onClick={onRemove}
         />
-      </Box>
+      </div>
 
       {/* What this flow watches: one workflow, or every workflow matching a regex */}
-      <Box>
-        <SegmentedControl aria-label="What this flow watches" size="small" sx={{ mb: 3 }}>
+      <div>
+        <SegmentedControl aria-label="What this flow watches" size="small" className={styles.mb3}>
           <SegmentedControl.Button
             selected={!regexMode}
             onClick={() => {
@@ -610,15 +575,15 @@ function FlowEditor({
               repo={browseRepo}
               onChange={(next) => set('match', next)}
             />
-            <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+            <Text className={styles.blockSmall2}>
               Each match becomes its own card on the board — with the branches, events and
               visibility filter below — and can be dragged into any group.
             </Text>
           </>
         ) : (
           <>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
-              <FormControl sx={{ flex: 1 }}>
+            <div className={styles.flexGap2_2}>
+              <FormControl className={styles.grow2}>
                 <FormControl.Label>Workflow name, file, or id</FormControl.Label>
                 <TextInput
                   value={flow.workflowFile}
@@ -629,7 +594,10 @@ function FlowEditor({
               </FormControl>
               <Button
                 leadingVisual={SearchIcon}
-                onClick={() => setBrowsing(true)}
+                onClick={() => {
+                  Telemetry.featureUsed(Feature.FLOW_WORKFLOW_BROWSER_OPENED);
+                  setBrowsing(true);
+                }}
                 disabled={!canBrowse}
                 title={
                   canBrowse
@@ -639,41 +607,29 @@ function FlowEditor({
               >
                 Browse…
               </Button>
-            </Box>
-            <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mt: 1 }}>
+            </div>
+            <Text className={styles.blockSmall}>
               Display name, file name (with/without .yml), or numeric id — resolved automatically.
             </Text>
           </>
         )}
-      </Box>
+      </div>
 
       {/* Additional settings — collapsed by default */}
-      <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
-        <Box
-          as="button"
+      <div className={styles.mt3Pt3}>
+        <button
           type="button"
           aria-expanded={advanced}
           onClick={() => setAdvanced((v) => !v)}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            p: 0,
-            border: 0,
-            bg: 'transparent',
-            color: 'fg.muted',
-            cursor: 'pointer',
-            fontSize: 1,
-            fontWeight: 'bold',
-          }}
+          className={styles.flexCenter3}
         >
-          <Octicon icon={advanced ? ChevronDownIcon : ChevronRightIcon} size={16} />
+          <Icon icon={advanced ? ChevronDownIcon : ChevronRightIcon} size={16} />
           Additional settings
-        </Box>
+        </button>
 
         {advanced && (
-          <Box sx={{ mt: 3 }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], columnGap: 3, rowGap: 3 }}>
+          <div className={styles.mt3}>
+            <div className={styles.grid2}>
               <FormControl>
                 <FormControl.Label>Owner</FormControl.Label>
                 <TextInput
@@ -692,7 +648,7 @@ function FlowEditor({
                   block
                 />
               </FormControl>
-              <FormControl sx={{ gridColumn: ['auto', '1 / -1'] }}>
+              <FormControl className={styles.fullRow}>
                 <FormControl.Label>Branches</FormControl.Label>
                 <TextInput
                   value={csv(flow.branches)}
@@ -702,10 +658,10 @@ function FlowEditor({
                 />
                 <FormControl.Caption>Comma-separated</FormControl.Caption>
               </FormControl>
-              <Box sx={{ gridColumn: ['auto', '1 / -1'] }}>
+              <div className={styles.fullRow}>
                 <EventsField events={flow.events} onChange={(next) => set('events', next)} />
-              </Box>
-              <FormControl sx={{ width: 130 }}>
+              </div>
+              <FormControl className={styles.width}>
                 <FormControl.Label>Max runs / event</FormControl.Label>
                 <TextInput
                   type="number"
@@ -715,11 +671,11 @@ function FlowEditor({
                   block
                 />
               </FormControl>
-            </Box>
+            </div>
 
             {/* Per-flow visibility filter */}
-            <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
-              <FormControl sx={{ mb: flow.emptyFilter.enabled ? 3 : 0 }}>
+            <div className={styles.mt3Pt3}>
+              <FormControl className={flow.emptyFilter.enabled ? styles.mb3 : undefined}>
           <Checkbox
             checked={flow.emptyFilter.enabled}
             onChange={(e) => set('emptyFilter', { ...flow.emptyFilter, enabled: e.target.checked })}
@@ -727,7 +683,7 @@ function FlowEditor({
           <FormControl.Label>Filter this flow by activity</FormControl.Label>
         </FormControl>
         {flow.emptyFilter.enabled && (
-          <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', 'repeat(3, 1fr)'], gap: 3 }}>
+          <div className={styles.grid3}>
             <FormControl>
               <FormControl.Label>Visibility</FormControl.Label>
               <Select
@@ -803,12 +759,12 @@ function FlowEditor({
                 </FormControl>
               </>
             )}
-          </Box>
+          </div>
         )}
-            </Box>
-          </Box>
+            </div>
+          </div>
         )}
-      </Box>
+      </div>
 
       {browsing && (
         <WorkflowBrowserDialog
@@ -818,7 +774,7 @@ function FlowEditor({
           onClose={() => setBrowsing(false)}
         />
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -834,6 +790,9 @@ function NotificationsSection({
   const [perm, setPerm] = useState<NotificationPermission>(() => notificationPermission());
 
   const toggle = async (key: keyof NotificationPrefs, on: boolean) => {
+    // Only the opt-in. Turning a notification off is a different question and would cancel this
+    // one out in the totals.
+    if (on) Telemetry.featureUsed(Feature.NOTIFICATIONS_ENABLED);
     onChange({ [key]: on });
     // Ask for OS permission the moment the user opts in.
     if (on && supported) setPerm(await ensureNotificationPermission());
@@ -843,25 +802,25 @@ function NotificationsSection({
   const { canRerun } = useTokenCapability();
 
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Notifications</Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb2}>Notifications</Heading>
+      <Text as="p" className={styles.fgMutedBody}>
         Show a desktop notification when a tracked item finishes. Uses your browser's notification
         permission; nothing leaves this browser.
       </Text>
       {!supported && (
-        <Flash variant="warning" sx={{ mb: 3 }}>This browser doesn’t support notifications.</Flash>
+        <Flash variant="warning" className={styles.mb3}>This browser doesn’t support notifications.</Flash>
       )}
       {supported && anyOn && perm === 'denied' && (
-        <Flash variant="warning" sx={{ mb: 3 }}>
+        <Flash variant="warning" className={styles.mb3}>
           Notifications are blocked for this site — enable them in your browser’s site settings.
         </Flash>
       )}
-      <FormControl sx={{ mb: 2 }} disabled={!supported}>
+      <FormControl className={styles.mb2} disabled={!supported}>
         <Checkbox checked={prefs.pr} onChange={(e) => void toggle('pr', e.target.checked)} />
         <FormControl.Label>Notify when a PR’s checks finish</FormControl.Label>
       </FormControl>
-      <FormControl sx={{ mb: 2 }} disabled={!supported}>
+      <FormControl className={styles.mb2} disabled={!supported}>
         <Checkbox checked={prefs.flow} onChange={(e) => void toggle('flow', e.target.checked)} />
         <FormControl.Label>Notify when a flow run finishes</FormControl.Label>
       </FormControl>
@@ -878,7 +837,7 @@ function NotificationsSection({
           </FormControl.Caption>
         </FormControl>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -903,13 +862,13 @@ function UpdatesSection({
 
   const canUpdate = supported === true;
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Updates</Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb2}>Updates</Heading>
+      <Text as="p" className={styles.fgMutedBody}>
         Automatically download and install new versions from GitHub releases.
       </Text>
       {!canUpdate && (
-        <Flash variant="warning" sx={{ mb: 3 }}>
+        <Flash variant="warning" className={styles.mb3}>
           Auto-update isn’t available in this environment (a dev run or a <code>.deb</code> install).
           Use the AppImage / installer build to enable it.
         </Flash>
@@ -919,7 +878,7 @@ function UpdatesSection({
         <FormControl.Label>Automatically install updates</FormControl.Label>
         <FormControl.Caption>Downloads in the background and restarts to apply.</FormControl.Caption>
       </FormControl>
-    </Box>
+    </div>
   );
 }
 
@@ -940,11 +899,11 @@ function AutoRerunSection({
   const capability = useTokenCapability();
 
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Auto-rerun failed jobs
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         When a workflow below finishes badly on a pull request that has{' '}
         <strong>auto-merge enabled</strong>, Job Monitor asks GitHub to re-run its failed
         jobs. This is the only thing the app changes on GitHub, and it costs CI minutes —
@@ -952,7 +911,7 @@ function AutoRerunSection({
       </Text>
 
       {!capability.canRerun ? (
-        <Flash variant="warning" sx={{ fontSize: 1 }}>
+        <Flash variant="warning" className={styles.body}>
           This token can’t re-run jobs, so auto-rerun is unavailable:{' '}
           {capabilityReadout(capability).text}. Add a classic token with the{' '}
           <code>repo</code> scope on <strong>Token &amp; login</strong>, for a repository you
@@ -960,7 +919,7 @@ function AutoRerunSection({
         </Flash>
       ) : (
         <>
-          <FormControl sx={{ mb: 3 }}>
+          <FormControl className={styles.mb3}>
             <Checkbox
               checked={settings.enabled}
               onChange={(e) => onChange({ enabled: e.target.checked })}
@@ -977,11 +936,11 @@ function AutoRerunSection({
             component, which FormControl doesn't recognise as its input and so
             renders the caption after it instead of above.
           */}
-          <Box sx={{ mb: 3 }}>
-            <Text as="label" sx={{ display: 'block', fontWeight: 'bold', fontSize: 1 }}>
+          <div className={styles.mb3}>
+            <Text as="label" className={styles.blockBold}>
               Workflows
             </Text>
-            <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mt: 1, mb: 2 }}>
+            <Text as="p" className={styles.fgMutedSmall}>
               Exact file names. A run is only re-run when its workflow file is listed here.
             </Text>
             <WorkflowFilesField
@@ -990,15 +949,10 @@ function AutoRerunSection({
               value={settings.workflowFiles}
               onChange={(next) => onChange({ workflowFiles: next })}
             />
-          </Box>
+          </div>
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: ['1fr', '1fr 1fr'],
-              columnGap: 3,
-              rowGap: 3,
-            }}
+          <div
+            className={styles.grid2}
           >
             <FormControl>
               <FormControl.Label>Max attempts</FormControl.Label>
@@ -1009,7 +963,7 @@ function AutoRerunSection({
                 value={settings.maxAttempts}
                 onChange={(e) => onChange({ maxAttempts: Number(e.target.value) || 1 })}
                 block
-                sx={{ maxWidth: 140 }}
+                className={styles.maxWidth}
               />
               <FormControl.Caption>
                 Counts GitHub’s own attempt number, so it survives restarts. 1 means never
@@ -1026,20 +980,20 @@ function AutoRerunSection({
                 value={settings.maxRunAgeHours}
                 onChange={(e) => onChange({ maxRunAgeHours: Number(e.target.value) || 1 })}
                 block
-                sx={{ maxWidth: 140 }}
+                className={styles.maxWidth}
               />
               <FormControl.Caption>
                 GitHub itself refuses re-runs after 30 days (720 h).
               </FormControl.Caption>
             </FormControl>
-          </Box>
+          </div>
 
           {/*
             The control is wide so its caption reads across the page; the field itself is
             capped separately. A caption pinned to the width of a two-digit number box
             wraps into a column of five lines and stops being read.
           */}
-          <FormControl sx={{ mt: 3, maxWidth: 620 }}>
+          <FormControl className={styles.mt3_2}>
             <FormControl.Label>Allow the same failure this many times</FormControl.Label>
             <TextInput
               type="number"
@@ -1048,7 +1002,7 @@ function AutoRerunSection({
               value={settings.maxIdenticalFailures}
               onChange={(e) => onChange({ maxIdenticalFailures: Number(e.target.value) || 0 })}
               block
-              sx={{ maxWidth: 140 }}
+              className={styles.maxWidth}
             />
             <FormControl.Caption>
               Compares the failing tests and steps between attempts. Once the <em>same</em> failure
@@ -1059,7 +1013,7 @@ function AutoRerunSection({
           </FormControl>
         </>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -1076,19 +1030,19 @@ function AutoMergeSection({
   onChange: (patch: Partial<AutoMergeConfig>) => void;
 }) {
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Auto-merge
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         Each open pull request gets a <strong>merge</strong> button that clears its description
         and lets GitHub merge it when the checks pass. It confirms first, and shows you the
         description it is about to delete — that text cannot be recovered afterwards.
       </Text>
-      <FormControl sx={{ maxWidth: 620 }}>
+      <FormControl className={styles.maxWidth2}>
         <FormControl.Label>Merge strategy</FormControl.Label>
         <Select
-          sx={{ maxWidth: 260 }}
+          className={styles.maxWidth3}
           value={settings.mergeMethod}
           onChange={(e) =>
             onChange({ mergeMethod: e.target.value as AutoMergeConfig['mergeMethod'] })
@@ -1102,7 +1056,7 @@ function AutoMergeSection({
           Must be a strategy the repository allows, or GitHub refuses to enable it.
         </FormControl.Caption>
       </FormControl>
-    </Box>
+    </div>
   );
 }
 
@@ -1120,11 +1074,11 @@ function FeatureBranchesSection({
   onChange: (patch: Partial<FeatureBranchesConfig>) => void;
 }) {
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Feature branches
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         For long-lived branches shared between your fork and the upstream. Adds a tab that
         shows where each branch's merges have got to, and three actions: bring the default
         branch into a feature branch, take a feature branch into the default branch, and pull
@@ -1132,7 +1086,7 @@ function FeatureBranchesSection({
         repositories have no such branches.
       </Text>
 
-      <FormControl sx={{ mb: 3 }}>
+      <FormControl className={styles.mb3}>
         <Checkbox
           checked={settings.enabled}
           onChange={(e) => onChange({ enabled: e.target.checked })}
@@ -1147,13 +1101,13 @@ function FeatureBranchesSection({
         // The control is wide so the caption can be read; the input is capped separately,
         // because a branch prefix is short and a text box the width of the page invites
         // nobody to type one.
-        <FormControl sx={{ maxWidth: 560 }}>
+        <FormControl className={styles.maxWidth4}>
           <FormControl.Label>Branch prefix</FormControl.Label>
           <TextInput
             value={settings.prefix}
             onChange={(e) => onChange({ prefix: e.target.value })}
             block
-            sx={{ maxWidth: 260 }}
+            className={styles.maxWidth3}
           />
           <FormControl.Caption>
             A branch counts when it starts with this <em>and</em> exists in both repositories.
@@ -1162,7 +1116,7 @@ function FeatureBranchesSection({
           </FormControl.Caption>
         </FormControl>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -1175,16 +1129,16 @@ function MergedPrsSection({
   onChange: (patch: Partial<MergedPrsConfig>) => void;
 }) {
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Merged pull requests
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         Keep recently-merged PRs in view so a failure that landed anyway is still
         reviewable. Their checks are already finished, so each is fetched once and then
         left alone.
       </Text>
-      <FormControl sx={{ maxWidth: 480 }}>
+      <FormControl className={styles.maxWidth5}>
         <FormControl.Label>How many to track</FormControl.Label>
         <TextInput
           type="number"
@@ -1193,11 +1147,11 @@ function MergedPrsSection({
           value={settings.count}
           onChange={(e) => onChange({ count: Number(e.target.value) || 0 })}
           block
-          sx={{ maxWidth: 140 }}
+          className={styles.maxWidth}
         />
         <FormControl.Caption>0 switches merged PRs off entirely.</FormControl.Caption>
       </FormControl>
-    </Box>
+    </div>
   );
 }
 
@@ -1214,23 +1168,17 @@ function AiTaskFields({
   onChange: (patch: Partial<AiTaskConfig>) => void;
 }) {
   return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.muted',
-        borderRadius: 2,
-        p: 3,
-        mb: 3,
-      }}
+    <div
+      className={styles.roundedP3}
     >
-      <Heading as="h3" sx={{ fontSize: 1, mb: 1 }}>
+      <Heading as="h3" className={styles.bodyMb1}>
         {title}
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedSmall2}>
         {blurb}
       </Text>
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 3 }}>
-        <FormControl sx={{ minWidth: 160 }}>
+      <div className={styles.flexGap3_3}>
+        <FormControl className={styles.minWidth}>
           <FormControl.Label>Model</FormControl.Label>
           <Select
             value={settings.model}
@@ -1243,7 +1191,7 @@ function AiTaskFields({
             ))}
           </Select>
         </FormControl>
-        <FormControl sx={{ minWidth: 160 }}>
+        <FormControl className={styles.minWidth}>
           <FormControl.Label>Reasoning effort</FormControl.Label>
           <Select
             value={settings.effort}
@@ -1256,13 +1204,13 @@ function AiTaskFields({
             ))}
           </Select>
         </FormControl>
-      </Box>
+      </div>
       {/*
         Capped below the card's width: this is prose, and a line running the full width of a
         wide window is harder to read than one that doesn't. The page is wide so the
         multi-column rows have room, not so the paragraphs do.
       */}
-      <FormControl sx={{ maxWidth: 860 }}>
+      <FormControl className={styles.maxWidth6}>
         <FormControl.Label>Custom prompt</FormControl.Label>
         <Textarea
           rows={4}
@@ -1278,7 +1226,7 @@ function AiTaskFields({
           can’t produce a reply the app fails to read.
         </FormControl.Caption>
       </FormControl>
-    </Box>
+    </div>
   );
 }
 
@@ -1299,7 +1247,7 @@ function CheckAiIntegration() {
 
   if (!claudeBridgeAvailable()) {
     return (
-      <Flash sx={{ mb: 3, fontSize: 1 }}>
+      <Flash className={styles.mb3Body}>
         The AI features need the desktop app — a browser has no way to run your local CLIs.
       </Flash>
     );
@@ -1315,7 +1263,7 @@ function CheckAiIntegration() {
   };
 
   return (
-    <Box sx={{ mb: 4 }}>
+    <div className={styles.mb4}>
       <Button
         leadingVisual={checking ? undefined : ChecklistIcon}
         disabled={checking}
@@ -1323,7 +1271,7 @@ function CheckAiIntegration() {
       >
         {checking ? (
           <>
-            <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+            <Spinner size="small" className={styles.mr1} />
             Checking…
           </>
         ) : (
@@ -1332,14 +1280,8 @@ function CheckAiIntegration() {
       </Button>
 
       {result && (
-        <Box
-          sx={{
-            mt: 3,
-            border: '1px solid',
-            borderColor: 'border.default',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
+        <div
+          className={styles.mt3Rounded}
         >
           <CheckRow
             state={result.claude ? 'ok' : 'bad'}
@@ -1372,14 +1314,14 @@ function CheckAiIntegration() {
             note="Needed for the whole-run log and for “Who broke it”."
           />
 
-          <Box sx={{ px: 3, py: 2, bg: 'canvas.subtle', fontSize: 0, color: 'fg.muted' }}>
+          <div className={styles.px3Py2}>
             {result.claude
               ? 'This checks that the tools are installed, not that they work — if an analysis still fails, the diagnostics log below says why.'
               : 'Without claude, the AI controls stay hidden however this page is configured.'}
-          </Box>
-        </Box>
+          </div>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -1407,27 +1349,20 @@ function CheckRow({
           : 'fg.subtle';
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        gap: 2,
-        px: 3,
-        py: 2,
-        borderBottom: '1px solid',
-        borderColor: 'border.muted',
-      }}
+    <div
+      className={styles.flexGap2_3}
     >
-      <Octicon icon={icon} size={16} sx={{ color: colour, mt: '2px', flexShrink: 0 }} />
-      <Box sx={{ minWidth: 0 }}>
-        <Text sx={{ fontFamily: 'mono', fontSize: 1, fontWeight: 'bold' }}>{label}</Text>
-        <Text as="div" sx={{ fontSize: 0, color: 'fg.default', wordBreak: 'break-word' }}>
+      <Icon icon={icon} size={16} className={styles.checkIcon} style={{ color: colour }} />
+      <div className={styles.minWidth2}>
+        <Text className={styles.monoBody}>{label}</Text>
+        <Text as="div" className={styles.smallFgDefault}>
           {detail}
         </Text>
-        <Text as="div" sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text as="div" className={styles.smallFgMuted}>
           {note}
         </Text>
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
@@ -1458,18 +1393,18 @@ function DiagnosticsSection({
   }, []);
 
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Diagnostics
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         The desktop app keeps a record of what it did — every analysis, the commands it ran, how each
         one ended, every auto-rerun decision including the ones that chose not to fire, and any
         request that failed. One JSON object per line, capped at 5 MB with one previous file kept. It
         holds sizes and outcomes, never your token and never the contents of a log.
       </Text>
 
-      <FormControl sx={{ mb: 3 }}>
+      <FormControl className={styles.mb3}>
         <Checkbox
           checked={settings.showLogTab}
           onChange={(e) => onChange({ showLogTab: e.target.checked })}
@@ -1483,14 +1418,8 @@ function DiagnosticsSection({
       </FormControl>
 
       {settings.showLogTab && (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: ['1fr', '1fr 1fr'],
-            columnGap: 3,
-            rowGap: 3,
-            mb: 3,
-          }}
+        <div
+          className={styles.gridSpaced}
         >
           <FormControl>
             <FormControl.Label>Tail to read (KB)</FormControl.Label>
@@ -1501,7 +1430,7 @@ function DiagnosticsSection({
               value={settings.tailKB}
               onChange={(e) => onChange({ tailKB: Number(e.target.value) })}
               block
-              sx={{ maxWidth: 140 }}
+              className={styles.maxWidth}
             />
             <FormControl.Caption>
               How much of the end of the file to load. The newest records are the point; raise it to
@@ -1517,36 +1446,23 @@ function DiagnosticsSection({
               value={settings.followSeconds}
               onChange={(e) => onChange({ followSeconds: Number(e.target.value) })}
               block
-              sx={{ maxWidth: 140 }}
+              className={styles.maxWidth}
             />
             <FormControl.Caption>
               How often the tab re-reads the file while <strong>Live</strong> is on. A local read, so
               this costs no GitHub quota.
             </FormControl.Caption>
           </FormControl>
-        </Box>
+        </div>
       )}
       {paths ? (
         <>
-          <Box
-            as="pre"
-            sx={{
-              m: 0,
-              mb: 2,
-              p: 2,
-              fontFamily: 'mono',
-              fontSize: 0,
-              bg: 'canvas.inset',
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'border.muted',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-            }}
+          <pre
+            className={styles.m0Mb2}
           >
             {paths.file}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          </pre>
+          <div className={styles.flexGap2_4}>
             <Button
               leadingVisual={CopyIcon}
               onClick={() => {
@@ -1558,23 +1474,23 @@ function DiagnosticsSection({
               {copied ? 'Copied' : 'Copy path'}
             </Button>
             <Button onClick={() => void revealDiagnosticsLog()}>Open folder</Button>
-          </Box>
+          </div>
         </>
       ) : (
-        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1 }}>
+        <Text as="p" className={styles.fgMutedBody2}>
           Locating the log file…
         </Text>
       )}
       {/* The file is written either way; this is only for watching it happen live. */}
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 0, mt: 3, mb: 0 }}>
+      <Text as="p" className={styles.fgMutedSmall3}>
         To follow the same lines as they happen, open DevTools and filter the console by a scope —
-        <Text as="span" sx={{ fontFamily: 'mono' }}> [auto-rerun]</Text>,
-        <Text as="span" sx={{ fontFamily: 'mono' }}> [api]</Text>,
-        <Text as="span" sx={{ fontFamily: 'mono' }}> [claude]</Text>. Console output is off by
+        <Text as="span" className={styles.mono}> [auto-rerun]</Text>,
+        <Text as="span" className={styles.mono}> [api]</Text>,
+        <Text as="span" className={styles.mono}> [claude]</Text>. Console output is off by
         default in an installed build; turn it on with
-        <Text as="span" sx={{ fontFamily: 'mono' }}> jobMonitorDebug.enable()</Text>.
+        <Text as="span" className={styles.mono}> jobMonitorDebug.enable()</Text>.
       </Text>
-    </Box>
+    </div>
   );
 }
 
@@ -1590,11 +1506,11 @@ function AiSection({
   onChange: (patch: Partial<AiConfig>) => void;
 }) {
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         AI integration
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         Runs the <code>claude</code> CLI already installed on this machine to explain a failure
         and to rewrite its log. Desktop app only. This is the one thing Job Monitor sends
         anywhere other than <code>api.github.com</code>, and it only ever runs when you click —
@@ -1603,7 +1519,7 @@ function AiSection({
 
       <CheckAiIntegration />
 
-      <FormControl sx={{ mb: 3 }}>
+      <FormControl className={styles.mb3}>
         <Checkbox
           checked={settings.enabled}
           onChange={(e) => onChange({ enabled: e.target.checked })}
@@ -1617,7 +1533,7 @@ function AiSection({
 
       {settings.enabled && (
         <>
-          <FormControl sx={{ mb: 4, maxWidth: 860 }}>
+          <FormControl className={styles.mb4_2}>
             <FormControl.Label>Additional instructions</FormControl.Label>
             <Textarea
               rows={3}
@@ -1665,7 +1581,7 @@ function AiSection({
           />
         </>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -1678,16 +1594,16 @@ function FailureReportsSection({
   onChange: (patch: Partial<FailureReportsConfig>) => void;
 }) {
   return (
-    <Box sx={sectionSx}>
-      <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>
+    <div className={styles.roundedP4}>
+      <Heading as="h2" className={styles.titleMb1}>
         Failure reports
       </Heading>
-      <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <Text as="p" className={styles.fgMutedBody}>
         The <strong>Failures</strong> tab writes a Markdown report per failing job, ready to
         paste into Teams or a GitHub issue.
       </Text>
 
-      <FormControl sx={{ mb: 3 }}>
+      <FormControl className={styles.mb3}>
         <Checkbox
           checked={settings.prefetchAnnotations}
           onChange={(e) => onChange({ prefetchAnnotations: e.target.checked })}
@@ -1699,13 +1615,8 @@ function FailureReportsSection({
         </FormControl.Caption>
       </FormControl>
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: ['1fr', '1fr 1fr'],
-          columnGap: 3,
-          rowGap: 3,
-        }}
+      <div
+        className={styles.grid2}
       >
         <FormControl>
           <FormControl.Label>Log lines to include</FormControl.Label>
@@ -1716,7 +1627,7 @@ function FailureReportsSection({
             value={settings.logTailLines}
             onChange={(e) => onChange({ logTailLines: Number(e.target.value) || 0 })}
             block
-            sx={{ maxWidth: 140 }}
+            className={styles.maxWidth}
           />
           <FormControl.Caption>
             Tail of the failing step’s log. 0 leaves the log out.
@@ -1726,7 +1637,7 @@ function FailureReportsSection({
         <FormControl>
           <FormControl.Label>Default format</FormControl.Label>
           <Select
-            sx={{ maxWidth: 260 }}
+            className={styles.maxWidth3}
             value={settings.format}
             onChange={(e) => onChange({ format: e.target.value as FailureReportsConfig['format'] })}
             block
@@ -1738,9 +1649,31 @@ function FailureReportsSection({
             Teams can’t render collapsible blocks, so its log is laid out flat.
           </FormControl.Caption>
         </FormControl>
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
+}
+
+/**
+ * What changed about the flows, recorded once per save.
+ *
+ * Deliberately not on `updateFlow`: that fires on every keystroke in every field, so counting
+ * there would report a number closer to "characters typed" than to "flows edited" and would
+ * swamp every other feature in the batch.
+ *
+ * Creation and deletion are already recorded at their own buttons, so an edit here means a flow
+ * that existed before and is not the same afterwards. The two configuration options are recorded
+ * by their *state* rather than by the toggle that set them — what is worth knowing is how many
+ * installations run a pattern flow at all, not how often somebody flipped the switch.
+ */
+function recordFlowEdits(before: readonly Flow[], after: readonly Flow[]): void {
+  const previous = new Map(before.map((f) => [f.id, f]));
+  for (const flow of after) {
+    const was = previous.get(flow.id);
+    if (was && JSON.stringify(was) !== JSON.stringify(flow)) Telemetry.featureUsed(Feature.FLOW_EDITED);
+    if (flow.match.pattern.trim()) Telemetry.featureUsed(Feature.FLOW_MATCH_REGEX_USED);
+    if (flow.emptyFilter.enabled) Telemetry.featureUsed(Feature.FLOW_EMPTY_FILTER_USED);
+  }
 }
 
 export function SettingsPage() {
@@ -1763,6 +1696,8 @@ export function SettingsPage() {
   >('token');
 
   const exportJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
+  // Recorded when the JSON is actually copied, not when it is rendered — rendering happens on
+  // every settings open and would drown the real signal.
 
   const update = (patch: Partial<MonitorConfig>) => setDraft((d) => ({ ...d, ...patch }));
   const updateNested = <K extends keyof MonitorConfig>(key: K, patch: Partial<MonitorConfig[K]>) =>
@@ -1776,6 +1711,7 @@ export function SettingsPage() {
       return;
     }
     setErrors([]);
+    recordFlowEdits(config.flows, result.data.flows);
     setConfig(result.data);
     setDraft(clone(result.data));
     setSavedMsg(true);
@@ -1795,6 +1731,7 @@ export function SettingsPage() {
       setJsonErrors(result.errors);
       return;
     }
+    Telemetry.featureUsed(Feature.CONFIG_IMPORTED);
     setConfig(result.config);
     setDraft(clone(result.config));
     setJsonText('');
@@ -1802,6 +1739,7 @@ export function SettingsPage() {
   };
 
   const addFlow = () => {
+    Telemetry.featureUsed(Feature.FLOW_CREATED);
     const flow: Flow = {
       id: newFlowId(),
       name: 'New flow',
@@ -1817,25 +1755,27 @@ export function SettingsPage() {
 
   const updateFlow = (index: number, next: Flow) =>
     update({ flows: draft.flows.map((f, i) => (i === index ? next : f)) });
-  const removeFlow = (index: number) =>
+  const removeFlow = (index: number) => {
+    Telemetry.featureUsed(Feature.FLOW_DELETED);
     update({ flows: draft.flows.filter((_, i) => i !== index) });
+  };
 
   const draftFooter = (
     <>
       {errors.length > 0 && (
-        <Flash variant="danger" sx={{ mb: 3 }}>
-          <Box as="ul" sx={{ m: 0, pl: 3 }}>
+        <Flash variant="danger" className={styles.mb3}>
+          <ul className={styles.m0Pl3}>
             {errors.map((e) => (
               <li key={e}>{e}</li>
             ))}
-          </Box>
+          </ul>
         </Flash>
       )}
-      {savedMsg && <Flash variant="success" sx={{ mb: 3 }}>Settings saved.</Flash>}
-      <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
+      {savedMsg && <Flash variant="success" className={styles.mb3}>Settings saved.</Flash>}
+      <div className={styles.flexGap2_5}>
         <Button variant="primary" onClick={onSave}>Save changes</Button>
         <Button onClick={() => setDraft(clone(config))}>Reset</Button>
-      </Box>
+      </div>
     </>
   );
 
@@ -1856,8 +1796,8 @@ export function SettingsPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1180 }}>
-      <Box sx={{ mb: 4 }}>
+    <div className={styles.maxWidth7}>
+      <div className={styles.mb4}>
         <UnderlineNav aria-label="Settings sections">
           {TABS.map(([key, label, icon]) => (
             <UnderlineNav.Item
@@ -1873,16 +1813,16 @@ export function SettingsPage() {
             </UnderlineNav.Item>
           ))}
         </UnderlineNav>
-      </Box>
+      </div>
 
       {tab === 'token' && <TokenSection />}
 
       {tab === 'repo' && (
         <>
-      <Box sx={sectionSx}>
-        <Heading as="h2" sx={{ fontSize: 3, mb: 3 }}>Repository</Heading>
-        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-          <FormControl sx={{ flex: 1, minWidth: 160 }} required>
+      <div className={styles.roundedP4}>
+        <Heading as="h2" className={styles.titleMb3}>Repository</Heading>
+        <div className={styles.flexGap3}>
+          <FormControl className={styles.grow3} required>
             <FormControl.Label>Upstream owner</FormControl.Label>
             <TextInput
               value={draft.upstream.owner}
@@ -1890,7 +1830,7 @@ export function SettingsPage() {
               block
             />
           </FormControl>
-          <FormControl sx={{ flex: 1, minWidth: 160 }} required>
+          <FormControl className={styles.grow3} required>
             <FormControl.Label>Upstream repo</FormControl.Label>
             <TextInput
               value={draft.upstream.repo}
@@ -1903,9 +1843,9 @@ export function SettingsPage() {
               parsed on save.
             </FormControl.Caption>
           </FormControl>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mt: 2 }}>
-          <FormControl sx={{ flex: 1, minWidth: 160 }} required>
+        </div>
+        <div className={styles.flexGap3_4}>
+          <FormControl className={styles.grow3} required>
             <FormControl.Label>Fork owner</FormControl.Label>
             <TextInput
               value={draft.fork.owner}
@@ -1913,7 +1853,7 @@ export function SettingsPage() {
               block
             />
           </FormControl>
-          <FormControl sx={{ flex: 1, minWidth: 160 }}>
+          <FormControl className={styles.grow3}>
             <FormControl.Label>Fork repo (optional)</FormControl.Label>
             <TextInput
               value={draft.fork.repo}
@@ -1926,7 +1866,7 @@ export function SettingsPage() {
               they need its real name.
             </FormControl.Caption>
           </FormControl>
-          <FormControl sx={{ flex: 1, minWidth: 160 }}>
+          <FormControl className={styles.grow3}>
             <FormControl.Label>Branch filter (optional)</FormControl.Label>
             <TextInput
               value={draft.fork.branch ?? ''}
@@ -1935,7 +1875,7 @@ export function SettingsPage() {
               block
             />
           </FormControl>
-          <FormControl sx={{ flex: 1, minWidth: 160 }}>
+          <FormControl className={styles.grow3}>
             <FormControl.Label>PR author (optional)</FormControl.Label>
             <TextInput
               value={draft.prAuthor}
@@ -1944,9 +1884,9 @@ export function SettingsPage() {
               block
             />
           </FormControl>
-        </Box>
+        </div>
 
-      </Box>
+      </div>
 
       {draftFooter}
         </>
@@ -1954,12 +1894,12 @@ export function SettingsPage() {
 
       {tab === 'polling' && (
         <>
-      <Box sx={sectionSx}>
-        <Heading as="h2" sx={{ fontSize: 3, mb: 1 }}>Polling</Heading>
-        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 3 }}>
+      <div className={styles.roundedP4}>
+        <Heading as="h2" className={styles.titleMb1}>Polling</Heading>
+        <Text as="p" className={styles.fgMutedBody}>
           How often each kind of data is refreshed, in seconds.
         </Text>
-        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+        <div className={styles.flexGap3}>
           {(
             [
               ['prListSeconds', 'PR list'],
@@ -1968,7 +1908,7 @@ export function SettingsPage() {
               ['hiddenSeconds', 'Hidden tab'],
             ] as const
           ).map(([key, label]) => (
-            <FormControl key={key} sx={{ width: 140 }}>
+            <FormControl key={key} className={styles.width2}>
               <FormControl.Label>{label}</FormControl.Label>
               <TextInput
                 type="number"
@@ -1980,7 +1920,7 @@ export function SettingsPage() {
               />
             </FormControl>
           ))}
-          <FormControl sx={{ width: 160 }}>
+          <FormControl className={styles.width3}>
             <FormControl.Label>Rate-limit warn at</FormControl.Label>
             <TextInput
               type="number"
@@ -1989,8 +1929,8 @@ export function SettingsPage() {
               block
             />
           </FormControl>
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {draftFooter}
         </>
@@ -1998,13 +1938,13 @@ export function SettingsPage() {
 
       {tab === 'flows' && (
         <>
-      <Box sx={sectionSx}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-          <Heading as="h2" sx={{ fontSize: 3 }}>Flows</Heading>
+      <div className={styles.roundedP4}>
+        <div className={styles.flexCenter4}>
+          <Heading as="h2" className={styles.title}>Flows</Heading>
           <Button leadingVisual={PlusIcon} onClick={addFlow}>Add flow</Button>
-        </Box>
+        </div>
         {draft.flows.length === 0 ? (
-          <Text sx={{ color: 'fg.muted' }}>
+          <Text className={styles.fgMuted}>
             No flows yet. Add one to monitor workflow runs by branch / event — a single workflow,
             or every workflow matching a regex.
           </Text>
@@ -2019,26 +1959,32 @@ export function SettingsPage() {
             />
           ))
         )}
-      </Box>
+      </div>
 
       {draftFooter}
 
-      <Box sx={sectionSx}>
-        <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>Import / export JSON</Heading>
-        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1, mb: 2 }}>
+      <div className={styles.roundedP4}>
+        <Heading as="h2" className={styles.titleMb2}>Import / export JSON</Heading>
+        <Text as="p" className={styles.fgMutedBody3}>
           Current configuration:
         </Text>
-        <Textarea value={exportJson} readOnly rows={8} sx={{ width: '100%', fontFamily: 'mono', fontSize: 0 }} />
-        <Heading as="h3" sx={{ fontSize: 1, mt: 3, mb: 2, color: 'fg.muted' }}>
+        <Textarea
+          value={exportJson}
+          readOnly
+          rows={8}
+          className={styles.monoSmall}
+          onCopy={() => Telemetry.featureUsed(Feature.CONFIG_EXPORTED)}
+        />
+        <Heading as="h3" className={styles.bodyMt3}>
           Paste JSON to import
         </Heading>
         {jsonErrors.length > 0 && (
-          <Flash variant="danger" sx={{ mb: 2 }}>
-            <Box as="ul" sx={{ m: 0, pl: 3 }}>
+          <Flash variant="danger" className={styles.mb2}>
+            <ul className={styles.m0Pl3}>
               {jsonErrors.map((e) => (
                 <li key={e}>{e}</li>
               ))}
-            </Box>
+            </ul>
           </Flash>
         )}
         <Textarea
@@ -2046,12 +1992,12 @@ export function SettingsPage() {
           onChange={(e) => setJsonText(e.target.value)}
           rows={8}
           placeholder='{ "upstream": { "owner": "...", "repo": "..." }, ... }'
-          sx={{ width: '100%', fontFamily: 'mono', fontSize: 0 }}
+          className={styles.monoSmall}
         />
-        <Button sx={{ mt: 2 }} onClick={onImport} disabled={!jsonText.trim()}>
+        <Button className={styles.mt2} onClick={onImport} disabled={!jsonText.trim()}>
           Import &amp; apply
         </Button>
-      </Box>
+      </div>
         </>
       )}
 
@@ -2115,6 +2061,6 @@ export function SettingsPage() {
           {draftFooter}
         </>
       )}
-    </Box>
+    </div>
   );
 }

@@ -1,0 +1,42 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.fixedFlex {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1100;
+  max-width: 380px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--base-size-8);
+  padding: var(--base-size-8);
+  background-color: var(--overlay-bgColor);
+  border: 1px solid;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  box-shadow: var(--shadow-floating-large);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0px;
+}
+
+.boldBlock {
+  font-weight: var(--base-text-weight-semibold);
+  display: block;
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  word-break: break-word;
+}
+
+.mt1 {
+  margin-top: var(--base-size-4);
+}
+
+.resultIcon {
+  margin-top: 2px;
+}

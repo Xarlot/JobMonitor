@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Box, Button, Flash, Heading, Text, Textarea } from '@primer/react';
+import { Button, Flash, Heading, Text, Textarea } from '@primer/react';
 import { useCopy } from '../hooks/useCopy';
 import { Modal } from './Modal';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import { safeParseBoard } from '../storage/configStore';
+import styles from './FlowBoardDialog.module.css';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 /**
  * Export / import the flows + grouping "board" as JSON. Self-contained and keyed
@@ -45,6 +47,9 @@ export function FlowBoardDialog({ onClose }: { onClose: () => void }) {
       setErrors(res.errors);
       return;
     }
+    // Counted here rather than on the click: everything above rejects the input, and an import
+    // that failed validation is not an import — it is someone finding out their file is wrong.
+    Telemetry.featureUsed(Feature.FLOW_BOARD_IMPORTED);
     applyBoard(res.board);
     setDone(`Imported ${res.board.flows.length} flows and ${res.board.groups.length} groups.`);
     setImportText('');
@@ -57,37 +62,37 @@ export function FlowBoardDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
     >
-      <Heading as="h3" sx={{ fontSize: 1, color: 'fg.muted', mb: 2 }}>
+      <Heading as="h3" className={styles.bodyFgMuted}>
         Export
       </Heading>
       <Textarea
         value={json}
         readOnly
         rows={10}
-        sx={{ width: '100%', fontFamily: 'mono', fontSize: 0 }}
+        className={styles.monoSmall}
       />
-      <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+      <div className={styles.flexGap2}>
         <Button onClick={onCopy}>{copied ? 'Copied ✓' : 'Copy'}</Button>
         <Button onClick={onDownload}>Download .json</Button>
-      </Box>
+      </div>
 
-      <Heading as="h3" sx={{ fontSize: 1, color: 'fg.muted', mt: 4, mb: 1 }}>
+      <Heading as="h3" className={styles.bodyFgMuted2}>
         Import
       </Heading>
-      <Text as="p" sx={{ fontSize: 0, color: 'fg.muted', mb: 2 }}>
+      <Text as="p" className={styles.smallFgMuted}>
         Replaces <strong>all</strong> current flows and groups with the pasted board.
       </Text>
       {errors.length > 0 && (
-        <Flash variant="danger" sx={{ mb: 2 }}>
-          <Box as="ul" sx={{ m: 0, pl: 3 }}>
+        <Flash variant="danger" className={styles.mb2}>
+          <ul className={styles.m0Pl3}>
             {errors.map((e) => (
               <li key={e}>{e}</li>
             ))}
-          </Box>
+          </ul>
         </Flash>
       )}
       {done && (
-        <Flash variant="success" sx={{ mb: 2 }}>
+        <Flash variant="success" className={styles.mb2}>
           {done}
         </Flash>
       )}
@@ -96,9 +101,9 @@ export function FlowBoardDialog({ onClose }: { onClose: () => void }) {
         onChange={(e) => setImportText(e.target.value)}
         rows={8}
         placeholder='{ "version": 1, "flows": [ … ], "groups": [ … ] }'
-        sx={{ width: '100%', fontFamily: 'mono', fontSize: 0 }}
+        className={styles.monoSmall}
       />
-      <Button variant="primary" sx={{ mt: 2 }} onClick={onImport} disabled={!importText.trim()}>
+      <Button variant="primary" className={styles.mt2} onClick={onImport} disabled={!importText.trim()}>
         Import &amp; replace
       </Button>
     </Modal>

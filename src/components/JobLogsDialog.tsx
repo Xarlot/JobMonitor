@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Button, Flash, Link, Octicon, Spinner, Text } from '@primer/react';
+import { Button, Flash, Link, Spinner, Text } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, LinkExternalIcon } from '@primer/octicons-react';
 import type { Job } from '../api/types';
 import { fetchJobLog, logTtlMs } from '../api/logCache';
@@ -9,6 +9,8 @@ import { LogLines } from './LogLines';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
 import { formatDuration, formatTime } from '../lib/format';
+import styles from './JobLogsDialog.module.css';
+import { Icon } from './Icon';
 
 export function JobLogsDialog({
   owner,
@@ -59,26 +61,26 @@ export function JobLogsDialog({
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', mb: 2 }}>
+      <div className={styles.flexCenter}>
         <StatusBadge status={statusToOverall(job.status, job.conclusion)} />
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text className={styles.smallFgMuted}>
           duration {formatDuration(job.started_at, job.completed_at)}
         </Text>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>started {formatTime(job.started_at)}</Text>
-        <Box sx={{ flex: 1 }} />
+        <Text className={styles.smallFgMuted}>started {formatTime(job.started_at)}</Text>
+        <div className={styles.grow} />
         {job.html_url && (
           <Link href={job.html_url} target="_blank" rel="noreferrer">
-            <Octicon icon={LinkExternalIcon} size={14} sx={{ mr: 1 }} />
+            <LinkExternalIcon size={14} className={styles.mr1} />
             Open on GitHub
           </Link>
         )}
-      </Box>
-      <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', mb: 3 }}>
+      </div>
+      <Text className={styles.smallFgMuted2}>
         Expand a step to load its logs. Logs are fetched once for the whole job and split by step.
       </Text>
 
       {error && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 0 }}>
+        <Flash variant="warning" className={styles.mb3Small}>
           Couldn’t load logs: {error}. A read-only fine-grained token can’t download Actions logs
           (GitHub returns 404); a classic token with the <strong>repo</strong> scope can.{' '}
           {job.html_url && (
@@ -90,47 +92,47 @@ export function JobLogsDialog({
       )}
 
       {steps.length === 0 ? (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No steps (job was skipped or not started).</Text>
+        <Text className={styles.smallFgMuted}>No steps (job was skipped or not started).</Text>
       ) : (
-        <Box sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, overflow: 'hidden' }}>
+        <div className={styles.rounded}>
           {steps.map((step, idx) => {
             const open = expanded.has(step.number);
             const stepLog = logsByStep?.[step.number];
             return (
-              <Box key={`${step.number}-${step.name}`} sx={{ borderTop: idx > 0 ? '1px solid' : 'none', borderColor: 'border.muted' }}>
-                <Box
+              <div key={`${step.number}-${step.name}`} className={idx > 0 ? styles.jobRowDivided : styles.jobRow}>
+                <div
                   onClick={() => toggle(step.number)}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: '6px', cursor: 'pointer', ':hover': { bg: 'canvas.subtle' } }}
+                  className={styles.jobHeader}
                 >
-                  <Octicon icon={open ? ChevronDownIcon : ChevronRightIcon} size={14} sx={{ color: 'fg.muted' }} />
+                  <Icon icon={open ? ChevronDownIcon : ChevronRightIcon} size={14} className={styles.fgMuted} />
                   <StatusBadge status={statusToOverall(step.status, step.conclusion)} withText={false} size={14} />
-                  <Text sx={{ fontSize: 0, flex: 1, minWidth: 0 }}>
-                    <Text as="span" sx={{ color: 'fg.muted', mr: 1 }}>{step.number}.</Text>
+                  <Text className={styles.smallGrow}>
+                    <Text as="span" className={styles.fgMutedMr1}>{step.number}.</Text>
                     {step.name}
                   </Text>
-                  <Text sx={{ fontSize: 0, color: 'fg.muted', whiteSpace: 'nowrap' }}>
+                  <Text className={styles.smallFgMuted3}>
                     {formatDuration(step.started_at, step.completed_at)}
                   </Text>
-                </Box>
+                </div>
                 {open && (
-                  <Box>
+                  <div>
                     {loading && !stepLog ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted', px: 2, py: 2 }}>
-                        <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading logs…</Text>
-                      </Box>
+                      <div className={styles.flexCenter2}>
+                        <Spinner size="small" /> <Text className={styles.small}>Loading logs…</Text>
+                      </div>
                     ) : stepLog ? (
                       <LogLines text={stepLog} maxHeight={360} />
                     ) : (
-                      <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', px: 2, py: 2 }}>
+                      <Text className={styles.smallFgMuted4}>
                         {error ? '(logs unavailable — see note above)' : '(no log output for this step)'}
                       </Text>
                     )}
-                  </Box>
+                  </div>
                 )}
-              </Box>
+              </div>
             );
           })}
-        </Box>
+        </div>
       )}
     </Modal>
   );

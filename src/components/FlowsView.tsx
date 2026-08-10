@@ -1,17 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  Flash,
-  Heading,
-  IconButton,
-  Octicon,
-  SegmentedControl,
-  Select,
-  Spinner,
-  Text,
-  TextInput,
-} from '@primer/react';
+import { Button, Flash, Heading, IconButton, SegmentedControl, Select, Spinner, Text, TextInput } from '@primer/react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -41,6 +29,8 @@ import { FlowBoardDialog } from './FlowBoardDialog';
 import { UnmatchedFlowsDialog } from './UnmatchedFlowsDialog';
 import { PromptDialog } from './PromptDialog';
 import { GroupStatusCounts, groupVerdict } from './GroupStatusCounts';
+import styles from './FlowsView.module.css';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 const RUN_FILTERS: { value: RunStatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -79,7 +69,7 @@ function FlowsToolbar() {
   const { compact, setCompact } = useViewMode();
   const jobActive = isJobFilterActive(filter);
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 3, flexWrap: 'wrap' }}>
+    <div className={styles.flexCenter}>
       <SegmentedControl aria-label="Filter runs by status">
         {RUN_FILTERS.map((f) => (
           <SegmentedControl.Button
@@ -101,21 +91,21 @@ function FlowsToolbar() {
         </SegmentedControl.Button>
       </SegmentedControl>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Text sx={{ fontSize: 1, fontWeight: 'bold', whiteSpace: 'nowrap' }}>Job filter</Text>
+      <div className={styles.flexCenter2}>
+        <Text className={styles.bodyBold}>Job filter</Text>
         <TextInput
           leadingVisual={SearchIcon}
           value={filter.jobName}
           onChange={(e) => setFilter({ ...filter, jobName: e.target.value })}
           placeholder="job name contains…"
           aria-label="Job filter"
-          sx={{ width: 200 }}
+          className={styles.width}
         />
-      </Box>
+      </div>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <div className={styles.flexCenter2}>
         <Text
-          sx={{ fontSize: 1, fontWeight: 'bold', whiteSpace: 'nowrap', color: jobActive ? 'fg.default' : 'fg.muted' }}
+          className={jobActive ? styles.filterLabelActive : styles.filterLabel}
         >
           Job is
         </Text>
@@ -124,7 +114,7 @@ function FlowsToolbar() {
           onChange={(e) => setFilter({ ...filter, jobState: e.target.value as JobStateFilter })}
           disabled={!jobActive}
           aria-label="Job is"
-          sx={{ width: 200 }}
+          className={styles.width}
         >
           {JOB_STATES.map((s) => (
             <Select.Option key={s.value} value={s.value}>
@@ -132,7 +122,7 @@ function FlowsToolbar() {
             </Select.Option>
           ))}
         </Select>
-      </Box>
+      </div>
 
       {(jobActive || filter.runStatus !== 'all') && (
         <Button leadingVisual={XIcon} variant="invisible" onClick={() => setFilter(DEFAULT_FLOWS_FILTER)}>
@@ -141,9 +131,9 @@ function FlowsToolbar() {
       )}
 
       {jobActive && (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>Loading jobs to evaluate the filter…</Text>
+        <Text className={styles.smallFgMuted}>Loading jobs to evaluate the filter…</Text>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -252,23 +242,23 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
 
   if (config.flows.length === 0) {
     return (
-      <Box sx={{ p: 6, textAlign: 'center', color: 'fg.muted' }}>
-        <Octicon icon={WorkflowIcon} size={32} />
-        <Text as="p" sx={{ mt: 2 }}>
+      <div className={styles.p6TextCenter}>
+        <WorkflowIcon size={32} />
+        <Text as="p" className={styles.mt2}>
           No flows configured yet. Add one in <strong>Settings → Flows</strong> to monitor
           workflow runs on specific branches or triggered via workflow_dispatch — either a single
           workflow or every workflow matching a regex.
         </Text>
-      </Box>
+      </div>
     );
   }
 
   if (flows.length === 0 && resolving) {
     return (
-      <Box sx={{ p: 6, textAlign: 'center', color: 'fg.muted' }}>
+      <div className={styles.p6TextCenter}>
         <Spinner />
-        <Text as="p" sx={{ mt: 2 }}>Matching workflows against the configured regex…</Text>
-      </Box>
+        <Text as="p" className={styles.mt2}>Matching workflows against the configured regex…</Text>
+      </div>
     );
   }
 
@@ -292,34 +282,40 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
   const hiddenCount = flows.length - totalVisible;
 
   return (
-    <Box>
+    <div>
       <FlowsToolbar />
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+      <div className={styles.flexGap2}>
         <Button
           leadingVisual={PlusIcon}
           size="small"
-          onClick={() => setGroupPrompt({ mode: 'create' })}
+          onClick={() => {
+                Telemetry.featureUsed(Feature.FLOW_GROUP_CREATED);
+                setGroupPrompt({ mode: 'create' });
+              }}
         >
           New group
         </Button>
-        <Button leadingVisual={DownloadIcon} size="small" onClick={() => setBoardOpen(true)}>
+        <Button leadingVisual={DownloadIcon} size="small" onClick={() => {
+            Telemetry.featureUsed(Feature.FLOW_BOARD_EXPORTED);
+            setBoardOpen(true);
+          }}>
           Export / Import
         </Button>
-      </Box>
+      </div>
 
       {patternIssues.length > 0 && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
-          <Box as="ul" sx={{ m: 0, pl: 3 }}>
+        <Flash variant="warning" className={styles.mb3Body}>
+          <ul className={styles.m0Pl3}>
             {patternIssues.map((issue) => (
               <li key={issue.id}>{issue.text}</li>
             ))}
-          </Box>
+          </ul>
         </Flash>
       )}
 
       {hiddenCount > 0 && (
-        <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted', mb: 3 }}>
+        <Text className={styles.blockSmall}>
           {hiddenCount} {hiddenCount === 1 ? 'flow' : 'flows'} hidden by per-flow filter
           (configure in Settings → each flow's visibility filter).
         </Text>
@@ -337,7 +333,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
         const isDropTarget = Boolean(dragId) && dropGroup === groupKey;
 
         return (
-          <Box
+          <div
             key={groupKey || '__ungrouped'}
             onDragOver={
               dragId
@@ -356,31 +352,23 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                   }
                 : undefined
             }
-            sx={{
-              mb: 2,
-              py: 1,
-              borderRadius: 2,
-              border: '1px dashed',
-              borderColor: isDropTarget ? 'accent.emphasis' : 'transparent',
-              bg: isDropTarget ? 'accent.subtle' : 'transparent',
-              transition: 'border-color 0.12s, background-color 0.12s',
-            }}
+            className={isDropTarget ? styles.dropZoneActive : styles.dropZone}
           >
             {/* With no groups at all, there's just one ungrouped list — skip the header. */}
             {(group || config.groups.length > 0) && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: collapsed ? 0 : 1 }}>
+              <div className={collapsed ? styles.groupHeaderCollapsed : styles.groupHeader}>
                 <IconButton
                   size="small"
                   variant="invisible"
                   aria-label={collapsed ? 'Expand group' : 'Collapse group'}
                   icon={collapsed ? ChevronRightIcon : ChevronDownIcon}
                   onClick={() => group && setCollapsed(group.id, !collapsed)}
-                  sx={{ visibility: group ? 'visible' : 'hidden' }}
+                  className={group ? undefined : styles.hiddenControl}
                 />
-                <Heading as="h3" sx={{ fontSize: 1, color: group ? 'fg.default' : 'fg.muted' }}>
+                <Heading as="h3" className={group ? styles.groupNameNamed : styles.groupName}>
                   {group ? group.name : 'Ungrouped'}
                 </Heading>
-                <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {visible.length}</Text>
+                <Text className={styles.smallFgMuted}>· {visible.length}</Text>
                 {/*
                   The latest run, not the flow's aggregate across all of them: the aggregate
                   puts failure first, so a flow that failed five runs ago read as red here
@@ -397,14 +385,17 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                   <Button
                     size="small"
                     variant="invisible"
-                    sx={{ color: 'attention.fg', fontSize: 0 }}
+                    className={styles.attentionFgSmall}
                     title={`Placed here but not available right now:\n${section.pinnedMissing.map(describeId).join('\n')}\n\nClick to review / remove.`}
-                    onClick={() => setCleanupOpen(true)}
+                    onClick={() => {
+                        Telemetry.featureUsed(Feature.FLOW_UNMATCHED_DIALOG_OPENED);
+                        setCleanupOpen(true);
+                      }}
                   >
                     {section.pinnedMissing.length} unmatched
                   </Button>
                 )}
-                <Box sx={{ flex: 1 }} />
+                <div className={styles.grow} />
                 {group && (
                   <>
                     <IconButton
@@ -412,7 +403,10 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                       variant="invisible"
                       aria-label="Rename group"
                       icon={PencilIcon}
-                      onClick={() => setGroupPrompt({ mode: 'rename', group })}
+                      onClick={() => {
+                          Telemetry.featureUsed(Feature.FLOW_EDITED);
+                          setGroupPrompt({ mode: 'rename', group });
+                        }}
                     />
                     <IconButton
                       size="small"
@@ -426,7 +420,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                     />
                   </>
                 )}
-              </Box>
+              </div>
             )}
 
             {!collapsed &&
@@ -443,21 +437,13 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
                   />
                 ))
               ) : (
-                <Box
-                  sx={{
-                    p: 3,
-                    textAlign: 'center',
-                    color: 'fg.muted',
-                    fontSize: 0,
-                    border: '1px dashed',
-                    borderColor: 'border.muted',
-                    borderRadius: 2,
-                  }}
+                <div
+                  className={styles.p3TextCenter}
                 >
                   {group ? 'Drop flows here' : 'No ungrouped flows'}
-                </Box>
+                </div>
               ))}
-          </Box>
+          </div>
         );
       })}
 
@@ -477,6 +463,6 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
           onClose={() => setGroupPrompt(null)}
         />
       )}
-    </Box>
+    </div>
   );
 }

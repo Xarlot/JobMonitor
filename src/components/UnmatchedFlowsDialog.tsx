@@ -1,7 +1,8 @@
-import { Box, Button, Heading, Octicon, Text } from '@primer/react';
+import { Button, Heading, Text } from '@primer/react';
 import { CheckCircleIcon, TrashIcon } from '@primer/octicons-react';
 import { Modal } from './Modal';
 import { useFlowGroups } from '../hooks/useFlowGroups';
+import styles from './UnmatchedFlowsDialog.module.css';
 
 /**
  * Editor for the layout leftovers the board keeps: places held for flows that
@@ -41,17 +42,17 @@ export function UnmatchedFlowsDialog({ onClose }: { onClose: () => void }) {
       }
     >
       {total === 0 ? (
-        <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
-          <Octicon icon={CheckCircleIcon} size={24} sx={{ color: 'success.fg' }} />
-          <Text as="p" sx={{ mt: 2 }}>Nothing left to clean up.</Text>
-        </Box>
+        <div className={styles.p4TextCenter}>
+          <CheckCircleIcon size={24} className={styles.successFg} />
+          <Text as="p" className={styles.mt2}>Nothing left to clean up.</Text>
+        </div>
       ) : (
         stale.map((section) => (
-          <Box key={section.name} sx={{ mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-              <Heading as="h3" sx={{ fontSize: 1 }}>{section.name}</Heading>
-              <Text sx={{ fontSize: 0, color: 'fg.muted' }}>· {section.ids.length}</Text>
-              <Box sx={{ flex: 1 }} />
+          <div key={section.name} className={styles.mb3}>
+            <div className={styles.flexCenter}>
+              <Heading as="h3" className={styles.body}>{section.name}</Heading>
+              <Text className={styles.smallFgMuted}>· {section.ids.length}</Text>
+              <div className={styles.grow} />
               <Button
                 size="small"
                 variant="invisible"
@@ -59,35 +60,19 @@ export function UnmatchedFlowsDialog({ onClose }: { onClose: () => void }) {
               >
                 Remove all here
               </Button>
-            </Box>
-            <Box
-              as="ul"
-              sx={{
-                listStyle: 'none',
-                m: 0,
-                p: 0,
-                border: '1px solid',
-                borderColor: 'border.muted',
-                borderRadius: 2,
-              }}
+            </div>
+            <ul
+              className={styles.m0P0}
             >
               {section.ids.map((id) => (
-                <Box
-                  as="li"
+                <li
                   key={id}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    px: 2,
-                    py: 1,
-                    ':not(:last-child)': { borderBottom: '1px solid', borderColor: 'border.muted' },
-                  }}
+                  className={styles.row}
                 >
-                  <Text sx={{ fontSize: 1, flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+                  <Text className={styles.bodyGrow}>
                     {describeId(id)}
                   </Text>
-                  <Text sx={{ fontSize: 0, color: 'fg.muted', fontFamily: 'mono' }} title={id}>
+                  <Text className={styles.smallFgMuted2} title={id}>
                     {id.length > 28 ? `…${id.slice(-28)}` : id}
                   </Text>
                   <Button
@@ -99,10 +84,10 @@ export function UnmatchedFlowsDialog({ onClose }: { onClose: () => void }) {
                   >
                     Remove
                   </Button>
-                </Box>
+                </li>
               ))}
-            </Box>
-          </Box>
+            </ul>
+          </div>
         ))
       )}
     </Modal>

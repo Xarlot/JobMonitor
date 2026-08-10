@@ -1,0 +1,69 @@
+# Scheduled telemetry ingest.
+#
+# Three times a day. The server reads Ably history itself; this workflow only says "now".
+#
+# **The number that matters is the margin against expiry.** Ably's free tier keeps a published
+# message for 24 hours. At three runs a day the gap is 8 hours, so two consecutive failures are
+# survivable and the third window starts losing data — permanently, and invisibly, because expired
+# messages simply never arrive and every chart just reads low.
+#
+# That margin is thin enough to be worth two independent safety nets:
+#
+#   1. The dashboard triggers an ingest itself whenever someone opens a page and the data is stale,
+#      so in practice losing anything needs the schedule to fail repeatedly *and* nobody to look.
+#   2. `/health` shows the remaining margin to expiry, and the banner appears on every page once a
+#      run is overdue.
+#
+# GitHub's scheduled runs are best-effort and can be delayed by several minutes under load — which
+# is fine against an 8-hour interval, and is another reason not to shorten it to the point where
+# delay matters.
+
+name: Telemetry ingest
+
+on:
+  schedule:
+    # 02:00, 10:00, 18:00 UTC.
+    - cron: '0 2,10,18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Never two at once: a manual run during a scheduled one would do the same work twice. Harmless
+  # — the cursor and dedup make repeats free — but it muddies the run history.
+  group: telemetry-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ingest
+        env:
+          URL: https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ingest
+          TOKEN: ${{ secrets.INGEST_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # 300s to match the route's own limit: a run after a long gap pages through history.
+          response=$(curl -sS -X POST "$URL" \
+            -H "Authorization: Bearer $TOKEN" \
+            --max-time 300 \
+            -w '\n%{http_code}')
+
+          code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP $code"
+          echo "$body"
+
+          if [ "$code" != "200" ]; then
+            echo "::error::ingest endpoint returned HTTP $code"
+            exit 1
+          fi
+
+          # The route answers 200 with the outcome in the body, so that a transient Ably problem
+          # reads as a failed *ingest* rather than a broken deployment. Surface it as a failed run
+          # here, because a schedule whose failures are silent is not a schedule.
+          if [ "$(echo "$body" | grep -c '"ok":true')" -eq 0 ]; then
+            echo "::error::ingest ran but reported failure"
+            exit 1
+          fi

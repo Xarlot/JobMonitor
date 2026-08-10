@@ -1,0 +1,28 @@
+{
+  "name": "@jobmonitor/telemetry-schema",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wire schema and registries shared by the telemetry client and receiver",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry/index.ts",
+    "./limits": "./src/limits.ts"
+  },
+  "scripts": {
+    "proto:gen": "buf generate",
+    "proto:check": "node scripts/check-gen.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.13.0",
+    "@noble/ciphers": "^2.0.1",
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.61.0",
+    "@bufbuild/protoc-gen-es": "^2.13.0"
+  }
+}

@@ -1,0 +1,177 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.fgMutedMl2 {
+  color: var(--fgColor-muted);
+  margin-left: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.fgMutedNowrap {
+  color: var(--fgColor-muted);
+  white-space: nowrap;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--base-size-4);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  color: var(--fgColor-muted);
+}
+
+.large {
+  font-size: var(--text-body-size-large);
+}
+
+.flexGap1 {
+  display: flex;
+  gap: var(--base-size-4);
+  flex-wrap: wrap;
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.m2Small {
+  margin: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.overflowX {
+  overflow-x: auto;
+}
+
+.width {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.p4TextCenter {
+  padding: var(--base-size-24);
+  text-align: center;
+  color: var(--fgColor-muted);
+}
+
+.p0BgCanvasInset {
+  padding: 0;
+  background-color: var(--bgColor-inset);
+}
+
+.pl4Py2 {
+  padding-left: var(--base-size-24);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+}
+
+.px2Py2 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-muted);
+  text-align: left;
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.px2Py2_2 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-medium);
+  vertical-align: middle;
+  border-color: var(--borderColor-muted);
+}
+
+.card {
+  border: 1px solid var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  margin-bottom: var(--base-size-8);
+  overflow: hidden;
+  box-shadow: none;
+  opacity: 1;
+  transition: box-shadow 0.12s, border-color 0.3s, opacity 0.2s;
+}
+
+/* Just arrived, or just changed — a ring rather than a fill, so the rows stay readable. */
+.cardHighlight {
+  composes: card;
+  border-color: var(--bgColor-accent-emphasis);
+  box-shadow: 0 0 0 2px var(--bgColor-accent-muted, rgba(9, 105, 218, 0.3));
+}
+
+.cardDragging {
+  composes: card;
+  opacity: 0.4;
+}
+
+/* Which edge the drop will land on. */
+.cardDropBefore {
+  composes: card;
+  box-shadow: inset 0 3px 0 0 var(--fgColor-accent, #2f81f7);
+}
+
+.cardDropAfter {
+  composes: card;
+  box-shadow: inset 0 -3px 0 0 var(--fgColor-accent, #2f81f7);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  background-color: var(--bgColor-muted);
+  border-bottom: none;
+  flex-wrap: wrap;
+  cursor: default;
+}
+
+/* Expanded, the header sits above the runs and needs a rule between them. */
+.cardHeaderExpanded {
+  composes: cardHeader;
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.cardHeaderClickable {
+  cursor: pointer;
+}
+
+.runRow {
+  cursor: pointer;
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+
+.runRow:hover {
+  background-color: var(--bgColor-muted);
+}

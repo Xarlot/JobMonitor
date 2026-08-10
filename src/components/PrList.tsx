@@ -1,18 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Avatar,
-  Box,
-  BranchName,
-  Button,
-  Flash,
-  IconButton,
-  Link,
-  Octicon,
-  SegmentedControl,
-  Spinner,
-  StateLabel,
-  Text,
-} from '@primer/react';
+import { Avatar, BranchName, Button, Flash, IconButton, Link, SegmentedControl, Spinner, StateLabel, Text } from '@primer/react';
 import {
   ChecklistIcon,
   ChevronDownIcon,
@@ -38,6 +25,9 @@ import { ArtifactsButton } from './ArtifactsButton';
 import { RerunFailedJobsButton } from './RerunFailedJobsButton';
 import { runIdFromUrl } from '../api/endpoints';
 import { formatRelative } from '../lib/format';
+import styles from './PrList.module.css';
+import { Icon } from './Icon';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 export type PrFilter = 'all' | 'active' | 'failed' | 'success';
 type Filter = PrFilter;
@@ -92,56 +82,47 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
   }, [focused]);
 
   return (
-    <Box
+    <div
       id={`pr-${pr.number}`}
-      sx={{
-        borderBottom: '1px solid',
-        borderColor: 'border.default',
-        // A left edge rather than a background: the row already colours its own status
-        // column, and tinting the whole thing would read as a state the pull request is in.
-        borderLeft: '3px solid',
-        borderLeftColor: focused ? 'accent.emphasis' : 'transparent',
-      }}
+      className={focused ? styles.prRowFocused : styles.prRow}
     >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          px: 3,
-          py: 2,
-          cursor: 'pointer',
-          ':hover': { bg: 'canvas.subtle' },
-        }}
-        onClick={() => setOpen((v) => !v)}
+      <div
+        className={styles.prHeader}
+        onClick={() =>
+          setOpen((v) => {
+            // Only the opening counts. A close is the same click and would double every number.
+            if (!v) Telemetry.featureUsed(Feature.PR_CHECKS_EXPANDED);
+            return !v;
+          })
+        }
       >
-        <Octicon icon={open ? ChevronDownIcon : ChevronRightIcon} size={16} sx={{ color: 'fg.muted' }} />
-        <Box sx={{ width: 150, flexShrink: 0 }}>
+        <Icon icon={open ? ChevronDownIcon : ChevronRightIcon} size={16} className={styles.fgMuted} />
+        <div className={styles.width}>
           <StatusBadge status={overall} />
-        </Box>
+        </div>
         <StateLabel status={pr.draft ? 'draft' : 'pullOpened'} variant="small" />
         <AnalysedBadge kind="pr" id={pr.number} />
         <AutoMergeLabel pr={pr} />
         <AutoRerunLabel prNumber={pr.number} />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <div className={styles.grow}>
           <Link
             href={pr.html_url}
             target="_blank"
             rel="noreferrer"
-            sx={{ fontWeight: 'bold', color: 'fg.default' }}
+            className={styles.boldFgDefault}
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             {pr.title}
           </Link>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1, color: 'fg.muted' }}>
-            <Text sx={{ fontSize: 0 }}>#{pr.number}</Text>
-            <BranchName as="span" sx={{ fontSize: 0 }}>{pr.head.ref}</BranchName>
-            <Octicon icon={ChevronRightIcon} size={12} />
-            <BranchName as="span" sx={{ fontSize: 0 }}>{pr.base.ref}</BranchName>
-            <Text sx={{ fontSize: 0 }}>updated {formatRelative(pr.updated_at)}</Text>
-          </Box>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          <div className={styles.flexCenter}>
+            <Text className={styles.small}>#{pr.number}</Text>
+            <BranchName as="span" className={styles.small}>{pr.head.ref}</BranchName>
+            <ChevronRightIcon size={12} />
+            <BranchName as="span" className={styles.small}>{pr.base.ref}</BranchName>
+            <Text className={styles.small}>updated {formatRelative(pr.updated_at)}</Text>
+          </div>
+        </div>
+        <div className={styles.flexCenter2}>
           {pr.user && <Avatar src={pr.user.avatar_url} size={20} alt={pr.user.login} />}
           <IconButton
             size="small"
@@ -150,6 +131,7 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
             aria-label="PR checks summary"
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
+              Telemetry.featureUsed(Feature.LOGS_OVERALL_SUMMARY_OPENED);
               setSummaryOpen(true);
             }}
           />
@@ -160,6 +142,7 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
             aria-label="PR check timeline"
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
+              Telemetry.featureUsed(Feature.LOGS_TIMELINE_OPENED);
               setTimelineOpen(true);
             }}
           />
@@ -190,11 +173,12 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
             aria-label="Open PR on GitHub"
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
+              Telemetry.featureUsed(Feature.PR_OPENED_EXTERNAL);
               window.open(pr.html_url, '_blank', 'noopener');
             }}
           />
-        </Box>
-      </Box>
+        </div>
+      </div>
       {timelineOpen && (
         <TimelineDialog
           title={pr.title}
@@ -220,20 +204,20 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
         />
       )}
       {open && (
-        <Box sx={{ pl: 4, pr: 2, pb: 3, pt: 1, bg: 'canvas.subtle' }}>
+        <div className={styles.pl4Pr2}>
           {entry.checksError && (
-            <Flash variant="danger" sx={{ mb: 2, fontSize: 0 }}>{entry.checksError}</Flash>
+            <Flash variant="danger" className={styles.mb2Small}>{entry.checksError}</Flash>
           )}
           {entry.checksUpdatedAt === null ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-              <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading checks…</Text>
-            </Box>
+            <div className={styles.flexCenter3}>
+              <Spinner size="small" /> <Text className={styles.small}>Loading checks…</Text>
+            </div>
           ) : (
             <CheckRunsTable checkRuns={entry.checkRuns} combined={entry.combined} owner={owner} repo={repo} />
           )}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -291,18 +275,11 @@ export function PrList({
   };
 
   return (
-    <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          mb: 3,
-          flexWrap: 'wrap',
-          gap: 2,
-        }}
+    <div>
+      <div
+        className={styles.flexCenter4}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+        <div className={styles.flexCenter5}>
           <SegmentedControl aria-label="Filter pull requests">
             {filters.map((f) => (
               <SegmentedControl.Button
@@ -322,10 +299,10 @@ export function PrList({
               Compact
             </SegmentedControl.Button>
           </SegmentedControl>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        </div>
+        <div className={styles.flexCenter6}>
           {listUpdatedAt && (
-            <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+            <Text className={styles.smallFgMuted}>
               updated {formatRelative(new Date(listUpdatedAt).toISOString())}
             </Text>
           )}
@@ -333,26 +310,26 @@ export function PrList({
           <Button leadingVisual={SyncIcon} onClick={refreshAll} variant="default" size="small">
             Refresh
           </Button>
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {listError && (
-        <Flash variant="danger" sx={{ mb: 3 }}>
+        <Flash variant="danger" className={styles.mb3}>
           Failed to load pull requests: {listError.message}
         </Flash>
       )}
 
-      <Box sx={{ borderRadius: 2, borderTop: '1px solid', borderColor: 'border.default' }}>
+      <div className={styles.rounded}>
         {visible.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+          <div className={styles.p4TextCenter}>
             {prs.length === 0 ? 'No open pull requests found for this fork.' : 'No PRs match this filter.'}
-          </Box>
+          </div>
         ) : (
           visible.map((e) => (
             <PrRow key={e.pr.number} entry={e} focused={e.pr.number === focusPrNumber} />
           ))
         )}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }

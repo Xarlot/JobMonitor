@@ -1,0 +1,131 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+  margin-bottom: var(--base-size-16);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.bodyBold {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-muted);
+  margin-bottom: var(--base-size-8);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-8);
+}
+
+.roundedP2 {
+  border: 1px solid;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-8);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-4);
+}
+
+.boldSmall {
+  font-weight: var(--base-text-weight-semibold);
+  font-size: var(--text-body-size-small);
+}
+
+.m0Mono {
+  margin: 0;
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bodyBold2 {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-muted);
+  margin-top: var(--base-size-16);
+  margin-bottom: var(--base-size-8);
+}
+
+.width {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fgMutedMr2 {
+  color: var(--fgColor-muted);
+  margin-right: var(--base-size-8);
+}
+
+.px2Small {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  width: 150px;
+}
+
+.px2Small2 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+}
+
+.px2Small3 {
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--text-body-size-small);
+  vertical-align: middle;
+  border-color: var(--borderColor-muted);
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  color: var(--fgColor-muted);
+  text-align: right;
+  white-space: nowrap;
+}

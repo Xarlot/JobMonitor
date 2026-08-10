@@ -1,8 +1,9 @@
-import { AnchoredOverlay, Box, Button, Heading, IconButton, Octicon, ProgressBar, Spinner, Text } from '@primer/react';
+import { AnchoredOverlay, Button, Heading, IconButton, ProgressBar, Spinner, Text } from '@primer/react';
 import { CheckCircleFillIcon, DownloadIcon, FileZipIcon, XCircleFillIcon } from '@primer/octicons-react';
 import { isDesktop } from '../storage/desktopSecret';
 import { useDownloads, type DownloadTask } from '../context/DownloadsContext';
-import { subtleScrollbarSx } from '../lib/scrollbar';
+import { subtleScrollbar } from '../lib/scrollbar';
+import styles from './DownloadsButton.module.css';
 
 /**
  * Header control (desktop only) that opens a downloads panel showing each
@@ -23,13 +24,12 @@ export function DownloadsButton() {
       side="outside-bottom"
       align="end"
       width="auto"
-      renderAnchor={(props) => {
-        // IconButton's aria typing is exclusive (label XOR labelledby); drop the
-        // overlay's aria-labelledby so our aria-label is the single source.
-        const { 'aria-labelledby': labelledBy, ...anchorProps } = props;
-        void labelledBy;
+      renderAnchor={(anchorProps) => {
+        // Primer 38 already omits `aria-labelledby` from the anchor props, so there is nothing left
+        // to strip: IconButton's aria typing is exclusive (label XOR labelledby), and our
+        // `aria-label` below is now the only one either way.
         return (
-        <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+        <div className={styles.relative}>
           <IconButton
             {...anchorProps}
             icon={DownloadIcon}
@@ -37,56 +37,34 @@ export function DownloadsButton() {
             variant="invisible"
           />
           {activeCount > 0 && (
-            <Box
-              sx={{
-                position: 'absolute',
-                top: -2,
-                right: -2,
-                minWidth: 16,
-                height: 16,
-                px: 1,
-                bg: 'accent.emphasis',
-                color: 'fg.onEmphasis',
-                borderRadius: 10,
-                fontSize: '10px',
-                lineHeight: '16px',
-                textAlign: 'center',
-                pointerEvents: 'none',
-              }}
+            <div
+              className={styles.badge}
             >
               {activeCount}
-            </Box>
+            </div>
           )}
-        </Box>
+        </div>
         );
       }}
     >
-      <Box sx={{ width: 360, maxWidth: '90vw' }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            px: 3,
-            py: 2,
-            borderBottom: '1px solid',
-            borderColor: 'border.default',
-          }}
+      <div className={styles.width}>
+        <div
+          className={styles.flexCenter}
         >
-          <Heading as="h3" sx={{ fontSize: 1 }}>Downloads</Heading>
-          <Box sx={{ flex: 1 }} />
+          <Heading as="h3" className={styles.body}>Downloads</Heading>
+          <div className={styles.grow} />
           {finishedCount > 0 && (
             <Button variant="invisible" size="small" onClick={clearFinished}>Clear</Button>
           )}
-        </Box>
-        <Box sx={{ maxHeight: 360, overflowY: 'auto', ...subtleScrollbarSx }}>
+        </div>
+        <div className={`${styles.list} ${subtleScrollbar}`}>
           {tasks.length === 0 ? (
-            <Text sx={{ display: 'block', p: 3, color: 'fg.muted', fontSize: 1 }}>No downloads yet.</Text>
+            <Text className={styles.blockP3}>No downloads yet.</Text>
           ) : (
             tasks.map((t) => <DownloadRow key={t.id} task={t} onSave={saveTask} onReveal={reveal} />)
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
     </AnchoredOverlay>
   );
 }
@@ -104,18 +82,18 @@ function DownloadRow({
     task.total && task.total > 0 ? Math.round(((task.done ?? 0) / task.total) * 100) : null;
   const inFlight = task.status === 'running' || task.status === 'saving';
   return (
-    <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'border.muted' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <div className={styles.px3Py2}>
+      <div className={styles.flexCenter2}>
         {inFlight ? (
           <Spinner size="small" />
         ) : task.status === 'done' ? (
-          <Octicon icon={CheckCircleFillIcon} sx={{ color: 'success.fg' }} />
+          <CheckCircleFillIcon className={styles.successFg} />
         ) : task.status === 'error' ? (
-          <Octicon icon={XCircleFillIcon} sx={{ color: 'danger.fg' }} />
+          <XCircleFillIcon className={styles.dangerFg} />
         ) : (
-          <Octicon icon={FileZipIcon} sx={{ color: 'fg.muted' }} />
+          <FileZipIcon className={styles.fgMuted} />
         )}
-        <Text sx={{ flex: 1, minWidth: 0, fontSize: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Text className={styles.growBody}>
           {task.name}
         </Text>
         {task.status === 'ready' && (
@@ -123,30 +101,30 @@ function DownloadRow({
             Save
           </Button>
         )}
-      </Box>
+      </div>
       {task.status === 'running' && (
-        <Box sx={{ mt: 1, ml: 4 }}>
+        <div className={styles.mt1Ml4}>
           {percent != null ? (
-            <ProgressBar progress={percent} sx={{ mb: 1 }} aria-label="Download progress" />
+            <ProgressBar progress={percent} className={styles.mb1} aria-label="Download progress" />
           ) : null}
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+          <Text className={styles.smallFgMuted}>
             {task.phase
               ? `${task.phase}${task.total ? ` · ${task.done ?? 0}/${task.total}` : ''}`
               : 'Downloading…'}
           </Text>
-        </Box>
+        </div>
       )}
       {task.status === 'saving' && (
-        <Text sx={{ display: 'block', mt: 1, ml: 4, fontSize: 0, color: 'fg.muted' }}>Saving…</Text>
+        <Text className={styles.blockMt1}>Saving…</Text>
       )}
       {task.status === 'error' && (
-        <Text sx={{ display: 'block', mt: 1, ml: 4, fontSize: 0, color: 'danger.fg' }}>{task.error}</Text>
+        <Text className={styles.blockMt1_2}>{task.error}</Text>
       )}
       {task.status === 'done' && task.savedPath && (
-        <Button variant="invisible" size="small" sx={{ mt: 1, ml: 3 }} onClick={() => onReveal(task.savedPath!)}>
+        <Button variant="invisible" size="small" className={styles.mt1Ml3} onClick={() => onReveal(task.savedPath!)}>
           Show in folder
         </Button>
       )}
-    </Box>
+    </div>
   );
 }

@@ -1,0 +1,45 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.bodyFgMuted {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+  margin-bottom: var(--base-size-8);
+}
+
+.monoSmall {
+  width: 100%;
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+}
+
+.flexGap2 {
+  display: flex;
+  gap: var(--base-size-8);
+  margin-top: var(--base-size-8);
+}
+
+.bodyFgMuted2 {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+  margin-top: var(--base-size-24);
+  margin-bottom: var(--base-size-4);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  margin-bottom: var(--base-size-8);
+}
+
+.mb2 {
+  margin-bottom: var(--base-size-8);
+}
+
+.m0Pl3 {
+  margin: 0;
+  padding-left: var(--base-size-16);
+}
+
+.mt2 {
+  margin-top: var(--base-size-8);
+}

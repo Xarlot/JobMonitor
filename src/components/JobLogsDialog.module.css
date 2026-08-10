@@ -1,0 +1,112 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+  margin-bottom: var(--base-size-8);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  display: block;
+  margin-bottom: var(--base-size-16);
+}
+
+.mb3Small {
+  margin-bottom: var(--base-size-16);
+  font-size: var(--text-body-size-small);
+}
+
+.rounded {
+  border: 1px solid;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+  overflow: hidden;
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.smallGrow {
+  font-size: var(--text-body-size-small);
+  flex: 1;
+  min-width: 0px;
+}
+
+.fgMutedMr1 {
+  color: var(--fgColor-muted);
+  margin-right: var(--base-size-4);
+}
+
+.smallFgMuted3 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  white-space: nowrap;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.smallFgMuted4 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  display: block;
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+}
+
+.jobRow {
+  border-top: none;
+}
+
+/* Every row but the first is separated from the one above it. */
+.jobRowDivided {
+  composes: jobRow;
+  border-top: 1px solid var(--borderColor-muted);
+}
+
+.jobHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-8);
+  padding-right: var(--base-size-8);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  cursor: pointer;
+}
+
+.jobHeader:hover {
+  background-color: var(--bgColor-muted);
+}

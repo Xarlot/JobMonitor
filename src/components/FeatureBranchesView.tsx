@@ -15,19 +15,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import {
-  Box,
-  BranchName,
-  Button,
-  Flash,
-  Heading,
-  IconButton,
-  Label,
-  Link,
-  Octicon,
-  Spinner,
-  Text,
-} from '@primer/react';
+import { BranchName, Button, Flash, Heading, IconButton, Label, Link, Spinner, Text } from '@primer/react';
 import { Tooltip } from '@primer/react/next';
 import {
   AlertIcon,
@@ -47,7 +35,7 @@ import { useConfig } from '../context/ConfigContext';
 import { useDashboard } from '../context/DashboardContext';
 import { useNavigation } from '../context/NavigationContext';
 import { useFeatureBranchesState } from '../context/FeatureBranchesContext';
-import type { FeatureBranchRow, ForkStanding } from '../hooks/useFeatureBranches';
+import type { FeatureBranchRow, ForkStanding, MainStanding } from '../hooks/useFeatureBranches';
 import { useCopy } from '../hooks/useCopy';
 import { useTokenCapability } from '../hooks/useTokenCapability';
 import type { PrEntry } from '../hooks/useGitHubDashboard';
@@ -55,26 +43,21 @@ import { mergeStages, nextStep, type MergeStage, type NextStep } from '../lib/fe
 import { forkRepo } from '../storage/configStore';
 import { FeatureBranchActionDialog, type PendingAction } from './FeatureBranchActionDialog';
 import { StatusBadge } from './StatusBadge';
-
-const CARD_SX = {
-  border: '1px solid',
-  borderColor: 'border.default',
-  borderRadius: 2,
-  bg: 'canvas.default',
-  mb: 3,
-} as const;
+import styles from './FeatureBranchesView.module.css';
+import { Icon } from './Icon';
+import { tooltipWrap } from '../lib/tooltipWrap';
 
 const STAGE_ICON = {
-  done: { icon: CheckCircleFillIcon, color: 'success.fg' },
-  stuck: { icon: XCircleFillIcon, color: 'danger.fg' },
-  pending: { icon: DotFillIcon, color: 'fg.subtle' },
+  done: { icon: CheckCircleFillIcon, color: 'var(--fgColor-success)' },
+  stuck: { icon: XCircleFillIcon, color: 'var(--fgColor-danger)' },
+  pending: { icon: DotFillIcon, color: 'var(--fgColor-muted)' },
 } as const;
 
 /** Nothing-to-do is quiet, something-to-do is emphasised, something-wrong is red. */
 const STEP_TONE: Record<NextStep['tone'], string> = {
-  ok: 'fg.muted',
-  action: 'accent.fg',
-  stuck: 'danger.fg',
+  ok: 'var(--fgColor-muted)',
+  action: 'var(--fgColor-accent)',
+  stuck: 'var(--fgColor-danger)',
 };
 
 /** How many, and which way. */
@@ -89,6 +72,25 @@ function plural(n: number): string {
  * having diverged forty commits ago identically, and those want opposite things — the first
  * wants the sync button pressed, the second warns that pressing it writes a merge commit.
  */
+/**
+ * How far the shared branch trails the branch it will merge into.
+ *
+ * Deliberately silent when the branch is level or ahead. A row that says "up to date with 2026.1"
+ * on every branch that is fine trains people to stop reading the line, and this line only earns its
+ * place when it is telling you something you would act on. Behind is the only such state: it is what
+ * the "bring the default branch in" action is for, and it is what makes a long-lived branch
+ * gradually stop being mergeable.
+ */
+export function describeMainStanding(
+  standing: MainStanding | null,
+  defaultBranch: string,
+): string | null {
+  if (!standing || standing.behindBy === 0) return null;
+  // `diverged` also lands here, and correctly: the branch is behind *and* ahead, and the part worth
+  // saying on one line is the part that is going to get worse on its own.
+  return `${plural(standing.behindBy)} behind ${defaultBranch}`;
+}
+
 export function describeStanding(standing: ForkStanding): string {
   /**
    * Content, not history, when the two disagree.
@@ -197,17 +199,8 @@ function ActionIcon({
   onClick: () => void;
 }) {
   return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        '& [role="tooltip"]': {
-          textAlign: 'left',
-          whiteSpace: 'pre-line',
-          maxWidth: 360,
-          lineHeight: 1.5,
-          padding: '8px 10px',
-        },
-      }}
+    <div
+      className={`${tooltipWrap} ${styles.tipWide}`}
     >
       <Tooltip text={`${label}\n${description}`} type="description">
         {/*
@@ -221,13 +214,13 @@ function ActionIcon({
           aria-disabled={disabled || undefined}
           variant={suggested ? 'primary' : 'invisible'}
           size="small"
-          sx={disabled ? { color: 'fg.subtle', cursor: 'not-allowed' } : undefined}
+          className={disabled ? styles.disabled : undefined}
           onClick={() => {
             if (!disabled) onClick();
           }}
         />
       </Tooltip>
-    </Box>
+    </div>
   );
 }
 
@@ -235,27 +228,23 @@ function ActionIcon({
 function Stage({ stage }: { stage: MergeStage }) {
   const style = stage.state === 'active' ? null : STAGE_ICON[stage.state];
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1 }}>
+    <div className={styles.flexCenter}>
       {style ? (
-        <Octicon icon={style.icon} size={16} sx={{ color: style.color }} />
+        <Icon icon={style.icon} size={16} style={{ color: style.color }} />
       ) : (
-        <Spinner size="small" sx={{ width: 16, height: 16 }} />
+        <Spinner size="small" className={styles.width} />
       )}
       <Text
-        sx={{
-          fontSize: 1,
-          color: stage.state === 'pending' ? 'fg.muted' : 'fg.default',
-          whiteSpace: 'nowrap',
-        }}
+        className={stage.state === 'pending' ? styles.stagePending : styles.stage}
       >
         {stage.label}
       </Text>
       {stage.detail && (
-        <Text sx={{ fontSize: 0, color: stage.state === 'stuck' ? 'danger.fg' : 'fg.muted' }}>
+        <Text className={stage.state === 'stuck' ? styles.stageNoteStuck : styles.stageNote}>
           {stage.detail}
         </Text>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -278,33 +267,33 @@ function PrProgress({
     entry.checksUpdatedAt !== null,
   );
   return (
-    <Box sx={{ p: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-        <Octicon icon={GitPullRequestIcon} size={16} sx={{ color: 'fg.muted' }} />
+    <div className={styles.p3}>
+      <div className={styles.flexCenter2}>
+        <GitPullRequestIcon size={16} className={styles.fgMuted} />
         {/* Not uppercased, however much it reads like a section heading: it is a pair of
             branch names, and git branch names are case-sensitive. */}
-        <Text sx={{ fontSize: 0, color: 'fg.muted', fontFamily: 'mono' }}>{label}</Text>
+        <Text className={styles.smallFgMuted}>{label}</Text>
         <Link
           href={entry.pr.html_url}
           target="_blank"
           rel="noreferrer"
-          sx={{ fontWeight: 'bold', color: 'fg.default', fontSize: 1 }}
+          className={styles.boldFgDefault}
         >
           {entry.pr.title}
         </Link>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>#{entry.pr.number}</Text>
+        <Text className={styles.smallFgMuted2}>#{entry.pr.number}</Text>
         <StatusBadge status={entry.overall} />
         {entry.pr.auto_merge && (
           <Label variant="done">
-            <Octicon icon={GitMergeIcon} size={12} /> auto-merge
+            <GitMergeIcon size={12} /> auto-merge
           </Label>
         )}
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
         {/*
           Where to go next with this pull request. Read-only, so unlike the write actions
           above they are offered whatever the token can do.
         */}
-        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+        <div className={styles.flexGap1}>
           {onOpenPr && (
             <ActionIcon
               icon={GitPullRequestIcon}
@@ -331,31 +320,23 @@ function PrProgress({
             description={failed ? `Copy it by hand: ${entry.pr.html_url}` : entry.pr.html_url}
             onClick={() => copy(entry.pr.html_url)}
           />
-        </Box>
-      </Box>
+        </div>
+      </div>
 
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          columnGap: 4,
-          bg: 'canvas.subtle',
-          borderRadius: 2,
-          px: 3,
-          py: 1,
-        }}
+      <div
+        className={styles.flexBgCanvasSubtle}
       >
         {stages.map((stage) => (
           <Stage key={stage.id} stage={stage} />
         ))}
-      </Box>
+      </div>
 
       {entry.checksError && (
-        <Flash variant="warning" sx={{ fontSize: 0, mt: 2 }}>
+        <Flash variant="warning" className={styles.smallMt2}>
           The checks could not be read: {entry.checksError}
         </Flash>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -386,6 +367,7 @@ function BranchCard({
     offer ? { pr: offer.pr, overall: offer.overall } : null,
     sync ? { pr: sync.pr, overall: sync.overall } : null,
   );
+  const behindMain = describeMainStanding(row.mainStanding, defaultBranch);
   const nothingToPull = nothingToPullFor(row.standing);
   const nothingToOffer = nothingToOfferFor(row.standing);
   const jumpTo = (entry: PrEntry) =>
@@ -400,18 +382,11 @@ function BranchCard({
    */
 
   return (
-    <Box sx={CARD_SX}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 3,
-          px: 3,
-          py: 2,
-          flexWrap: 'wrap',
-        }}
+    <div className={styles.card}>
+      <div
+        className={styles.flexCenter3}
       >
-        <BranchName as="span" sx={{ fontSize: 1 }}>
+        <BranchName as="span" className={styles.body}>
           {branch.name}
         </BranchName>
         {/*
@@ -419,22 +394,25 @@ function BranchCard({
           quieter. The counts used to lead, and they describe rather than advise — worse,
           after a squash merge they describe it wrongly.
         */}
-        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, minWidth: 0 }}>
+        <div className={styles.flexGap2}>
           <Text
-            sx={{
-              fontSize: 1,
-              fontWeight: 'semibold',
-              color: STEP_TONE[step.tone],
-              whiteSpace: 'nowrap',
-            }}
+            className={styles.step} style={{ color: STEP_TONE[step.tone] }}
           >
             {step.text}
           </Text>
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>{describeStanding(row.standing)}</Text>
-        </Box>
-        <Box sx={{ flex: 1 }} />
+          <Text className={styles.smallFgMuted2}>{describeStanding(row.standing)}</Text>
+          {behindMain && (
+            /*
+              Warning-coloured, and only present when it applies. A branch drifting behind the
+              branch it merges into is the one thing on this row that gets worse while nobody is
+              looking — the fork standing above it only changes when somebody pushes.
+            */
+            <Label variant="attention">{behindMain}</Label>
+          )}
+        </div>
+        <div className={styles.grow} />
         {canWrite && (
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <div className={styles.flexGap1_2}>
             {/*
               The three legs of the loop, in the order they happen: the branch is fed from
               the default branch, then pulled down to the fork, then offered back.
@@ -498,9 +476,9 @@ function BranchCard({
                 onClick={() => onAct({ kind: 'arm', branch: branch.name })}
               />
             ) : null}
-          </Box>
+          </div>
         )}
-      </Box>
+      </div>
 
       {sync && (
         <PrProgress
@@ -517,21 +495,21 @@ function BranchCard({
         />
       )}
       {!sync && !offer && (
-        <Box sx={{ px: 3, pb: 3 }}>
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <div className={styles.px3Pb3}>
+          <Text className={styles.smallFgMuted2}>
             No open pull request into this branch.
           </Text>
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
 /** Why the fork sync is unavailable, said plainly rather than as a disabled button. */
 function ForkParentWarning({ problem }: { problem: NonNullable<ReturnType<typeof describeProblem>> }) {
   return (
-    <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
-      <Octicon icon={AlertIcon} /> {problem}
+    <Flash variant="warning" className={styles.mb3Body}>
+      <AlertIcon /> {problem}
     </Flash>
   );
 }
@@ -581,25 +559,25 @@ export function FeatureBranchesView() {
   const canSyncFork = state.forkParent?.ok === true;
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 3 }}>
-        <Heading as="h2" sx={{ fontSize: 3 }}>
+    <div>
+      <div className={styles.flexCenter4}>
+        <Heading as="h2" className={styles.title}>
           Feature branches
         </Heading>
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text className={styles.smallFgMuted2}>
           Branches under <code>{config.featureBranches.prefix}</code> that exist in both{' '}
           {config.upstream.owner}/{config.upstream.repo} and {config.fork.owner}/
           {forkRepo(config)}
         </Text>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow} />
         {(state.isFetchingList || state.isFetchingChecks) && <Spinner size="small" />}
         <Button size="small" leadingVisual={SyncIcon} onClick={state.refreshAll}>
           Refresh
         </Button>
-      </Box>
+      </div>
 
       {state.listError && (
-        <Flash variant="danger" sx={{ mb: 3 }}>
+        <Flash variant="danger" className={styles.mb3}>
           {state.listError.message}
         </Flash>
       )}
@@ -611,28 +589,28 @@ export function FeatureBranchesView() {
         mutation, because by the time GitHub refuses it the pull request already exists.
       */}
       {state.repo && !state.repo.allowMergeCommit && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
-          <Octicon icon={AlertIcon} /> This repository doesn't allow merge commits, so
+        <Flash variant="warning" className={styles.mb3Body}>
+          <AlertIcon /> This repository doesn't allow merge commits, so
           “Sync from {defaultBranch}” is unavailable: bringing the default branch into a feature
           branch any other way would rewrite history the two repositories share.
         </Flash>
       )}
       {state.repo && !state.repo.allowAutoMerge && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
-          <Octicon icon={AlertIcon} /> Auto-merge is switched off for this repository, so pull
+        <Flash variant="warning" className={styles.mb3Body}>
+          <AlertIcon /> Auto-merge is switched off for this repository, so pull
           requests opened here will stay open until someone merges them. Everything else works.
         </Flash>
       )}
 
       {!capability.canRerun && (
-        <Flash sx={{ mb: 3, fontSize: 1 }}>
+        <Flash className={styles.mb3Body}>
           This token can't write to the repository, so the actions are hidden. Everything below
           is still live.
         </Flash>
       )}
 
       {state.truncated && (
-        <Flash variant="warning" sx={{ mb: 3, fontSize: 1 }}>
+        <Flash variant="warning" className={styles.mb3Body}>
           More feature branches exist than are shown. Only the first 25 are tracked, so that a
           repository with a great many of them can't spend the whole rate limit here.
         </Flash>
@@ -686,6 +664,6 @@ export function FeatureBranchesView() {
           onDone={state.refreshAll}
         />
       )}
-    </Box>
+    </div>
   );
 }

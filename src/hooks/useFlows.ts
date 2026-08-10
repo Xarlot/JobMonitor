@@ -30,6 +30,7 @@ import { isJobFilterActive, useFlowsFilter } from '../context/FlowsFilterContext
 import { loadFlowRuns, saveFlowRuns } from '../storage/flowRunsCache';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
+import { Operation } from '../lib/telemetry';
 import { useExpandState } from './useExpandState';
 
 export interface JobsCacheEntry {
@@ -169,7 +170,12 @@ export function useFlow(flow: Flow): FlowState {
     saveFlowRuns(flow.id, sorted);
   }, [queries, owner, repo, flow.id, flow.maxRuns, resolveWorkflowRef]);
 
-  const runsPoll = usePolling({ fn: fetchRuns, intervalMs: runsIntervalMs, enabled });
+  const runsPoll = usePolling({
+    fn: fetchRuns,
+    intervalMs: runsIntervalMs,
+    enabled,
+    op: Operation.GH_FLOW_RUNS_POLL,
+  });
 
   const loadJobs = useCallback(
     async (run: WorkflowRun) => {
@@ -220,7 +226,12 @@ export function useFlow(flow: Flow): FlowState {
     await Promise.all(targets.map(loadJobs));
   }, [runs, jobsByRun, expand.expandedRunIds, loadJobs, jobFilterActive, needLatestJobs]);
 
-  const jobsPoll = usePolling({ fn: pollJobs, intervalMs: jobsIntervalMs, enabled });
+  const jobsPoll = usePolling({
+    fn: pollJobs,
+    intervalMs: jobsIntervalMs,
+    enabled,
+    op: Operation.GH_JOBS_FETCH,
+  });
 
   // Fetch jobs promptly when a job-based filter turns on or the run set changes.
   useEffect(() => {

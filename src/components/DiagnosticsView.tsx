@@ -11,19 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Box,
-  Button,
-  FormControl,
-  Heading,
-  IconButton,
-  Label,
-  Octicon,
-  Select,
-  Text,
-  TextInput,
-  ToggleSwitch,
-} from '@primer/react';
+import { Button, FormControl, Heading, IconButton, Label, Select, Text, TextInput, ToggleSwitch, SegmentedControl } from '@primer/react';
 import {
   AlertIcon,
   ChevronDownIcon,
@@ -35,6 +23,7 @@ import {
 } from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
 import { usePolling } from '../hooks/usePolling';
+import { TelemetryPane } from './TelemetryPane';
 import {
   filterRecords,
   formatLogTime,
@@ -49,6 +38,8 @@ import {
   revealDiagnosticsLog,
   type DiagnosticsLogTail,
 } from '../storage/desktopClaude';
+import styles from './DiagnosticsView.module.css';
+import { Icon } from './Icon';
 
 /** Colour per scope family, matching the console styling in lib/devLog.ts. */
 const SCOPE_COLOR: Record<string, string> = {
@@ -69,7 +60,7 @@ const SCOPE_COLOR: Record<string, string> = {
  */
 function scopeColor(scope: string): string {
   const bare = scope.startsWith('renderer:') ? scope.slice('renderer:'.length) : scope;
-  return SCOPE_COLOR[bare] ?? 'fg.muted';
+  return SCOPE_COLOR[bare] ?? 'var(--fgColor-muted)';
 }
 
 function formatBytes(bytes: number): string {
@@ -87,87 +78,83 @@ function LogRow({ record }: { record: LogRecord }) {
   const message = warning ? record.message.slice('WARN:'.length).trim() : record.message;
 
   return (
-    <Box
-      sx={{
-        borderBottom: '1px solid',
-        borderColor: 'border.muted',
-        px: 2,
-        py: 1,
-        ':hover': { bg: 'canvas.subtle' },
-      }}
+    <div
+      className={styles.record}
     >
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, fontSize: 0 }}>
-        <Box
-          as="button"
+      <div className={styles.flexGap2}>
+        <button
           type="button"
           onClick={() => hasDetail && setOpen((v) => !v)}
           aria-label={hasDetail ? (open ? 'Hide detail' : 'Show detail') : undefined}
           disabled={!hasDetail}
-          sx={{
-            border: 0,
-            bg: 'transparent',
-            p: 0,
-            width: 16,
-            flexShrink: 0,
-            cursor: hasDetail ? 'pointer' : 'default',
-            color: 'fg.muted',
-          }}
+          className={hasDetail ? styles.caretActive : styles.caret}
         >
-          {hasDetail && <Octicon icon={open ? ChevronDownIcon : ChevronRightIcon} size={12} />}
-        </Box>
+          {hasDetail && <Icon icon={open ? ChevronDownIcon : ChevronRightIcon} size={12} />}
+        </button>
 
-        <Text sx={{ fontFamily: 'mono', color: 'fg.muted', flexShrink: 0 }}>
+        <Text className={styles.monoFgMuted}>
           {formatLogTime(record.at)}
         </Text>
 
         <Text
-          sx={{
-            fontFamily: 'mono',
-            color: scopeColor(record.scope),
-            flexShrink: 0,
-            minWidth: 130,
-          }}
+          className={styles.scope} style={{ color: scopeColor(record.scope) }}
         >
           {record.scope}
         </Text>
 
         {warning && (
-          <Label variant="attention" sx={{ flexShrink: 0 }}>
-            <Octicon icon={AlertIcon} size={12} sx={{ mr: 1 }} />
+          <Label variant="attention" className={styles.flexShrink}>
+            <AlertIcon size={12} className={styles.mr1} />
             warn
           </Label>
         )}
 
-        <Text sx={{ wordBreak: 'break-word', color: record.malformed ? 'fg.muted' : 'fg.default' }}>
+        <Text className={record.malformed ? styles.messageMalformed : styles.message}>
           {message || <em>unparseable line</em>}
         </Text>
-      </Box>
+      </div>
 
       {open && hasDetail && (
-        <Box
-          as="pre"
-          sx={{
-            m: 0,
-            mt: 1,
-            ml: '18px',
-            p: 2,
-            fontFamily: 'mono',
-            fontSize: 0,
-            bg: 'canvas.inset',
-            borderRadius: 2,
-            overflowX: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
+        <pre
+          className={styles.m0Mt1}
         >
           {JSON.stringify(record.detail, null, 2)}
-        </Box>
+        </pre>
       )}
-    </Box>
+    </div>
   );
 }
 
+/**
+ * Diagnostics has two halves that answer different questions: what the app *did* (the log) and
+ * what it is about to *send* (the telemetry queue). They share a tab because they share an
+ * audience — someone checking on the app's behaviour — and separating them into two settings
+ * pages would bury the second one.
+ */
 export function DiagnosticsView() {
+  const [pane, setPane] = useState<'log' | 'telemetry'>('log');
+
+  return (
+    <div>
+      <div className={styles.flexGap2_2}>
+        <SegmentedControl aria-label="Diagnostics view" size="small">
+          <SegmentedControl.Button selected={pane === 'log'} onClick={() => setPane('log')}>
+            Log
+          </SegmentedControl.Button>
+          <SegmentedControl.Button
+            selected={pane === 'telemetry'}
+            onClick={() => setPane('telemetry')}
+          >
+            Telemetry
+          </SegmentedControl.Button>
+        </SegmentedControl>
+      </div>
+      {pane === 'log' ? <DiagnosticsLogView /> : <TelemetryPane />}
+    </div>
+  );
+}
+
+function DiagnosticsLogView() {
   const { config } = useConfig();
   const { tailKB, followSeconds } = config.diagnostics;
 
@@ -231,7 +218,7 @@ export function DiagnosticsView() {
 
   if (status === 'loading') {
     return (
-      <Text as="p" sx={{ color: 'fg.muted' }}>
+      <Text as="p" className={styles.fgMuted}>
         Reading the log…
       </Text>
     );
@@ -239,28 +226,22 @@ export function DiagnosticsView() {
 
   if (status === 'unavailable') {
     return (
-      <Box sx={{ maxWidth: 720 }}>
-        <Heading as="h2" sx={{ fontSize: 3, mb: 2 }}>
+      <div className={styles.maxWidth}>
+        <Heading as="h2" className={styles.titleMb2}>
           Diagnostics
         </Heading>
-        <Text as="p" sx={{ color: 'fg.muted' }}>
+        <Text as="p" className={styles.fgMuted}>
           The diagnostics log is written by the desktop app; there is no such file in a browser
           tab. Open Job Monitor as the installed app to read it here.
         </Text>
-      </Box>
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 3,
-          flexWrap: 'wrap',
-          mb: 3,
-        }}
+    <div>
+      <div
+        className={styles.flexGap3}
       >
         <FormControl>
           <FormControl.Label>Search</FormControl.Label>
@@ -269,7 +250,7 @@ export function DiagnosticsView() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="message, run id, PR number…"
-            sx={{ width: 260 }}
+            className={styles.width}
           />
         </FormControl>
 
@@ -285,8 +266,8 @@ export function DiagnosticsView() {
           </Select>
         </FormControl>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 1 }}>
-          <Text sx={{ fontSize: 1 }} id="warnings-only-label">
+        <div className={styles.flexCenter}>
+          <Text className={styles.body} id="warnings-only-label">
             Warnings only
           </Text>
           <ToggleSwitch
@@ -295,10 +276,10 @@ export function DiagnosticsView() {
             onClick={() => setWarningsOnly((v) => !v)}
             aria-labelledby="warnings-only-label"
           />
-        </Box>
+        </div>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 1 }}>
-          <Text sx={{ fontSize: 1 }} id="follow-label">
+        <div className={styles.flexCenter}>
+          <Text className={styles.body} id="follow-label">
             Live
           </Text>
           <ToggleSwitch
@@ -307,9 +288,9 @@ export function DiagnosticsView() {
             onClick={() => setFollow((v) => !v)}
             aria-labelledby="follow-label"
           />
-        </Box>
+        </div>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 1 }}>
+        <div className={styles.flexCenter}>
           <IconButton
             icon={SyncIcon}
             aria-label="Refresh now"
@@ -334,19 +315,11 @@ export function DiagnosticsView() {
               />
             </>
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
 
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 2,
-          flexWrap: 'wrap',
-          mb: 2,
-          fontSize: 0,
-          color: 'fg.muted',
-        }}
+      <div
+        className={styles.flexGap2_3}
       >
         <Text>
           {shown.length === records.length
@@ -361,15 +334,15 @@ export function DiagnosticsView() {
           </Text>
         )}
         {lastUpdated && <Text>· updated {formatLogTime(new Date(lastUpdated).toISOString())}</Text>}
-      </Box>
+      </div>
 
       {records.length === 0 ? (
-        <Text as="p" sx={{ color: 'fg.muted' }}>
+        <Text as="p" className={styles.fgMuted}>
           Nothing logged yet. The file fills up as the app polls, analyses and decides — come back
           after something has happened.
         </Text>
       ) : shown.length === 0 ? (
-        <Text as="p" sx={{ color: 'fg.muted' }}>
+        <Text as="p" className={styles.fgMuted}>
           No record matches. {warningsOnly ? 'No warnings in this window — ' : ''}
           <Button
             variant="invisible"
@@ -384,19 +357,14 @@ export function DiagnosticsView() {
           </Button>
         </Text>
       ) : (
-        <Box
-          sx={{
-            border: '1px solid',
-            borderColor: 'border.default',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
+        <div
+          className={styles.rounded}
         >
           {shown.map((record) => (
             <LogRow key={record.seq} record={record} />
           ))}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }

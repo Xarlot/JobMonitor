@@ -31,6 +31,7 @@ import {
 import { devLog, devWarn } from '../lib/devLog';
 import { newRequestId } from './useClaudeTriage';
 import { claudeToolsReady, composeAvailable, composeWithClaude, probeClaudeTools } from '../storage/desktopClaude';
+import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
 
 export interface ComposedText {
   title: string;
@@ -122,6 +123,9 @@ export function useComposePrText(): ComposeState & {
         );
       }
 
+      // Recorded once the model is actually going to be asked. Counting earlier would fold in
+      // every branch that falls back to the template, and the question here is how often Claude
+      // writes a description — not how often the button exists.
       if (!config.ai.enabled || !composeAvailable()) return finish(template());
       if (!claudeToolsReady(await probeClaudeTools())) {
         return finish(template());
@@ -138,6 +142,8 @@ export function useComposePrText(): ComposeState & {
         promptOverride: config.ai.pr.prompt,
       });
 
+      Telemetry.featureUsed(Feature.AI_PR_COMPOSE);
+      const startedAtMs = performance.now();
       const result = await composeWithClaude({
         prompt,
         requestId: newRequestId(),
@@ -147,9 +153,13 @@ export function useComposePrText(): ComposeState & {
       });
 
       if (!result.ok) {
+        // A failure here is not visible to the user — the template quietly takes over — which is
+        // exactly why it has to be counted. Nobody will report this one.
+        Telemetry.operationFailed(Operation.CLAUDE_PR_COMPOSE, ErrorCategory.UNKNOWN);
         devWarn('claude', 'compose: falling back to the template', result.error);
         return finish(template(`Claude could not write this one (${result.error}).`));
       }
+      Telemetry.operationCompleted(Operation.CLAUDE_PR_COMPOSE, performance.now() - startedAtMs);
 
       devLog('claude', `compose: ${result.reply.length} chars`);
       const parsed = parseComposedPr(result.reply, fallbackTitle);

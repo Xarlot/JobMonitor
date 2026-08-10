@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, IconButton, Label, Link, Spinner, Text } from '@primer/react';
+import { Button, Flash, IconButton, Label, Link, Spinner, Text } from '@primer/react';
 import { SyncIcon } from '@primer/octicons-react';
 import { fetchRunsForHead, rerunFailedJobs } from '../api/workflows';
 import type { WorkflowRun } from '../api/types';
@@ -23,6 +23,8 @@ import { workflowBasename } from '../lib/workflow';
 import { formatRelative } from '../lib/format';
 import { useTokenCapability } from '../hooks/useTokenCapability';
 import { Modal } from './Modal';
+import { Feature, Operation, Telemetry } from '../lib/telemetry';
+import styles from './RerunFailedJobsButton.module.css';
 
 type Outcome = { runId: number; ok: boolean; message: string };
 
@@ -66,7 +68,10 @@ function RerunDialog({
   const rerun = async (run: WorkflowRun) => {
     setBusy(run.id);
     try {
-      await rerunFailedJobs(owner, repo, run.id);
+      Telemetry.featureUsed(Feature.RERUN_MANUAL);
+      await Telemetry.measure(Operation.GH_RERUN_WRITE, () =>
+        rerunFailedJobs(owner, repo, run.id),
+      );
       setOutcomes((prev) => [
         ...prev.filter((o) => o.runId !== run.id),
         { runId: run.id, ok: true, message: `Re-run requested (attempt ${run.run_attempt + 1}).` },
@@ -90,17 +95,17 @@ function RerunDialog({
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
     >
-      {error && <Flash variant="danger" sx={{ fontSize: 0 }}>{error}</Flash>}
+      {error && <Flash variant="danger" className={styles.small}>{error}</Flash>}
 
       {!error && runs === null && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
+        <div className={styles.flexCenter}>
           <Spinner size="small" />
-          <Text sx={{ fontSize: 0 }}>Looking for failed runs…</Text>
-        </Box>
+          <Text className={styles.small}>Looking for failed runs…</Text>
+        </div>
       )}
 
       {runs !== null && runs.length === 0 && (
-        <Text sx={{ color: 'fg.muted', fontSize: 1 }}>
+        <Text className={styles.fgMutedBody}>
           No failed workflow runs for this commit.
         </Text>
       )}
@@ -108,40 +113,32 @@ function RerunDialog({
       {runs?.map((run) => {
         const outcome = outcomes.find((o) => o.runId === run.id);
         return (
-          <Box
+          <div
             key={run.id}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 2,
-              py: 2,
-              borderTop: '1px solid',
-              borderColor: 'border.muted',
-              flexWrap: 'wrap',
-            }}
+            className={styles.flexCenter2}
           >
-            <Box sx={{ flex: 1, minWidth: 200 }}>
+            <div className={styles.grow}>
               <Link
                 href={run.html_url}
                 target="_blank"
                 rel="noreferrer"
-                sx={{ fontSize: 1, fontWeight: 'bold', color: 'fg.default' }}
+                className={styles.bodyBold}
               >
                 {run.name ?? run.display_title}
               </Link>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
+              <div className={styles.flexCenter}>
                 {run.path && (
-                  <Text sx={{ fontSize: 0, fontFamily: 'mono' }}>
+                  <Text className={styles.smallMono}>
                     {workflowBasename(run.path)}
                   </Text>
                 )}
-                <Text sx={{ fontSize: 0 }}>run #{run.run_number}</Text>
+                <Text className={styles.small}>run #{run.run_number}</Text>
                 {run.run_attempt > 1 && (
-                  <Text sx={{ fontSize: 0 }}>attempt {run.run_attempt}</Text>
+                  <Text className={styles.small}>attempt {run.run_attempt}</Text>
                 )}
-                <Text sx={{ fontSize: 0 }}>{formatRelative(run.updated_at)}</Text>
-              </Box>
-            </Box>
+                <Text className={styles.small}>{formatRelative(run.updated_at)}</Text>
+              </div>
+            </div>
             <Label variant={run.conclusion === 'cancelled' ? 'secondary' : 'danger'}>
               {run.conclusion}
             </Label>
@@ -154,13 +151,13 @@ function RerunDialog({
               {busy === run.id ? 'Requesting…' : outcome?.ok ? 'Requested' : 'Re-run failed jobs'}
             </Button>
             {outcome && (
-              <Box sx={{ flexBasis: '100%' }}>
-                <Flash variant={outcome.ok ? 'success' : 'danger'} sx={{ fontSize: 0 }}>
+              <div className={styles.flexBasis}>
+                <Flash variant={outcome.ok ? 'success' : 'danger'} className={styles.small}>
                   {outcome.message}
                 </Flash>
-              </Box>
+              </div>
             )}
-          </Box>
+          </div>
         );
       })}
     </Modal>
@@ -191,7 +188,7 @@ export function RerunFailedJobsButton({
   if (!canRerun) return null;
 
   return (
-    <Box as="span" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+    <span onClick={(e: React.MouseEvent) => e.stopPropagation()}>
       <IconButton
         size={size}
         variant="invisible"
@@ -209,6 +206,6 @@ export function RerunFailedJobsButton({
           onRerun={onRerun}
         />
       )}
-    </Box>
+    </span>
   );
 }

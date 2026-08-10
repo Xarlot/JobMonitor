@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Flash, Label, Octicon, Spinner, Text } from '@primer/react';
+import { Button, Flash, Label, Spinner, Text } from '@primer/react';
 import { AlertIcon, InfoIcon, LinkExternalIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { Annotation, OverallStatus, WorkflowRun } from '../api/types';
 import { checkRunIdFromUrl } from '../api/endpoints';
@@ -8,6 +8,8 @@ import { fetchAllRunJobs } from '../api/jobs';
 import { statusToOverall } from '../lib/status';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
+import styles from './OverallSummaryDialog.module.css';
+import { Icon } from './Icon';
 
 export interface SummaryItem {
   id: string | number;
@@ -27,9 +29,9 @@ const COUNT_META: { status: OverallStatus; label: string; variant: LabelVariant 
 ];
 
 const LEVEL_STYLE = {
-  failure: { icon: XCircleFillIcon, color: 'danger.fg' },
-  warning: { icon: AlertIcon, color: 'attention.fg' },
-  notice: { icon: InfoIcon, color: 'accent.fg' },
+  failure: { icon: XCircleFillIcon, color: 'var(--fgColor-danger)' },
+  warning: { icon: AlertIcon, color: 'var(--fgColor-attention)' },
+  notice: { icon: InfoIcon, color: 'var(--fgColor-accent)' },
 } as const;
 
 const MAX_ANNOTATION_FETCH = 40;
@@ -82,69 +84,69 @@ function SummaryBody({ owner, repo, items }: { owner: string; repo: string; item
   for (const i of items) counts[i.status]++;
 
   return (
-    <Box>
+    <div>
       {/* status roll-up */}
-      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
-        <Text sx={{ fontSize: 0, color: 'fg.muted', mr: 1 }}>{items.length} items:</Text>
+      <div className={styles.flexGap2}>
+        <Text className={styles.smallFgMuted}>{items.length} items:</Text>
         {COUNT_META.filter((m) => counts[m.status] > 0).map((m) => (
           <Label key={m.status} variant={m.variant}>
             {counts[m.status]} {m.label}
           </Label>
         ))}
-      </Box>
+      </div>
 
-      <Text as="h3" sx={{ fontSize: 1, fontWeight: 'bold', color: 'fg.muted', mb: 2 }}>
+      <Text as="h3" className={styles.bodyBold}>
         Needs attention ({attention.length})
       </Text>
       {attention.length === 0 ? (
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>Everything passed — nothing needs attention.</Text>
+        <Text className={styles.smallFgMuted2}>Everything passed — nothing needs attention.</Text>
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div className={styles.flexCol}>
           {attention.map((it) => {
             const anns = annByItem[String(it.id)] ?? [];
             return (
-              <Box
+              <div
                 key={it.id}
-                sx={{ border: '1px solid', borderColor: 'border.muted', borderRadius: 2, p: 2 }}
+                className={styles.roundedP2}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: anns.length ? 2 : 0 }}>
+                <div className={anns.length ? styles.annHeaderSpaced : styles.annHeader}>
                   <StatusBadge status={it.status} />
-                  <Text sx={{ fontWeight: 'bold', fontSize: 1 }}>{it.label}</Text>
-                </Box>
+                  <Text className={styles.boldBody}>{it.label}</Text>
+                </div>
                 {anns.length > 0 ? (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <div className={styles.flexCol2}>
                     {anns.map((a, i) => {
                       const style = LEVEL_STYLE[a.annotation_level ?? 'notice'] ?? LEVEL_STYLE.notice;
                       return (
-                        <Box key={i} sx={{ pl: 2, borderLeft: '2px solid', borderColor: style.color }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Octicon icon={style.icon} size={12} sx={{ color: style.color }} />
-                            {a.title && <Text sx={{ fontWeight: 'bold', fontSize: 0 }}>{a.title}</Text>}
+                        <div key={i} className={styles.annotation} style={{ borderColor: style.color }}>
+                          <div className={styles.flexCenter}>
+                            <Icon icon={style.icon} size={12} style={{ color: style.color }} />
+                            {a.title && <Text className={styles.boldSmall}>{a.title}</Text>}
                             {a.path && a.path !== '.github' && (
-                              <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+                              <Text className={styles.smallFgMuted2}>
                                 {a.path}
                                 {a.start_line ? `:${a.start_line}` : ''}
                               </Text>
                             )}
-                          </Box>
-                          <Box as="pre" sx={{ m: 0, fontFamily: 'mono', fontSize: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          </div>
+                          <pre className={styles.m0Mono}>
                             {a.message ?? ''}
-                          </Box>
-                        </Box>
+                          </pre>
+                        </div>
                       );
                     })}
-                  </Box>
+                  </div>
                 ) : annLoading && it.checkRunId != null ? (
-                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>loading annotations…</Text>
+                  <Text className={styles.smallFgMuted2}>loading annotations…</Text>
                 ) : (
-                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No annotations.</Text>
+                  <Text className={styles.smallFgMuted2}>No annotations.</Text>
                 )}
-              </Box>
+              </div>
             );
           })}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -189,11 +191,11 @@ export function OverallSummaryDialog({
       }
     >
       {loading ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted' }}>
-          <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading…</Text>
-        </Box>
+        <div className={styles.flexCenter2}>
+          <Spinner size="small" /> <Text className={styles.small}>Loading…</Text>
+        </div>
       ) : error ? (
-        <Flash variant="danger" sx={{ fontSize: 0 }}>{error}</Flash>
+        <Flash variant="danger" className={styles.small}>{error}</Flash>
       ) : (
         <SummaryBody owner={owner} repo={repo} items={items} />
       )}

@@ -1,0 +1,16 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.centerDefault {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.tipWide {
+  --tooltip-max: 420px;
+}

@@ -1,7 +1,9 @@
-import { Box, Octicon, Text } from '@primer/react';
+import { Text } from '@primer/react';
 import { CheckCircleFillIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { OverallStatus, WorkflowRun } from '../api/types';
 import { statusToOverall } from '../lib/status';
+import styles from './GroupStatusCounts.module.css';
+import { Icon } from './Icon';
 
 /**
  * The verdict a group header reports for one item: passed, failed, or nothing.
@@ -43,20 +45,19 @@ export function GroupStatusCounts({ verdicts }: { verdicts: ('success' | 'failur
 
   const item = (icon: typeof CheckCircleFillIcon, color: string, count: number, label: string) =>
     count > 0 ? (
-      <Box
-        as="span"
+      <span
         title={`${count} ${label}`}
-        sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color }}
+        className={styles.count} style={{ color }}
       >
-        <Octicon icon={icon} size={12} />
-        <Text sx={{ fontSize: 0 }}>{count}</Text>
-      </Box>
+        <Icon icon={icon} size={12} />
+        <Text className={styles.small}>{count}</Text>
+      </span>
     ) : null;
 
   return (
-    <Box as="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+    <span className={styles.centerGap2}>
       {item(CheckCircleFillIcon, 'success.fg', passed, 'passed')}
       {item(XCircleFillIcon, 'danger.fg', failed, 'failed')}
-    </Box>
+    </span>
   );
 }

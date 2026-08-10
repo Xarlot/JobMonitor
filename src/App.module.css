@@ -1,0 +1,90 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  background-color: var(--bgColor-inset);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.flexGap2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-8);
+}
+
+.large {
+  font-size: var(--text-body-size-large);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+}
+
+.grow {
+  flex: 1;
+}
+
+.bgCanvasDefaultFgDefault {
+  min-height: 100vh;
+  background-color: var(--bgColor-default);
+  color: var(--fgColor-default);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.p4 {
+  padding: var(--base-size-24);
+  max-width: 1440px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.mb4 {
+  margin-bottom: var(--base-size-24);
+}
+
+.p4_2 {
+  padding: var(--base-size-24);
+}
+
+.px3Pt2 {
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  border-bottom: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.flexCentred {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}

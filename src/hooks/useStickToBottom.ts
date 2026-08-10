@@ -15,7 +15,9 @@ const PINNED_SLACK_PX = 24;
 export function useStickToBottom<T extends HTMLElement>(
   /** Changes whenever new content arrives — a length, or the text itself. */
   content: unknown,
-): RefObject<T> {
+): RefObject<T | null> {
+  // React 19 types `useRef<T>(null)` as `RefObject<T | null>` rather than `RefObject<T>`: the ref
+  // genuinely is null before the element mounts, and the old type quietly lied about it.
   const ref = useRef<T>(null);
   const pinned = useRef(true);
   const detach = useRef<(() => void) | null>(null);

@@ -243,8 +243,14 @@ export const diagnosticsSchema = z
  */
 export const featureBranchesSchema = z
   .object({
-    /** Show the "Feature branches" tab in the main navigation. */
-    enabled: z.boolean().default(false),
+    /**
+     * Show the "Feature branches" tab in the main navigation.
+     *
+     * On by default. It costs two requests per poll to find out that a repository has no shared
+     * branches under the prefix — cheap enough that defaulting to off mainly meant the tab went
+     * unfound by the people it was built for. Turning it off stops all of that.
+     */
+    enabled: z.boolean().default(true),
     /**
      * Ref prefix that defines a feature branch. The trailing slash matters: it is handed
      * to GitHub's `matching-refs` endpoint verbatim, where `feature` would also match
@@ -455,7 +461,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
   autoMerge: { mergeMethod: 'squash' },
   diagnostics: { showLogTab: false, tailKB: 512, followSeconds: 3 },
-  featureBranches: { enabled: false, prefix: 'feature/' },
+  featureBranches: { enabled: true, prefix: 'feature/' },
   ai: {
     enabled: true,
     extraInstructions: '',

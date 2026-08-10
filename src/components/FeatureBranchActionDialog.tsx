@@ -15,18 +15,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  FormControl,
-  Flash,
-  Label,
-  Octicon,
-  Spinner,
-  Text,
-  TextInput,
-  Textarea,
-} from '@primer/react';
+import { Button, FormControl, Flash, Label, Spinner, Text, TextInput, Textarea } from '@primer/react';
 import { CheckCircleFillIcon, SkipIcon, XCircleFillIcon } from '@primer/octicons-react';
 import {
   armExistingPull,
@@ -42,6 +31,10 @@ import type { ForkStanding } from '../hooks/useFeatureBranches';
 import { useComposePrText } from '../hooks/useComposePrText';
 import { forkRepo } from '../storage/configStore';
 import { Modal } from './Modal';
+import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
+import { categorizeError } from '../lib/telemetry/errorCategory';
+import styles from './FeatureBranchActionDialog.module.css';
+import { Icon } from './Icon';
 
 export type PendingAction =
   | { kind: 'sync'; branch: string }
@@ -51,27 +44,27 @@ export type PendingAction =
   | { kind: 'pull'; branch: string };
 
 const STEP_ICON = {
-  done: { icon: CheckCircleFillIcon, color: 'success.fg' },
-  skipped: { icon: SkipIcon, color: 'fg.muted' },
-  failed: { icon: XCircleFillIcon, color: 'danger.fg' },
+  done: { icon: CheckCircleFillIcon, color: 'var(--fgColor-success)' },
+  skipped: { icon: SkipIcon, color: 'var(--fgColor-muted)' },
+  failed: { icon: XCircleFillIcon, color: 'var(--fgColor-danger)' },
 } as const;
 
 function Steps({ steps }: { steps: ActionStep[] }) {
   return (
-    <Box sx={{ mb: 3 }}>
+    <div className={styles.mb3}>
       {steps.map((step, i) => {
         const style = STEP_ICON[step.state];
         return (
-          <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, fontSize: 1 }}>
-            <Octicon icon={style.icon} size={16} sx={{ color: style.color }} />
+          <div key={i} className={styles.flexCenter}>
+            <Icon icon={style.icon} size={16} style={{ color: style.color }} />
             <Text>{step.label}</Text>
             {step.detail && (
-              <Text sx={{ fontSize: 0, color: 'fg.muted' }}>{step.detail}</Text>
+              <Text className={styles.smallFgMuted}>{step.detail}</Text>
             )}
-          </Box>
+          </div>
         );
       })}
-    </Box>
+    </div>
   );
 }
 
@@ -131,10 +124,19 @@ export function FeatureBranchActionDialog({
 
   const perform = async () => {
     setBusy(true);
+    // Every branch action is several requests behind one button, and the button reports only
+    // "working…". Timing the whole switch measures what the person is actually waiting through;
+    // timing the individual requests inside would measure something nobody experiences.
+    //
+    // `pull` gets its own operation: it is the fork-sync path and it is the slow one, since it
+    // waits on GitHub's merge-upstream rather than on a write we control.
+    const operation = action.kind === 'pull' ? Operation.GH_FORK_SYNC : Operation.GH_BRANCH_ACTION;
+    const startedAtMs = performance.now();
     try {
       let result: ActionOutcome;
       switch (action.kind) {
         case 'sync':
+          Telemetry.featureUsed(Feature.BRANCH_SYNC);
           result = await syncIntoFeatureBranch({
             owner,
             repo,
@@ -143,6 +145,7 @@ export function FeatureBranchActionDialog({
           });
           break;
         case 'offer':
+          Telemetry.featureUsed(Feature.BRANCH_OFFER);
           result = await proposeToFeatureBranch({
             owner,
             repo,
@@ -167,11 +170,19 @@ export function FeatureBranchActionDialog({
           break;
         }
         case 'pull':
+          Telemetry.featureUsed(Feature.BRANCH_FORK_SYNCED);
           result = await pullIntoFork(config.fork.owner, forkRepo(config), action.branch);
           break;
       }
       setOutcome(result);
+      // A refused action is a failure of the operation even though nothing threw: the request was
+      // made, GitHub answered, and the person did not get what they asked for.
+      if (result.ok) Telemetry.operationCompleted(operation, performance.now() - startedAtMs);
+      else Telemetry.operationFailed(operation, ErrorCategory.UNKNOWN);
       onDone();
+    } catch (error) {
+      Telemetry.operationFailed(operation, categorizeError(error));
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -192,25 +203,25 @@ export function FeatureBranchActionDialog({
       onClose={onClose}
       width="min(640px, 94vw)"
       footer={
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <div className={styles.flexGap2}>
           <Button onClick={onClose}>{outcome ? 'Close' : 'Cancel'}</Button>
           {!outcome && (
             <Button variant="primary" disabled={!canConfirm} onClick={() => void perform()}>
               {busy ? 'Working…' : CONFIRM_LABEL[action.kind]}
             </Button>
           )}
-        </Box>
+        </div>
       }
     >
       {!outcome && branchGone && (
-        <Flash variant="warning" sx={{ fontSize: 1, mb: 3 }}>
+        <Flash variant="warning" className={styles.bodyMb3}>
           <strong>{action.branch}</strong> is no longer listed in both repositories. It may have
           been deleted or renamed since this dialog opened.
         </Flash>
       )}
 
       {!outcome && !branchGone && (
-        <Box sx={{ mb: 3 }}>
+        <div className={styles.mb3}>
           <ActionExplanation
             action={action}
             defaultBranch={defaultBranch}
@@ -219,42 +230,42 @@ export function FeatureBranchActionDialog({
             upstreamSlug={`${owner}/${repo}`}
             standing={row?.standing ?? { state: 'unknown', behindBy: 0, aheadBy: 0 }}
           />
-        </Box>
+        </div>
       )}
 
       {action.kind === 'offer' && !outcome && !branchGone && (
         <>
           {preparing ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <div className={styles.flexCenter2}>
               <Spinner size="small" />
-              <Text sx={{ fontSize: 1, color: 'fg.muted' }}>
+              <Text className={styles.bodyFgMuted}>
                 Working out what this branch changes…
               </Text>
-            </Box>
+            </div>
           ) : (
             <>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <div className={styles.flexCenter3}>
                 <Label variant={composer.text?.source === 'claude' ? 'accent' : 'secondary'}>
                   {composer.text?.source === 'claude' ? 'written by Claude' : 'from a template'}
                 </Label>
                 {composer.text?.summary && (
-                  <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+                  <Text className={styles.smallFgMuted}>
                     {composer.text.summary.totalCommits} commits ·{' '}
                     {composer.text.summary.files.length}
                     {composer.text.summary.filesTruncated ? '+' : ''} files
                   </Text>
                 )}
-              </Box>
+              </div>
               {composer.text?.note && (
-                <Flash variant="warning" sx={{ fontSize: 0, mb: 3 }}>
+                <Flash variant="warning" className={styles.smallMb3}>
                   {composer.text.note}
                 </Flash>
               )}
-              <FormControl sx={{ mb: 3 }}>
+              <FormControl className={styles.mb3}>
                 <FormControl.Label>Title</FormControl.Label>
                 <TextInput block value={title} onChange={(e) => setTitle(e.target.value)} />
               </FormControl>
-              <FormControl sx={{ mb: 3 }}>
+              <FormControl className={styles.mb3}>
                 <FormControl.Label>Description</FormControl.Label>
                 <Textarea
                   block
@@ -276,7 +287,7 @@ export function FeatureBranchActionDialog({
       {outcome && (
         <>
           <Steps steps={outcome.steps} />
-          <Flash variant={outcome.ok ? 'success' : 'danger'} sx={{ fontSize: 1 }}>
+          <Flash variant={outcome.ok ? 'success' : 'danger'} className={styles.body}>
             {outcome.message}
           </Flash>
         </>
@@ -310,12 +321,12 @@ function ActionExplanation({
   if (action.kind === 'sync') {
     return (
       <>
-        <Text as="p" sx={{ fontSize: 1, mb: 2 }}>
+        <Text as="p" className={styles.bodyMb2}>
           This opens a pull request from <strong>{defaultBranch}</strong> into{' '}
           <strong>{action.branch}</strong> in the upstream and arms auto-merge, so GitHub lands
           it as soon as the required checks pass.
         </Text>
-        <Text as="p" sx={{ fontSize: 1, color: 'fg.muted', mb: 0 }}>
+        <Text as="p" className={styles.bodyFgMuted2}>
           Always a merge commit, never a squash: squashing the default branch into a feature
           branch would rewrite history the two repositories share, and every later merge between
           them would conflict against it. Nothing is merged from here — if GitHub declines to
@@ -328,13 +339,13 @@ function ActionExplanation({
   if (action.kind === 'offer') {
     return (
       <>
-        <Text as="p" sx={{ fontSize: 1, mb: 2 }}>
+        <Text as="p" className={styles.bodyMb2}>
           This opens a pull request from <strong>{action.branch}</strong> in{' '}
           <strong>{forkSlug}</strong> into the branch of the same name in{' '}
           <strong>{upstreamSlug}</strong>, and arms auto-merge (<Label>{mergeMethod}</Label>) so
           it lands once its required checks pass.
         </Text>
-        <Text as="p" sx={{ fontSize: 1, color: 'fg.muted', mb: 0 }}>
+        <Text as="p" className={styles.bodyFgMuted2}>
           If GitHub can already merge it, nothing is queued and nothing is merged — you get a{' '}
           <strong>Merge now</strong> button instead. Nothing here touches{' '}
           <strong>{defaultBranch}</strong>.
@@ -345,7 +356,7 @@ function ActionExplanation({
 
   if (action.kind === 'arm') {
     return (
-      <Text as="p" sx={{ fontSize: 1, mb: 0 }}>
+      <Text as="p" className={styles.bodyMb0}>
         The pull request from <strong>{action.branch}</strong> into{' '}
         <strong>{defaultBranch}</strong> is already open, so this only asks GitHub to merge it
         (<Label>{mergeMethod}</Label>) once its required checks pass. Its title and description
@@ -358,7 +369,7 @@ function ActionExplanation({
   if (action.kind === 'pull') {
     return (
       <>
-        <Text as="p" sx={{ fontSize: 1, mb: 2 }}>
+        <Text as="p" className={styles.bodyMb2}>
           This updates <strong>{action.branch}</strong> in <strong>{forkSlug}</strong> to match
           the upstream's copy.
         </Text>
@@ -369,7 +380,7 @@ function ActionExplanation({
         */}
         <Flash
           variant={standing.state === 'diverged' || standing.state === 'unknown' ? 'warning' : 'default'}
-          sx={{ fontSize: 0 }}
+          className={styles.small}
         >
           {standing.state === 'behind' &&
             `Your copy is ${standing.behindBy} commit${standing.behindBy === 1 ? '' : 's'} behind and has nothing of its own, so this fast-forwards it. No merge commit.`}

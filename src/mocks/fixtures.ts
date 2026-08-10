@@ -622,6 +622,24 @@ export const MOCK_FEATURE_PULLS: PullRequest[] = [
  * `ahead` with a non-zero `ahead_by` reads, for the standing, as "your fork is 3 commits
  * behind": the base of that comparison is the fork and the head is the upstream.
  */
+/**
+ * A feature branch trailing the default branch.
+ *
+ * The fork comparison and the default-branch comparison hit the same endpoint, so the mock has to
+ * tell them apart or every branch reads as up to date with `2026.1` — which would make the one part
+ * of the row that warns about drift the one part that never fires.
+ */
+export function mockBehindDefault(): Comparison {
+  return {
+    status: 'behind',
+    ahead_by: 0,
+    behind_by: 47,
+    total_commits: 47,
+    commits: [],
+    files: [],
+  };
+}
+
 export function mockComparison(): Comparison {
   return {
     status: 'ahead',

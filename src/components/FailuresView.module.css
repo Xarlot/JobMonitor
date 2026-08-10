@@ -1,0 +1,327 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.centerGap1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  flex-shrink: 0;
+}
+
+.doneFg {
+  color: var(--fgColor-done);
+}
+
+.dangerFg {
+  color: var(--fgColor-danger);
+  flex-shrink: 0;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0px;
+}
+
+.bodyBlock {
+  font-size: var(--text-body-size-medium);
+  display: block;
+  word-break: break-word;
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.fgMuted {
+  color: var(--fgColor-muted);
+  flex-shrink: 0;
+}
+
+.smallBold {
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  min-width: 0px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grow2 {
+  flex: 1;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+}
+
+.successFg {
+  color: var(--fgColor-success);
+}
+
+.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.fgMutedBody {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.bodyBold {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0px;
+}
+
+.flexCenter4 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.boldBody {
+  font-weight: var(--base-text-weight-semibold);
+  font-size: var(--text-body-size-medium);
+  min-width: 0px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+  vertical-align: text-bottom;
+}
+
+.mb2Small {
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.mb2 {
+  margin-bottom: var(--base-size-8);
+}
+
+.ml2 {
+  margin-left: var(--base-size-8);
+}
+
+.roundedP4 {
+  border: 1px dashed;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-24);
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+}
+
+.richBox {
+  padding: var(--base-size-16);
+  background-color: var(--bgColor-default);
+  color: var(--fgColor-default);
+  border-radius: var(--borderRadius-large);
+  border: 1px solid var(--borderColor-default);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  font-size: var(--text-body-size-medium);
+}
+
+.monoBox {
+  margin: 0;
+  padding: var(--base-size-16);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--bgColor-inset);
+  color: var(--fgColor-default);
+  border-radius: var(--borderRadius-large);
+  border: 1px solid var(--borderColor-default);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.richBox h3 {
+  font-size: var(--text-body-size-large);
+  margin-top: 0;
+  margin-bottom: var(--base-size-8);
+}
+
+.richBox h4 {
+  font-size: var(--text-body-size-medium);
+  margin-top: var(--base-size-16);
+  margin-bottom: var(--base-size-4);
+}
+
+.richBox p {
+  margin-top: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+}
+
+.richBox ul {
+  padding-left: var(--base-size-24);
+  margin-top: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+}
+
+.richBox pre {
+  overflow-x: auto;
+  font-size: var(--text-body-size-small);
+}
+
+.richBox a {
+  color: var(--fgColor-accent);
+}
+
+/* The rendered-HTML preview, borderless and flush — used for the Markdown target. */
+.richBoxFlush {
+  composes: richBox;
+  padding: 0;
+  border: none;
+}
+
+.list {
+  border: 1px solid var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.failureRow {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding: var(--base-size-8);
+  border-top: 1px solid var(--borderColor-muted);
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.failureRow:hover {
+  background-color: var(--bgColor-muted);
+}
+
+/* The row being read. It keeps its tint on hover — losing it would read as losing the selection. */
+.failureRowFocused {
+  composes: failureRow;
+  background-color: var(--bgColor-accent-muted);
+}
+
+.failureRowFocused:hover {
+  background-color: var(--bgColor-accent-muted);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-8);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  background-color: var(--bgColor-muted);
+  border-top: 1px solid var(--borderColor-default);
+  cursor: pointer;
+}
+
+.sectionHeader:hover {
+  background-color: var(--bgColor-inset);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  padding: var(--base-size-8);
+  border-top: 1px solid var(--borderColor-default);
+  cursor: pointer;
+}
+
+.groupHeader:hover {
+  background-color: var(--bgColor-muted);
+}
+
+/*
+ * Two columns from Primer's second breakpoint up; one below it, where there is no room to put a
+ * list beside a report.
+ */
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--base-size-16);
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .split { grid-template-columns: minmax(280px, 380px) 1fr; }
+}
+
+/*
+ * Natural width, and it does not grow: a short name shares the row with the buttons, a long one
+ * takes what it needs and pushes them to their own line. Shrinking is the last resort (ellipsis),
+ * not the first response.
+ */
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/*
+ * Grows so that on a line of its own it fills the width and its right-aligned contents land on the
+ * right edge; never shrinks, which is what forces the wrap instead of crushing the buttons.
+ */
+.actionGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  flex-shrink: 0;
+}
+
+.trigger {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}

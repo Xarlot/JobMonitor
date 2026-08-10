@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, IconButton, Text } from '@primer/react';
+import { IconButton, Text } from '@primer/react';
 import { InfoIcon, LinkExternalIcon, TerminalIcon } from '@primer/octicons-react';
 import type { CheckRun, CombinedStatus, OverallStatus } from '../api/types';
 import { statusToOverall } from '../lib/status';
@@ -9,16 +9,8 @@ import { StatusBadge } from './StatusBadge';
 import { CheckRunDialog } from './CheckRunDialog';
 import { AnalyseFailureButton } from './AnalyseFailureButton';
 import { formatDuration, formatRelative } from '../lib/format';
-
-const cellSx = {
-  px: 2,
-  py: '6px',
-  borderColor: 'border.muted',
-  borderBottomWidth: 1,
-  borderBottomStyle: 'solid',
-  fontSize: 0,
-  verticalAlign: 'middle',
-} as const;
+import styles from './CheckRunsTable.module.css';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 interface Row {
   key: string;
@@ -87,12 +79,12 @@ export function CheckRunsTable({
 
   if (allRows.length === 0) {
     return (
-      <Text sx={{ fontSize: 0, color: 'fg.muted' }}>No checks reported for this commit.</Text>
+      <Text className={styles.smallFgMuted}>No checks reported for this commit.</Text>
     );
   }
   if (rows.length === 0) {
     return (
-      <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+      <Text className={styles.smallFgMuted}>
         All {allRows.length} checks passed — nothing to show in compact view.
       </Text>
     );
@@ -100,28 +92,28 @@ export function CheckRunsTable({
   return (
     <>
       {hidden > 0 && (
-        <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', mb: 1 }}>
+        <Text className={styles.smallFgMuted2}>
           {hidden} passed/skipped hidden (Compact)
         </Text>
       )}
-      <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-        <Box as="tbody">
+      <table className={styles.width}>
+        <tbody>
           {rows.map((r) => (
-            <Box as="tr" key={r.key}>
-              <Box as="td" sx={{ ...cellSx, width: '160px' }}>
+            <tr key={r.key}>
+              <td className={styles.px2Small}>
                 <StatusBadge status={r.overall} />
-              </Box>
-              <Box as="td" sx={cellSx}>
-                <Text sx={{ fontWeight: 'bold' }}>{r.name}</Text>
-                {r.context && <Text sx={{ color: 'fg.muted', ml: 2 }}>{r.context}</Text>}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, color: 'fg.muted', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small2}>
+                <Text className={styles.bold}>{r.name}</Text>
+                {r.context && <Text className={styles.fgMutedMl2}>{r.context}</Text>}
+              </td>
+              <td className={styles.px2Small3}>
                 {r.duration}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, color: 'fg.muted', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small3}>
                 {r.started}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, textAlign: 'right', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small4}>
                 <AnalyseFailureButton checkRunId={r.checkRunId} jobId={r.jobId} />
                 {r.jobId != null && (
                   <>
@@ -130,16 +122,24 @@ export function CheckRunsTable({
                       variant="invisible"
                       icon={InfoIcon}
                       aria-label="Check summary"
-                      onClick={() => setDialog({ jobId: r.jobId as number, kind: 'summary' })}
-                      sx={{ mr: 1 }}
+                      onClick={() => {
+                        Telemetry.featureUsed(Feature.PR_CHECK_RUN_DIALOG);
+                        Telemetry.featureUsed(Feature.LOGS_JOB_SUMMARY_OPENED);
+                        setDialog({ jobId: r.jobId as number, kind: 'summary' });
+                      }}
+                      className={styles.mr1}
                     />
                     <IconButton
                       size="small"
                       variant="invisible"
                       icon={TerminalIcon}
                       aria-label="Check logs"
-                      onClick={() => setDialog({ jobId: r.jobId as number, kind: 'logs' })}
-                      sx={{ mr: 1 }}
+                      onClick={() => {
+                        Telemetry.featureUsed(Feature.PR_CHECK_RUN_DIALOG);
+                        Telemetry.featureUsed(Feature.LOGS_JOB_OPENED);
+                        setDialog({ jobId: r.jobId as number, kind: 'logs' });
+                      }}
+                      className={styles.mr1}
                     />
                   </>
                 )}
@@ -149,14 +149,17 @@ export function CheckRunsTable({
                     variant="invisible"
                     icon={LinkExternalIcon}
                     aria-label="Open on GitHub"
-                    onClick={() => window.open(r.url as string, '_blank', 'noopener')}
+                    onClick={() => {
+                      Telemetry.featureUsed(Feature.PR_OPENED_EXTERNAL);
+                      window.open(r.url as string, '_blank', 'noopener');
+                    }}
                   />
                 )}
-              </Box>
-            </Box>
+              </td>
+            </tr>
           ))}
-        </Box>
-      </Box>
+        </tbody>
+      </table>
 
       {dialog && (
         <CheckRunDialog

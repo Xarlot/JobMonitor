@@ -1,0 +1,35 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.log {
+  margin: 0;
+  padding: var(--base-size-8);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--bgColor-inset);
+  border-radius: var(--borderRadius-large);
+  border: 1px solid var(--borderColor-muted);
+}
+
+.line {
+  display: block;
+}
+
+/* Highlighting, one class per line kind — the table below maps a parsed kind onto one of these. */
+.error { color: var(--fgColor-danger); font-weight: var(--base-text-weight-semibold); }
+.failure { color: var(--fgColor-danger); }
+.warning { color: var(--fgColor-attention); }
+.notice { color: var(--fgColor-accent); }
+.group { color: var(--fgColor-default); font-weight: var(--base-text-weight-semibold); }
+.endgroup { color: var(--fgColor-muted); }
+.command { color: var(--fgColor-accent); }
+.section { color: var(--fgColor-done); }
+.success { color: var(--fgColor-success); }
+.stack { color: var(--fgColor-muted); }
+
+.timestamp {
+  color: var(--fgColor-muted);
+  margin-right: var(--base-size-8);
+}

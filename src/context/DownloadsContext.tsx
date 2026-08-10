@@ -7,11 +7,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Box, Button, IconButton, Octicon, Text } from '@primer/react';
+import { Button, IconButton, Text } from '@primer/react';
 import { CheckCircleFillIcon, XCircleFillIcon, XIcon } from '@primer/octicons-react';
 import { isDesktop } from '../storage/desktopSecret';
 import { canSaveToDisk, saveToDisk, showInFolder } from '../storage/desktopDownloads';
 import { saveBlob } from '../lib/downloadArtifact';
+import styles from './DownloadsContext.module.css';
+import { Icon } from '../components/Icon';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 export type DownloadStatus = 'running' | 'ready' | 'saving' | 'done' | 'error';
 
@@ -83,7 +86,10 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...p } : t)));
   }, []);
 
-  const reveal = useCallback((path: string) => void showInFolder(path), []);
+  const reveal = useCallback((path: string) => {
+    Telemetry.featureUsed(Feature.DOWNLOAD_REVEALED);
+    void showInFolder(path);
+  }, []);
 
   const run = useCallback(
     async (name: string, producer: DownloadProducer) => {
@@ -173,42 +179,27 @@ function DownloadAlert({
 
   const ok = task.status === 'done';
   return (
-    <Box
-      sx={{
-        position: 'fixed',
-        bottom: 16,
-        right: 16,
-        zIndex: 1100,
-        maxWidth: 380,
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 2,
-        p: 2,
-        bg: 'canvas.overlay',
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderRadius: 2,
-        boxShadow: 'shadow.large',
-      }}
+    <div
+      className={styles.fixedFlex}
     >
-      <Octicon
+      <Icon
         icon={ok ? CheckCircleFillIcon : XCircleFillIcon}
-        sx={{ color: ok ? 'success.fg' : 'danger.fg', mt: '2px' }}
+        className={styles.resultIcon} style={{ color: ok ? 'var(--fgColor-success)' : 'var(--fgColor-danger)' }}
       />
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Text sx={{ fontWeight: 'bold', display: 'block' }}>
+      <div className={styles.grow}>
+        <Text className={styles.boldBlock}>
           {ok ? 'Saved to Downloads' : 'Download failed'}
         </Text>
-        <Text sx={{ fontSize: 0, color: 'fg.muted', wordBreak: 'break-word' }}>
+        <Text className={styles.smallFgMuted}>
           {ok ? task.name : `${task.name} — ${task.error ?? 'error'}`}
         </Text>
         {ok && task.savedPath && (
-          <Button variant="invisible" size="small" sx={{ mt: 1 }} onClick={() => onReveal(task.savedPath!)}>
+          <Button variant="invisible" size="small" className={styles.mt1} onClick={() => onReveal(task.savedPath!)}>
             Show in folder
           </Button>
         )}
-      </Box>
+      </div>
       <IconButton icon={XIcon} aria-label="Dismiss" variant="invisible" size="small" onClick={onClose} />
-    </Box>
+    </div>
   );
 }

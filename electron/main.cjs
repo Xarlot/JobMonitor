@@ -27,6 +27,7 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { autoUpdater } = require('electron-updater');
 const windowState = require('./windowState.cjs');
 const { resolveAppAsset } = require('./appAssets.cjs');
@@ -57,12 +58,79 @@ let mainWindow = null;
 let tray = null;
 app.isQuitting = false;
 
+/**
+ * Feature ids used from this file, mirroring packages/telemetry-schema/src/registry/features.ts.
+ *
+ * Restated rather than imported because the registry lives in the bundled ESM telemetry module and
+ * this file is CommonJS. That is safe in one direction only: the main process validates every id
+ * against the real registry before recording it, so a number that drifts here is silently dropped
+ * rather than stored under the wrong name.
+ */
+const FEATURE = {
+  APP_LAUNCHED: 100,
+  APP_SECOND_INSTANCE: 101,
+  WINDOW_SHOWN: 102,
+  WINDOW_HIDDEN_TO_TRAY: 103,
+  TRAY_MENU_OPENED: 104,
+  UPDATE_CHECK_MANUAL: 108,
+  UPDATE_INSTALLED: 109,
+};
+
+/** Operation ids, mirrored from the same registry and validated there just as the features are. */
+const OPERATION = {
+  APP_STARTUP: 1300,
+  UPDATE_DOWNLOAD: 1304,
+};
+
+/** Mirrors CrashSource in the telemetry wire schema (packages/telemetry-schema). */
+const CRASH_SOURCE = {
+  MAIN_UNCAUGHT: 1,
+  MAIN_REJECTION: 2,
+  RENDERER_GONE: 3,
+  CHILD_PROCESS_GONE: 7,
+};
+
+/**
+ * Fatal-error capture, installed at module load so that a throw during `whenReady` — which is most
+ * of the interesting ones — is still recorded.
+ *
+ * These handlers only *observe*. Electron registers its own `uncaughtException` listener in the
+ * main process, and Node invokes every registered listener, so adding one here is additive: the
+ * app's existing behaviour (error dialog, keep running) is unchanged. That matters more than it
+ * might seem — a telemetry handler that accidentally suppressed a fatal error dialog would be a
+ * regression in the app, introduced by the code that was supposed to be measuring it.
+ */
+process.on('uncaughtException', (error) => {
+  recordFatal(error, CRASH_SOURCE.MAIN_UNCAUGHT);
+});
+process.on('unhandledRejection', (reason) => {
+  recordFatal(reason, CRASH_SOURCE.MAIN_REJECTION);
+});
+
+function recordFatal(error, source) {
+  try {
+    const name = error instanceof Error ? error.name : typeof error;
+    // Sizes and shapes, never the message — the same contract runLog.cjs already keeps.
+    logEvent('telemetry', 'fatal', { source, name });
+    telemetry?.recordMainCrash({
+      name,
+      stack: error instanceof Error ? error.stack : undefined,
+      source,
+    });
+  } catch {
+    // A crash handler that throws turns one failure into two.
+  }
+}
+
 // Single instance: focus the existing window instead of launching a second copy.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', showWindow);
+  app.on('second-instance', () => {
+    telemetry?.featureUsed(FEATURE.APP_SECOND_INSTANCE);
+    showWindow();
+  });
 
   // Must be called before app `ready`.
   protocol.registerSchemesAsPrivileged([
@@ -92,9 +160,27 @@ if (!gotLock) {
     registerDownloadIpc();
     registerLogIpc();
     registerClaudeIpc(ipcMain);
+    initTelemetry();
+    registerTelemetryIpc();
+    telemetry?.featureUsed(FEATURE.APP_LAUNCHED);
+    // Measured from process start, not from `whenReady`: what a person waits through is the whole
+    // launch, and `process.uptime()` is the only clock that was running before this file was.
+    telemetry?.operationCompleted(OPERATION.APP_STARTUP, process.uptime() * 1000);
     createWindow();
     createTray();
     setupAutoUpdate();
+
+    // A GPU or utility process dying. Rarely fatal to the app, so it is recorded at failure
+    // priority rather than competing with real crashes for room in the queue.
+    app.on('child-process-gone', (_event, details) => {
+      if (details?.reason === 'clean-exit') return;
+      telemetry?.recordProcessCrash({
+        exceptionType: `ChildProcessGone.${details?.type ?? 'unknown'}`,
+        detail: `type=${details?.type ?? 'unknown'} reason=${details?.reason ?? 'unknown'}`,
+        source: CRASH_SOURCE.CHILD_PROCESS_GONE,
+        priority: 'failure',
+      });
+    });
 
     app.on('activate', () => (mainWindow ? showWindow() : createWindow()));
   });
@@ -104,6 +190,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     app.isQuitting = true;
     persistWindowState(); // final flush in case a debounced save is pending
+    shutdownTelemetry(); // marks the session clean and flushes counters; never sends
   });
 }
 
@@ -191,6 +278,43 @@ function createWindow() {
     mainWindow.on(ev, debouncedPersist);
   }
 
+  // Foreground time, tracked from the main process.
+  //
+  // `document.visibilityState` in the renderer is not authoritative here: the app lives in the
+  // tray and keeps polling with the window hidden (backgroundThrottling is off, below), and the
+  // platforms disagree about what visibility means for a tray-hidden window. `isVisible()` and
+  // the focus events do not.
+  mainWindow.on('focus', () => telemetry?.windowFocused());
+  mainWindow.on('blur', () => telemetry?.windowBlurred());
+  mainWindow.on('hide', () => telemetry?.windowBlurred());
+  mainWindow.on('minimize', () => telemetry?.windowBlurred());
+  mainWindow.on('show', () => {
+    telemetry?.featureUsed(FEATURE.WINDOW_SHOWN);
+    if (mainWindow?.isFocused()) telemetry?.windowFocused();
+  });
+
+  // A renderer that died — OOM, a GPU fault, a killed process. There is no stack to collect, so
+  // the reason and exit code are the fingerprint.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logEvent('telemetry', 'renderer gone', details);
+    telemetry?.recordProcessCrash({
+      exceptionType: `RenderProcessGone.${details?.reason ?? 'unknown'}`,
+      detail: `reason=${details?.reason ?? 'unknown'} exitCode=${details?.exitCode ?? -1}`,
+      source: CRASH_SOURCE.RENDERER_GONE,
+    });
+  });
+
+  // Not fatal, but the thing users actually report as "it froze".
+  mainWindow.on('unresponsive', () => {
+    logEvent('telemetry', 'window unresponsive', {});
+    telemetry?.recordProcessCrash({
+      exceptionType: 'WindowUnresponsive',
+      detail: 'window',
+      source: CRASH_SOURCE.CHILD_PROCESS_GONE,
+      priority: 'failure',
+    });
+  });
+
   // DevTools on F12 (and the conventional Ctrl/Cmd+Shift+I).
   //
   // Needed explicitly because the app menu is removed above, and the default accelerators
@@ -218,6 +342,9 @@ function createWindow() {
   // Closing the window hides it to the tray instead of quitting.
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
+      // Hiding to the tray rather than quitting is the behaviour people either love or are
+      // surprised by, and how often it happens says which.
+      telemetry?.featureUsed(FEATURE.WINDOW_HIDDEN_TO_TRAY);
       e.preventDefault();
       mainWindow.hide();
     }
@@ -272,10 +399,17 @@ function createTray() {
   const image = nativeImage.createFromPath(TRAY_ICON);
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image);
   tray.setToolTip('Job Monitor');
+  tray.on('right-click', () => telemetry?.featureUsed(FEATURE.TRAY_MENU_OPENED));
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Job Monitor', click: showWindow },
-      { label: 'Check for updates…', click: checkForUpdatesManual },
+      {
+        label: 'Check for updates…',
+        click: () => {
+          telemetry?.featureUsed(FEATURE.UPDATE_CHECK_MANUAL);
+          checkForUpdatesManual();
+        },
+      },
       { label: 'About', click: showAbout },
       { type: 'separator' },
       {
@@ -360,6 +494,112 @@ function registerLogIpc() {
   });
   // Read-only, and only ever the app's own log file — the path is not a parameter.
   ipcMain.handle('logs:read', (_e, maxBytes) => readRunLogTail(maxBytes ?? DEFAULT_LOG_TAIL_BYTES));
+}
+
+/**
+ * Anonymous usage and crash telemetry (see docs/telemetry.md).
+ *
+ * The implementation lives in `electron/telemetry.bundle.mjs`, built from `electron/telemetry/**`
+ * by `vite.telemetry.config.ts`. It is ESM and this file is CJS, hence the dynamic import — which
+ * is also why every entry point below tolerates the module not being there yet, or at all: a dev
+ * checkout that has not run `npm run build` simply has no telemetry, and that must not be an error.
+ *
+ * Nothing here is on a path the app awaits. A failure to load, initialise or record is a log line
+ * and nothing more.
+ */
+let telemetry = null;
+
+function initTelemetry() {
+  try {
+    // Synchronous: the bundle is CJS and self-contained, so telemetry is ready the moment this
+    // returns and no delta can arrive before it exists.
+    const mod = require('./telemetry.bundle.cjs');
+    telemetry = mod.initTelemetry({
+      dir: path.join(app.getPath('userData'), 'telemetry'),
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electronVersion: process.versions.electron,
+      // Dev runs and the Playwright screenshot scripts accumulate locally but never publish.
+      // With ~50 installations, developer noise would otherwise dominate the dataset.
+      send: app.isPackaged,
+      onLog: logEvent,
+      sanitizeContext: {
+        home: os.homedir(),
+        userData: app.getPath('userData'),
+        username: os.userInfo().username,
+      },
+    });
+    if (!telemetry) return;
+    telemetry.start();
+    logEvent('telemetry', 'ready', {
+      installation: telemetry.installationId,
+      send: app.isPackaged,
+    });
+  } catch (err) {
+    // A checkout that has not run `npm run build` simply has no telemetry. That must not be an
+    // error, and it must never stop the app from starting.
+    telemetry = null;
+    logEvent('telemetry', 'WARN: unavailable', { message: String(err?.message ?? err) });
+  }
+}
+
+function shutdownTelemetry() {
+  try {
+    telemetry?.shutdown();
+  } catch {
+    // A quit must never be blocked, or made to fail, by telemetry.
+  }
+  telemetry = null;
+}
+
+/**
+ * Two channels, both `send` rather than `invoke`.
+ *
+ * `preload.cjs` already gives the reason for the diagnostics log — fire-and-forget, so a log line
+ * can never delay or fail the thing it describes — and it applies with more force here. An
+ * `invoke` hands back a promise that some future caller will eventually await, at which point
+ * telemetry is on the critical path of a feature.
+ */
+function registerTelemetryIpc() {
+  ipcMain.on('telemetry:flush', (_e, delta) => {
+    telemetry?.ingestDelta(delta);
+  });
+
+  /**
+   * Read-only view of what is queued locally, for Settings -> Diagnostics -> Telemetry.
+   *
+   * `invoke` rather than `send` here, unlike the two recording channels: this one is a UI request
+   * whose answer is the whole point, and it is never on a path the app awaits during normal work.
+   */
+  ipcMain.handle('telemetry:read', () => {
+    if (!telemetry) return { records: [], stats: null, available: false };
+    return { ...telemetry.readSpool(), meta: telemetry.stats(), available: true };
+  });
+
+  /**
+   * Development-only controls, surfaced in Settings -> Diagnostics -> Telemetry.
+   *
+   * `invoke` rather than `send`: both are user actions whose outcome is displayed, and neither is
+   * on a path the app awaits during normal work. The main process refuses the toggle in a packaged
+   * build, so this cannot become an opt-out by way of the renderer.
+   */
+  ipcMain.handle('telemetry:setCollecting', (_e, next) => {
+    if (!telemetry) return { ok: false, collecting: false, reason: 'telemetry unavailable' };
+    return telemetry.setCollecting(next);
+  });
+
+  ipcMain.handle('telemetry:sendNow', async () => {
+    if (!telemetry) return { ok: false, reason: 'telemetry unavailable' };
+    return telemetry.sendNow();
+  });
+
+  ipcMain.on('telemetry:crash', (_e, report) => {
+    if (!telemetry) return;
+    const { name, stack, componentStack, source } = report ?? {};
+    if (typeof name !== 'string') return;
+    telemetry.recordRendererCrash({ name, stack, componentStack, source });
+  });
 }
 
 function registerDownloadIpc() {
@@ -455,10 +695,19 @@ function setupAutoUpdate() {
       });
     }
   });
+  let updateDownloadStartedAt = null;
+  autoUpdater.on('update-available', () => {
+    updateDownloadStartedAt = Date.now();
+  });
   autoUpdater.on('update-downloaded', (i) => {
+    if (updateDownloadStartedAt != null) {
+      telemetry?.operationCompleted(OPERATION.UPDATE_DOWNLOAD, Date.now() - updateDownloadStartedAt);
+      updateDownloadStartedAt = null;
+    }
     notify('Updating Job Monitor', `Installing version ${i.version} and restarting…`);
     app.isQuitting = true;
     // Let the notification surface, then quit & install (relaunches the app).
+    telemetry?.featureUsed(FEATURE.UPDATE_INSTALLED);
     setTimeout(() => autoUpdater.quitAndInstall(), 1500);
   });
 }

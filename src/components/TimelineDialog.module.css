@@ -1,0 +1,132 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.flexBetween {
+  display: flex;
+  justify-content: space-between;
+}
+
+.textRight {
+  text-align: right;
+}
+
+.flexGap3 {
+  display: flex;
+  gap: var(--base-size-16);
+  align-items: center;
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
+
+.roundedBgAccentEmphasis {
+  width: 16px;
+  height: 10px;
+  border-radius: var(--borderRadius-medium);
+  background-color: var(--bgColor-accent-emphasis);
+}
+
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-4);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  min-width: 0px;
+}
+
+.smallNowrap {
+  font-size: var(--text-body-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relativeBgCanvasSubtle {
+  position: relative;
+  height: 18px;
+  background-color: var(--bgColor-muted);
+  border-radius: var(--borderRadius-large);
+  background-image: linear-gradient(90deg, var(--borderColor-muted, rgba(0,0,0,0.08)) 0 1px, transparent 1px);
+  background-size: 25% 100%;
+}
+
+.smallFgMuted2 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.smallFgMuted3 {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  display: block;
+  margin-bottom: var(--base-size-16);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.legend {
+  display: grid;
+  align-items: center;
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.row {
+  display: grid;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+/* The hatched swatch in the legend, matching the allocation bars below. */
+.swatch {
+  width: 16px;
+  height: 10px;
+  border-radius: var(--borderRadius-medium);
+  background-color: var(--bgColor-neutral-muted);
+}
+
+/* Bars are positioned as a percentage of the run's span, so geometry stays inline. */
+.bar {
+  position: absolute;
+  top: 2px;
+  height: 14px;
+  border-radius: var(--borderRadius-large);
+}
+
+.barAlloc {
+  composes: bar;
+  min-width: 1px;
+  background-color: var(--bgColor-neutral-muted);
+}
+
+.barPayload {
+  composes: bar;
+  min-width: 2px;
+}

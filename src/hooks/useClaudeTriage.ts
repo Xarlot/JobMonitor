@@ -73,6 +73,7 @@ import {
 import { analysisKey, claudeAnalysisCache } from '../storage/failureCaches';
 import type { Annotation } from '../api/types';
 import type { FailedJobRef } from '../lib/failures';
+import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
 
 export interface TriageState {
   analysis: ClaudeAnalysis | null;
@@ -169,6 +170,34 @@ export interface ClaudeTriage {
 /** How many recent tool calls to keep for the activity feed. */
 const MAX_ACTIVITY = 40;
 
+/** Which feature id each analysis depth records. */
+const AI_FEATURE: Partial<Record<ClaudeDepth, Feature>> = {
+  quick: Feature.AI_TRIAGE_QUICK,
+  deep: Feature.AI_TRIAGE_DEEP,
+  log: Feature.AI_LOG_FETCH,
+  blame: Feature.AI_BLAME,
+};
+
+/** And which operation times it. Separate from the feature: one says who asked, one says how long. */
+const AI_OPERATION: Partial<Record<ClaudeDepth, Operation>> = {
+  quick: Operation.CLAUDE_QUICK,
+  deep: Operation.CLAUDE_DEEP,
+  log: Operation.CLAUDE_LOG_FETCH,
+  blame: Operation.CLAUDE_BLAME,
+};
+
+/**
+ * The bridge reports failures as a string, so there is no error object to classify.
+ *
+ * Only the timeout is worth naming: it is the difference between "Claude answered badly" and
+ * "Claude never answered", and it is the one this feature is actually prone to. Everything else
+ * stays UNKNOWN rather than being guessed at from message text, which would turn a wording change
+ * in the CLI into a silent shift in the numbers.
+ */
+function categorizeClaudeError(message: string): ErrorCategory {
+  return /timed out|timeout/i.test(message) ? ErrorCategory.TIMEOUT : ErrorCategory.UNKNOWN;
+}
+
 /** In-flight/finished state is keyed per failure *and* depth. */
 function slotKey(key: string, depth: ClaudeDepth): string {
   return `${key}|${depth}`;
@@ -205,7 +234,7 @@ export function useClaudeTriage(): ClaudeTriage {
   useEffect(() => {
     if (!claudeBridgeAvailable()) return;
     let active = true;
-    void probeClaudeTools().then((status) => {
+    void Telemetry.measure(Operation.CLAUDE_PROBE, () => probeClaudeTools()).then((status) => {
       if (active) setTools(status);
     });
     return () => {
@@ -280,6 +309,16 @@ export function useClaudeTriage(): ClaudeTriage {
 
   const run = useCallback<ClaudeTriage['run']>((failure, input, depth, options) => {
     if (failure.runId == null || !ai.enabled) return;
+    // One entry point covers all four depths, so the split between them is recorded here rather
+    // than at four call sites. The depths are genuinely different products — a quick read costs a
+    // minute, a deep analysis goes and investigates — and which one people reach for is the
+    // question worth answering.
+    const feature = AI_FEATURE[depth];
+    if (feature) Telemetry.featureUsed(feature);
+    // Measured from here rather than from the bridge call: the wait a person experiences includes
+    // the log download and prompt assembly below, and those are exactly the parts that make a
+    // "quick" read stop feeling quick.
+    const startedAtMs = performance.now();
     const task = ai[depth];
     const slot = slotKey(failure.key, depth);
     const requestId = newRequestId();
@@ -411,6 +450,28 @@ export function useClaudeTriage(): ClaudeTriage {
       });
     })().then((result) => {
       keyByRequest.current.delete(requestId);
+
+      /*
+       * Recorded before the staleness check below, deliberately.
+       *
+       * A superseded run still spent that time and still shelled out to the CLI; dropping its
+       * measurement because a newer run replaced it would quietly bias the numbers towards the
+       * fast cases, since the runs people give up on and retry are the slow ones.
+       *
+       * A cancellation is not a failure. It is its own signal — and the more interesting one,
+       * because "started an analysis and abandoned it" is how being too slow actually shows up.
+       */
+      const operation = AI_OPERATION[depth];
+      if (operation) {
+        if (result.ok) {
+          Telemetry.operationCompleted(operation, performance.now() - startedAtMs);
+        } else if (result.cancelled) {
+          Telemetry.featureUsed(Feature.AI_CANCELLED);
+        } else {
+          Telemetry.operationFailed(operation, categorizeClaudeError(result.error));
+        }
+      }
+
       setByKey((prev) => {
         const current = prev[slot];
         // A newer run (or a cancel) superseded this one; its result is stale.

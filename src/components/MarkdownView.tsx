@@ -8,27 +8,19 @@
  * coloured the same as the log itself.
  */
 
-import { Box, Link, Text } from '@primer/react';
+import { Link, Text } from '@primer/react';
 import {
   parseInline,
   parseMarkdownBlocks,
   type InlineSpan,
   type MarkdownBlock,
 } from '../lib/markdownBlocks';
-import { subtleScrollbarSx } from '../lib/scrollbar';
+import { subtleScrollbar } from '../lib/scrollbar';
 import { LogLines } from './LogLines';
+import styles from './MarkdownView.module.css';
 
 /** Fence languages whose contents are CI log text rather than source code. */
 const LOG_FENCES = new Set(['', 'log', 'text', 'txt', 'console', 'shell', 'sh', 'bash']);
-
-const codeSx = {
-  fontFamily: 'mono',
-  fontSize: 0,
-  bg: 'neutral.muted',
-  borderRadius: 1,
-  px: 1,
-  py: '1px',
-} as const;
 
 function Inline({ spans }: { spans: InlineSpan[] }) {
   return (
@@ -37,13 +29,13 @@ function Inline({ spans }: { spans: InlineSpan[] }) {
         switch (span.kind) {
           case 'code':
             return (
-              <Text key={i} as="code" sx={codeSx}>
+              <Text key={i} as="code" className={styles.monoSmall}>
                 {span.text}
               </Text>
             );
           case 'bold':
             return (
-              <Text key={i} as="strong" sx={{ fontWeight: 'bold' }}>
+              <Text key={i} as="strong" className={styles.bold}>
                 {span.text}
               </Text>
             );
@@ -51,7 +43,7 @@ function Inline({ spans }: { spans: InlineSpan[] }) {
             // The model's annotations arrive as italics, so they are tinted as well as
             // slanted — they are commentary on the log, not part of it.
             return (
-              <Text key={i} as="em" sx={{ fontStyle: 'italic', color: 'accent.fg' }}>
+              <Text key={i} as="em" className={styles.accentFg}>
                 {span.text}
               </Text>
             );
@@ -63,14 +55,7 @@ function Inline({ spans }: { spans: InlineSpan[] }) {
               <Text
                 key={i}
                 as="span"
-                sx={{
-                  fontWeight: 'bold',
-                  color: 'severe.fg',
-                  bg: 'severe.subtle',
-                  borderRadius: 2,
-                  px: 1,
-                  whiteSpace: 'nowrap',
-                }}
+                className={styles.boldSevereFg}
               >
                 {span.text}
               </Text>
@@ -91,9 +76,9 @@ function Inline({ spans }: { spans: InlineSpan[] }) {
 
 export function MarkdownView({ markdown }: { markdown: string }) {
   return (
-    <Box sx={{ fontSize: 1, lineHeight: 1.5 }}>
+    <div className={styles.body}>
       <Blocks blocks={parseMarkdownBlocks(markdown)} />
-    </Box>
+    </div>
   );
 }
 
@@ -108,17 +93,7 @@ function Blocks({ blocks }: { blocks: MarkdownBlock[] }) {
               <Text
                 key={i}
                 as="div"
-                sx={{
-                  fontWeight: 'bold',
-                  // Only two visual weights: deeper nesting than that is noise in a pane
-                  // this size, and the model is asked for `##` anyway.
-                  fontSize: block.level <= 2 ? 2 : 1,
-                  mt: i === 0 ? 0 : 3,
-                  mb: 2,
-                  pb: block.level <= 2 ? 1 : 0,
-                  borderBottom: block.level <= 2 ? '1px solid' : undefined,
-                  borderColor: 'border.muted',
-                }}
+                className={`${block.level <= 2 ? styles.headingMajor : styles.heading} ${i === 0 ? styles.headingFirst : ''}`}
               >
                 <Inline spans={parseInline(block.text)} />
               </Text>
@@ -126,38 +101,27 @@ function Blocks({ blocks }: { blocks: MarkdownBlock[] }) {
 
           case 'code':
             return LOG_FENCES.has(block.info.toLowerCase()) ? (
-              <Box key={i} sx={{ mb: 2 }}>
+              <div key={i} className={styles.mb2}>
                 <LogLines text={block.text} />
-              </Box>
+              </div>
             ) : (
-              <Box
+              <pre
                 key={i}
-                as="pre"
-                sx={{
-                  m: 0,
-                  mb: 2,
-                  p: 2,
-                  fontFamily: 'mono',
-                  fontSize: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  bg: 'canvas.inset',
-                  borderRadius: 2,
-                }}
+                className={styles.m0Mb2}
               >
                 {block.text}
-              </Box>
+              </pre>
             );
 
           case 'list':
             return (
-              <Box key={i} as="ul" sx={{ pl: 3, mt: 0, mb: 2 }}>
+              <ul key={i} className={styles.pl3Mt0}>
                 {block.items.map((item, j) => (
-                  <Box key={j} as="li" sx={{ mb: 1 }}>
+                  <li key={j} className={styles.mb1}>
                     <Inline spans={parseInline(item)} />
-                  </Box>
+                  </li>
                 ))}
-              </Box>
+              </ul>
             );
 
           case 'table':
@@ -165,82 +129,60 @@ function Blocks({ blocks }: { blocks: MarkdownBlock[] }) {
               // Scrolls inside its own container: a flaky-test table carries run links and
               // is easily wider than the pane, and the page itself must never scroll
               // sideways.
-              <Box key={i} sx={{ overflowX: 'auto', mb: 2, ...subtleScrollbarSx }}>
-                <Box
-                  as="table"
-                  sx={{ borderCollapse: 'collapse', fontSize: 0, width: '100%' }}
+              <div key={i} className={`${styles.scrollX} ${subtleScrollbar}`}>
+                <table
+                  className={styles.small}
                 >
-                  <Box as="thead">
-                    <Box as="tr">
+                  <thead>
+                    <tr>
                       {block.header.map((cell, j) => (
-                        <Box
+                        <th
                           key={j}
-                          as="th"
-                          sx={{
-                            textAlign: 'left',
-                            fontWeight: 'bold',
-                            p: 2,
-                            borderBottom: '1px solid',
-                            borderColor: 'border.default',
-                            whiteSpace: 'nowrap',
-                          }}
+                          className={styles.textLeftBold}
                         >
                           <Inline spans={parseInline(cell)} />
-                        </Box>
+                        </th>
                       ))}
-                    </Box>
-                  </Box>
-                  <Box as="tbody">
+                    </tr>
+                  </thead>
+                  <tbody>
                     {block.rows.map((row, r) => (
-                      <Box key={r} as="tr">
+                      <tr key={r}>
                         {row.map((cell, c) => (
-                          <Box
+                          <td
                             key={c}
-                            as="td"
-                            sx={{
-                              p: 2,
-                              borderBottom: '1px solid',
-                              borderColor: 'border.muted',
-                              verticalAlign: 'top',
-                            }}
+                            className={styles.p2}
                           >
                             <Inline spans={parseInline(cell)} />
-                          </Box>
+                          </td>
                         ))}
-                      </Box>
+                      </tr>
                     ))}
-                  </Box>
-                </Box>
-              </Box>
+                  </tbody>
+                </table>
+              </div>
             );
 
           case 'details':
             // A real collapsible, closed by default — which is how GitHub will render it
             // and why the report puts the log tail and the suggested fix in one.
             return (
-              <Box
+              <details
                 key={i}
-                as="details"
-                sx={{
-                  mb: 2,
-                  border: '1px solid',
-                  borderColor: 'border.muted',
-                  borderRadius: 2,
-                  p: 2,
-                }}
+                className={styles.mb2Rounded}
               >
-                <Box as="summary" sx={{ cursor: 'pointer', fontSize: 1, color: 'fg.muted' }}>
+                <summary className={styles.pointerBody}>
                   <Inline spans={parseInline(block.summary)} />
-                </Box>
-                <Box sx={{ mt: 2 }}>
+                </summary>
+                <div className={styles.mt2}>
                   <Blocks blocks={block.blocks} />
-                </Box>
-              </Box>
+                </div>
+              </details>
             );
 
           default:
             return (
-              <Text key={i} as="p" sx={{ mt: 0, mb: 2, whiteSpace: 'pre-wrap' }}>
+              <Text key={i} as="p" className={styles.mt0Mb2}>
                 <Inline spans={parseInline(block.text)} />
               </Text>
             );

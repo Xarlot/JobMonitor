@@ -1,0 +1,88 @@
+/* The feature map's own layout. Primer supplies the controls; positioning is not its job. */
+
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+  margin-bottom: var(--base-size-16);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-4);
+}
+
+.fieldLabel {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.scrub {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
+.scrub input {
+  flex: 1;
+}
+
+.scrubLabel {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-body-size-small);
+  white-space: nowrap;
+}
+
+.scrubCount {
+  color: var(--fgColor-muted);
+}
+
+.figure {
+  margin: 0;
+  /* The map is square and large; on a narrow window it scrolls rather than shrinking to unreadable. */
+  overflow-x: auto;
+}
+
+.figure svg {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+}
+
+.node {
+  cursor: default;
+}
+
+.empty {
+  color: var(--fgColor-muted);
+  border: 1px solid var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-16);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--base-size-16);
+  margin-top: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}

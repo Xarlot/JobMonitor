@@ -1,0 +1,131 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.fgMuted {
+  color: var(--fgColor-muted);
+}
+
+.width {
+  width: 150px;
+  flex-shrink: 0;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0px;
+}
+
+.boldFgDefault {
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-default);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-top: var(--base-size-4);
+  color: var(--fgColor-muted);
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  flex-shrink: 0;
+}
+
+.pl4Pr2 {
+  padding-left: var(--base-size-24);
+  padding-right: var(--base-size-8);
+  padding-bottom: var(--base-size-16);
+  padding-top: var(--base-size-4);
+  background-color: var(--bgColor-muted);
+}
+
+.mb2Small {
+  margin-bottom: var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.flexCenter3 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.flexCenter4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--base-size-16);
+  flex-wrap: wrap;
+  gap: var(--base-size-8);
+}
+
+.flexCenter5 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.flexCenter6 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.rounded {
+  border-radius: var(--borderRadius-large);
+  border-top: 1px solid;
+  border-color: var(--borderColor-default);
+}
+
+.p4TextCenter {
+  padding: var(--base-size-24);
+  text-align: center;
+  color: var(--fgColor-muted);
+}
+
+.prRow {
+  border-bottom: 1px solid var(--borderColor-default);
+  border-left: 3px solid transparent;
+}
+
+/*
+ * A left edge rather than a background: the row already colours its own status column, and tinting
+ * the whole thing would read as a state the pull request is in.
+ */
+.prRowFocused {
+  composes: prRow;
+  border-left-color: var(--bgColor-accent-emphasis);
+}
+
+.prHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+  padding-top: var(--base-size-8);
+  padding-bottom: var(--base-size-8);
+  cursor: pointer;
+}
+
+.prHeader:hover {
+  background-color: var(--bgColor-muted);
+}

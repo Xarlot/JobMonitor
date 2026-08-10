@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Flash, IconButton, Spinner, Text } from '@primer/react';
+import { Flash, IconButton, Spinner, Text } from '@primer/react';
 import { InfoIcon, LinkExternalIcon, TerminalIcon } from '@primer/octicons-react';
 import type { Job } from '../api/types';
 import type { JobsCacheEntry } from '../hooks/useFlows';
@@ -10,16 +10,8 @@ import { JobSummaryDialog } from './JobSummaryDialog';
 import { JobLogsDialog } from './JobLogsDialog';
 import { AnalyseFailureButton } from './AnalyseFailureButton';
 import { formatDuration, formatRelative } from '../lib/format';
-
-const cellSx = {
-  px: 2,
-  py: '6px',
-  borderColor: 'border.muted',
-  borderBottomWidth: 1,
-  borderBottomStyle: 'solid',
-  fontSize: 0,
-  verticalAlign: 'middle',
-} as const;
+import styles from './JobsTable.module.css';
+import { Feature, Telemetry } from '../lib/telemetry';
 
 type OpenDialog = { job: Job; kind: 'summary' | 'logs' } | null;
 
@@ -37,20 +29,20 @@ export function JobsTable({
 
   if (!entry || (entry.loading && entry.jobs.length === 0)) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'fg.muted', p: 2 }}>
-        <Spinner size="small" /> <Text sx={{ fontSize: 0 }}>Loading jobs…</Text>
-      </Box>
+      <div className={styles.flexCenter}>
+        <Spinner size="small" /> <Text className={styles.small}>Loading jobs…</Text>
+      </div>
     );
   }
   if (entry.error && entry.jobs.length === 0) {
     return (
-      <Flash variant="danger" sx={{ m: 2, fontSize: 0 }}>
+      <Flash variant="danger" className={styles.m2Small}>
         Failed to load jobs: {entry.error}
       </Flash>
     );
   }
   if (entry.jobs.length === 0) {
-    return <Text sx={{ fontSize: 0, color: 'fg.muted', p: 2 }}>No jobs for this run.</Text>;
+    return <Text className={styles.smallFgMuted}>No jobs for this run.</Text>;
   }
 
   const jobs = compact
@@ -61,51 +53,57 @@ export function JobsTable({
   return (
     <>
       {hidden > 0 && (
-        <Text sx={{ fontSize: 0, color: 'fg.muted', display: 'block', mb: 1, px: 2 }}>
+        <Text className={styles.smallFgMuted2}>
           {hidden} passed/skipped {hidden === 1 ? 'job' : 'jobs'} hidden (Compact)
         </Text>
       )}
       {jobs.length === 0 ? (
-        <Text sx={{ fontSize: 0, color: 'fg.muted', p: 2 }}>
+        <Text className={styles.smallFgMuted}>
           All {entry.jobs.length} jobs passed — nothing to show in compact view.
         </Text>
       ) : (
-      <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
-        <Box as="tbody">
+      <table className={styles.width}>
+        <tbody>
           {jobs.map((job) => (
-            <Box as="tr" key={job.id}>
-              <Box as="td" sx={{ ...cellSx, width: '160px' }}>
+            <tr key={job.id}>
+              <td className={styles.px2Small}>
                 <StatusBadge status={statusToOverall(job.status, job.conclusion)} />
-              </Box>
-              <Box as="td" sx={cellSx}>
-                <Text sx={{ fontWeight: 'bold' }}>{job.name}</Text>
+              </td>
+              <td className={styles.px2Small2}>
+                <Text className={styles.bold}>{job.name}</Text>
                 {job.steps.length > 0 && (
-                  <Text sx={{ color: 'fg.muted', ml: 2 }}>{job.steps.length} steps</Text>
+                  <Text className={styles.fgMutedMl2}>{job.steps.length} steps</Text>
                 )}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, color: 'fg.muted', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small3}>
                 {formatDuration(job.started_at, job.completed_at)}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, color: 'fg.muted', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small3}>
                 {formatRelative(job.started_at)}
-              </Box>
-              <Box as="td" sx={{ ...cellSx, textAlign: 'right', whiteSpace: 'nowrap' }}>
+              </td>
+              <td className={styles.px2Small4}>
                 <AnalyseFailureButton jobId={job.id} />
                 <IconButton
                   size="small"
                   variant="invisible"
                   icon={InfoIcon}
                   aria-label="Job summary"
-                  onClick={() => setDialog({ job, kind: 'summary' })}
-                  sx={{ mr: 1 }}
+                  onClick={() => {
+                    Telemetry.featureUsed(Feature.LOGS_JOB_SUMMARY_OPENED);
+                    setDialog({ job, kind: 'summary' });
+                  }}
+                  className={styles.mr1}
                 />
                 <IconButton
                   size="small"
                   variant="invisible"
                   icon={TerminalIcon}
                   aria-label="Job logs"
-                  onClick={() => setDialog({ job, kind: 'logs' })}
-                  sx={{ mr: 1 }}
+                  onClick={() => {
+                    Telemetry.featureUsed(Feature.LOGS_JOB_OPENED);
+                    setDialog({ job, kind: 'logs' });
+                  }}
+                  className={styles.mr1}
                 />
                 <IconButton
                   size="small"
@@ -115,11 +113,11 @@ export function JobsTable({
                   disabled={!job.html_url}
                   onClick={() => job.html_url && window.open(job.html_url, '_blank', 'noopener')}
                 />
-              </Box>
-            </Box>
+              </td>
+            </tr>
           ))}
-        </Box>
-      </Box>
+        </tbody>
+      </table>
       )}
 
       {dialog?.kind === 'summary' && (

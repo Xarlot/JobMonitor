@@ -177,6 +177,31 @@ const shots = {
     return page;
   },
 
+  async 'feature-branches'(page) {
+    await nav(page).getByText('Feature branches', { exact: true }).click();
+    // Two comparisons and a pull request per branch, each its own request.
+    await page.waitForTimeout(3000);
+    // The fixtures hold two branches, so the default viewport leaves half the shot empty. Shortened
+    // rather than cropped to a locator, which would cut off the nav — and the nav is what shows
+    // where in the app this is.
+    await page.setViewportSize({ width: 1400, height: 470 });
+    await page.waitForTimeout(400);
+    return page;
+  },
+
+  async 'feature-branch-offer'(page) {
+    await nav(page).getByText('Feature branches', { exact: true }).click();
+    await page.waitForTimeout(3000);
+    await page
+      .getByRole('button', { name: 'Commit your feature/print-preview to the upstream' })
+      .click();
+    // The stand-in bridge has no `compose`, so this shot shows the template path — which is what
+    // a browser gets, and what the desktop app falls back to. Faking a model-written description
+    // here would put words in Claude's mouth in a picture people read as a record.
+    await page.waitForTimeout(2600);
+    return page.locator('[role=dialog]').first();
+  },
+
   async flows(page) {
     await nav(page).getByText('Flows', { exact: true }).click();
     await page.waitForTimeout(2400);

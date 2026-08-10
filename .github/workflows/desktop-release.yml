@@ -29,7 +29,11 @@ jobs:
         shell: bash
         run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
 
-      - run: npm run build # tsc + vite -> dist/
+      - run: npm run build # tsc + vite -> dist/ + electron/telemetry.bundle.cjs
+        env:
+          TELEMETRY_ABLY_KEY: ${{ secrets.TELEMETRY_ABLY_KEY }}
+          TELEMETRY_RECEIVER_PUBKEY: ${{ secrets.TELEMETRY_RECEIVER_PUBKEY }}
+          TELEMETRY_DEPLOYMENT_ID: ${{ secrets.TELEMETRY_DEPLOYMENT_ID }}
       - run: npm run icons # build/icon.png + electron/tray.png
 
       - name: Build installers

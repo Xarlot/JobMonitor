@@ -1,0 +1,139 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-16);
+  margin-bottom: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.flexCenter2 {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.bodyBold {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  white-space: nowrap;
+}
+
+.width {
+  width: 200px;
+}
+
+.smallFgMuted {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.p6TextCenter {
+  padding: var(--base-size-40);
+  text-align: center;
+  color: var(--fgColor-muted);
+}
+
+.mt2 {
+  margin-top: var(--base-size-8);
+}
+
+.flexGap2 {
+  display: flex;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+  flex-wrap: wrap;
+}
+
+.mb3Body {
+  margin-bottom: var(--base-size-16);
+  font-size: var(--text-body-size-medium);
+}
+
+.m0Pl3 {
+  margin: 0;
+  padding-left: var(--base-size-16);
+}
+
+.blockSmall {
+  display: block;
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+  margin-bottom: var(--base-size-16);
+}
+
+.attentionFgSmall {
+  color: var(--fgColor-attention);
+  font-size: var(--text-body-size-small);
+}
+
+.grow {
+  flex: 1;
+}
+
+.p3TextCenter {
+  padding: var(--base-size-16);
+  text-align: center;
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  border: 1px dashed;
+  border-color: var(--borderColor-muted);
+  border-radius: var(--borderRadius-large);
+}
+
+.dropZone {
+  margin-bottom: var(--base-size-8);
+  padding-top: var(--base-size-4);
+  padding-bottom: var(--base-size-4);
+  border-radius: var(--borderRadius-large);
+  border: 1px dashed transparent;
+  background-color: transparent;
+  transition: border-color 120ms, background-color 120ms;
+}
+
+.dropZoneActive {
+  composes: dropZone;
+  border-color: var(--bgColor-accent-emphasis);
+  background-color: var(--bgColor-accent-muted);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  margin-bottom: var(--base-size-4);
+}
+
+/* Collapsed, the header is the whole row and has nothing beneath it to be spaced from. */
+.groupHeaderCollapsed {
+  composes: groupHeader;
+  margin-bottom: 0;
+}
+
+/* Kept in the layout so the rows below do not shift when a group has no handle. */
+.hiddenControl {
+  visibility: hidden;
+}
+
+.groupName {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+}
+
+.groupNameNamed {
+  composes: groupName;
+  color: var(--fgColor-default);
+}
+
+.filterLabel {
+  font-size: var(--text-body-size-medium);
+  font-weight: var(--base-text-weight-semibold);
+  white-space: nowrap;
+  color: var(--fgColor-muted);
+}
+
+.filterLabelActive {
+  composes: filterLabel;
+  color: var(--fgColor-default);
+}

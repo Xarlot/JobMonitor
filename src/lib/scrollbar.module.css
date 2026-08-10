@@ -1,0 +1,30 @@
+/*
+ * A thin, subtle scrollbar for scrollable overlays and dialogs — the chunky default OS scrollbar
+ * looks out of place inside a modal. Themed through Primer's CSS variables so it follows light and
+ * dark mode, with a literal fallback for the moment before the theme stylesheet has applied.
+ */
+
+.subtleScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--borderColor-muted, rgba(110, 118, 129, 0.4)) transparent;
+}
+
+.subtleScrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.subtleScrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtleScrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--borderColor-muted, rgba(110, 118, 129, 0.4));
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.subtleScrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fgColor-muted, rgba(110, 118, 129, 0.7));
+}

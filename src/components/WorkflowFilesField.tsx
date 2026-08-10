@@ -11,10 +11,11 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Flash, IconButton, Spinner, Text, TextInput } from '@primer/react';
+import { Flash, IconButton, Spinner, Text, TextInput } from '@primer/react';
 import { PlusIcon, SearchIcon, TrashIcon } from '@primer/octicons-react';
 import { useWorkflowList } from '../hooks/useWorkflowList';
 import { workflowBasename } from '../lib/workflow';
+import styles from './WorkflowFilesField.module.css';
 
 const LISTBOX_ID = 'workflow-files-listbox';
 
@@ -95,30 +96,17 @@ export function WorkflowFilesField({
   };
 
   return (
-    <Box>
+    <div>
       {value.length > 0 && (
-        <Box
-          sx={{
-            border: '1px solid',
-            borderColor: 'border.default',
-            borderRadius: 2,
-            mb: 2,
-            overflow: 'hidden',
-          }}
+        <div
+          className={styles.roundedMb2}
         >
           {value.map((file) => (
-            <Box
+            <div
               key={file}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-                px: 2,
-                py: 1,
-                ':not(:first-of-type)': { borderTop: '1px solid', borderColor: 'border.muted' },
-              }}
+              className={styles.row}
             >
-              <Text sx={{ fontFamily: 'mono', fontSize: 0, flex: 1, wordBreak: 'break-all' }}>
+              <Text className={styles.monoSmall}>
                 {file}
               </Text>
               <IconButton
@@ -128,12 +116,12 @@ export function WorkflowFilesField({
                 aria-label={`Remove ${file}`}
                 onClick={() => remove(file)}
               />
-            </Box>
+            </div>
           ))}
-        </Box>
+        </div>
       )}
 
-      <Box sx={{ position: 'relative' }}>
+      <div className={styles.relative}>
         <TextInput
           block
           value={query}
@@ -168,76 +156,53 @@ export function WorkflowFilesField({
         />
 
         {open && options.length > 0 && (
-          <Box
-            as="ul"
+          <ul
             id={LISTBOX_ID}
             role="listbox"
-            sx={{
-              listStyle: 'none',
-              m: 0,
-              p: 0,
-              mt: 1,
-              position: 'absolute',
-              zIndex: 20,
-              width: '100%',
-              maxHeight: 220,
-              overflowY: 'auto',
-              bg: 'canvas.overlay',
-              border: '1px solid',
-              borderColor: 'border.default',
-              borderRadius: 2,
-              boxShadow: 'shadow.medium',
-            }}
+            className={styles.m0P0}
           >
             {options.map((option, index) => (
-              <Box
-                as="li"
+              <li
                 key={option.file}
                 role="option"
                 aria-selected={index === activeIndex}
-                sx={{
-                  px: 2,
-                  py: 1,
-                  cursor: 'pointer',
-                  bg: index === activeIndex ? 'accent.subtle' : 'transparent',
-                  ':hover': { bg: 'accent.subtle' },
-                }}
+                className={index === activeIndex ? styles.optionActive : styles.option}
                 onMouseEnter={() => setActiveIndex(index)}
                 onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
                 onClick={() => add(option.file)}
               >
-                <Text sx={{ fontFamily: 'mono', fontSize: 0, display: 'block' }}>
+                <Text className={styles.monoSmall2}>
                   {option.file}
                 </Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+                <Text className={styles.smallFgMuted}>
                   {option.name || 'add as typed'}
                 </Text>
-              </Box>
+              </li>
             ))}
-          </Box>
+          </ul>
         )}
-      </Box>
+      </div>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1, minHeight: 20 }}>
+      <div className={styles.flexCenter}>
         {loading && <Spinner size="small" />}
         {!owner || !repo ? (
-          <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+          <Text className={styles.smallFgMuted}>
             Set the upstream repo to list its workflows.
           </Text>
         ) : (
           workflows && (
-            <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+            <Text className={styles.smallFgMuted}>
               {workflows.length} workflows in {owner}/{repo}
             </Text>
           )
         )}
-      </Box>
+      </div>
 
       {error && (
-        <Flash variant="warning" sx={{ mt: 2, fontSize: 0 }}>
+        <Flash variant="warning" className={styles.mt2Small}>
           Couldn’t list workflows: {error}. You can still type file names by hand.
         </Flash>
       )}
-    </Box>
+    </div>
   );
 }

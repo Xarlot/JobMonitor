@@ -1,4 +1,4 @@
-import { Box, Octicon, Spinner, Text } from '@primer/react';
+import { Spinner, Text } from '@primer/react';
 import {
   CheckCircleFillIcon,
   ClockIcon,
@@ -8,6 +8,8 @@ import {
 } from '@primer/octicons-react';
 import type { OverallStatus } from '../api/types';
 import { STATUS_LABEL } from '../lib/status';
+import { Icon } from './Icon';
+import styles from './StatusBadge.module.css';
 
 interface BadgeStyle {
   icon: typeof CheckCircleFillIcon | null;
@@ -16,12 +18,12 @@ interface BadgeStyle {
 }
 
 const STYLES: Record<OverallStatus, BadgeStyle> = {
-  success: { icon: CheckCircleFillIcon, color: 'success.fg' },
-  failure: { icon: XCircleFillIcon, color: 'danger.fg' },
-  pending: { icon: ClockIcon, color: 'attention.fg' },
-  in_progress: { icon: null, color: 'attention.fg', spinner: true },
-  neutral: { icon: SkipIcon, color: 'fg.muted' },
-  unknown: { icon: DotFillIcon, color: 'fg.muted' },
+  success: { icon: CheckCircleFillIcon, color: 'var(--fgColor-success)' },
+  failure: { icon: XCircleFillIcon, color: 'var(--fgColor-danger)' },
+  pending: { icon: ClockIcon, color: 'var(--fgColor-attention)' },
+  in_progress: { icon: null, color: 'var(--fgColor-attention)', spinner: true },
+  neutral: { icon: SkipIcon, color: 'var(--fgColor-muted)' },
+  unknown: { icon: DotFillIcon, color: 'var(--fgColor-muted)' },
 };
 
 interface StatusBadgeProps {
@@ -35,17 +37,17 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, withText = true, size = 16 }: StatusBadgeProps) {
   const style = STYLES[status];
   return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: style.color }}>
+    <div className={styles.badge} style={{ color: style.color }}>
       {style.spinner ? (
-        <Spinner size="small" sx={{ width: size, height: size }} />
+        <Spinner size="small" style={{ width: size, height: size }} />
       ) : style.icon ? (
-        <Octicon icon={style.icon} size={size} />
+        <Icon icon={style.icon} size={size} />
       ) : null}
       {withText && (
-        <Text sx={{ fontSize: 0, color: style.color, whiteSpace: 'nowrap' }}>
+        <Text className={styles.label} style={{ color: style.color }}>
           {STATUS_LABEL[status]}
         </Text>
       )}
-    </Box>
+    </div>
   );
 }

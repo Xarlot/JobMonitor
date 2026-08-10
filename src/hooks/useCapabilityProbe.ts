@@ -14,6 +14,7 @@ import { needsPushProbe, recordPushAccess } from '../api/tokenCapability';
 import { useAuth } from '../context/AuthContext';
 import { useConfig } from '../context/ConfigContext';
 import { useTokenCapability } from './useTokenCapability';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 export function useCapabilityProbe(): void {
   const { config, complete } = useConfig();
@@ -27,6 +28,6 @@ export function useCapabilityProbe(): void {
     if (!shouldProbe) return;
     // Drop any answer carried over from another repo before asking about this one.
     recordPushAccess(null);
-    void probePushAccess(owner, repo);
+    void Telemetry.measure(Operation.GH_TOKEN_CAPABILITY, () => probePushAccess(owner, repo));
   }, [shouldProbe, owner, repo]);
 }

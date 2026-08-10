@@ -93,12 +93,24 @@ function stubGitHub(routes: {
   repo?: Record<string, unknown>;
   /** A comparison body, or 'fail' to make the request 500. */
   compare?: Record<string, unknown> | 'fail';
+  /** The branch-vs-default-branch comparison, which is a different request to the same endpoint. */
+  compareDefault?: Record<string, unknown>;
 }) {
   const fetchMock = vi.fn(async (input: string) => {
     const url = new URL(input);
     const path = url.pathname;
 
     if (/\/compare\//.test(path)) {
+      // The fork comparison names the upstream's commit as `{owner}:{sha}` — a cross-repository
+      // base — while the default-branch one names a plain branch. The colon is what separates them,
+      // and it arrives percent-encoded because the path segments are escaped.
+      const againstDefault = !decodeURIComponent(path.split('/compare/')[1]).includes(':');
+      if (againstDefault) {
+        return jsonResponse({
+          commits: [],
+          ...(routes.compareDefault ?? { status: 'identical', ahead_by: 0, behind_by: 0 }),
+        });
+      }
       if (routes.compare === 'fail') return jsonResponse({ message: 'boom' }, 500);
       // base = upstream, head = fork, so every number reads from the fork's point of view.
       return jsonResponse({
@@ -506,6 +518,36 @@ describe('FeatureBranchesView', () => {
   });
 
   /** Equal tips need no request at all. */
+  it('says how far the shared branch has fallen behind the default branch', async () => {
+    stubGitHub({
+      upstreamRefs: [ref('feature/a', 'aaa')],
+      forkRefs: [ref('feature/a', 'aaa')],
+      compareDefault: { status: 'behind', ahead_by: 0, behind_by: 47 },
+    });
+
+    renderView();
+
+    // Present even though the fork matches the upstream exactly: the two standings answer
+    // different questions, and this is the one that gets worse while nobody is looking.
+    expect(await screen.findByText('47 commits behind main')).toBeInTheDocument();
+    expect(screen.getByText('your fork matches the upstream')).toBeInTheDocument();
+  });
+
+  it('says nothing about the default branch when the branch is level with it', async () => {
+    stubGitHub({
+      upstreamRefs: [ref('feature/a', 'aaa')],
+      forkRefs: [ref('feature/a', 'aaa')],
+      compareDefault: { status: 'identical', ahead_by: 0, behind_by: 0 },
+    });
+
+    renderView();
+
+    await screen.findByText('your fork matches the upstream');
+    // A row that says "up to date with main" on every healthy branch trains people to stop reading
+    // the line, so the label only appears when it is telling you something.
+    expect(screen.queryByText(/behind main/)).not.toBeInTheDocument();
+  });
+
   it('does not compare when the two tips are identical', async () => {
     const fetchMock = stubGitHub({
       upstreamRefs: [ref('feature/a', 'aaa')],
@@ -515,9 +557,19 @@ describe('FeatureBranchesView', () => {
     renderView();
 
     expect(await screen.findByText('your fork matches the upstream')).toBeInTheDocument();
-    expect(
-      fetchMock.mock.calls.filter((c) => String(c[0]).includes('/compare/')),
-    ).toHaveLength(0);
+
+    /*
+     * No *fork* comparison — that is the one an identical pair makes pointless. The
+     * default-branch comparison still happens and should: a branch can match the upstream exactly
+     * and still be months behind the branch it merges into, which is the whole reason that second
+     * number exists. The fork comparison names the upstream's commit as `{owner}:{sha}`, so the
+     * colon is what tells them apart.
+     */
+    const compares = fetchMock.mock.calls
+      .map((c) => decodeURIComponent(String(c[0])))
+      .filter((url) => url.includes('/compare/'));
+    expect(compares.filter((url) => url.split('/compare/')[1].includes(':'))).toHaveLength(0);
+    expect(compares.filter((url) => !url.split('/compare/')[1].includes(':'))).toHaveLength(1);
   });
 
   /** The tab's reason for existing: the answer to "why is this sitting there". */

@@ -1,0 +1,29 @@
+/*
+ * The wrapper around a Primer tooltip trigger.
+ *
+ * Primer positions the tooltip itself; what these rules do is make its *contents* readable — a
+ * multi-line explanation left-aligned and wrapped, rather than the single centred line the default
+ * is built for. They have to be descendant selectors, so this was never expressible as an inline
+ * style object even before Primer 38 removed `sx`.
+ *
+ * Width varies by call site, so it is a custom property rather than four near-identical copies of
+ * the same block: a component that wants a wider tip sets `--tooltip-max` in its own class.
+ */
+
+.wrap {
+  display: inline-flex;
+}
+
+/* For a trigger sitting in a flex row that would otherwise squeeze it. */
+.wrapFixed {
+  composes: wrap;
+  flex-shrink: 0;
+}
+
+.wrap [role='tooltip'] {
+  text-align: left;
+  white-space: pre-line;
+  max-width: var(--tooltip-max, 340px);
+  line-height: 1.5;
+  padding: 8px 10px;
+}

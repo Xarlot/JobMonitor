@@ -25,6 +25,7 @@ import { isConfigComplete } from '../storage/configStore';
 import { useAuth } from './AuthContext';
 import { useConfig } from './ConfigContext';
 import { usePolling } from '../hooks/usePolling';
+import { Operation, Telemetry } from '../lib/telemetry';
 
 const WORKFLOWS_POLL_MS = 15 * 60_000;
 
@@ -110,14 +111,18 @@ export function ResolvedFlowsProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, reposKey]);
 
-  const flows = useMemo(
-    () =>
-      expandFlows(config.flows, (flow) => {
-        const ref = flowRepoRef(flow, config.upstream);
-        return lists[repoKey(ref.owner, ref.repo)];
-      }),
-    [config.flows, config.upstream, lists],
-  );
+  const flows = useMemo(() => {
+    // Every configured pattern is re-matched against every workflow in the repo whenever anything
+    // here changes. Cheap per flow and not cheap in aggregate, which is exactly the shape of cost
+    // that never shows up in a request timing.
+    const startedAtMs = performance.now();
+    const expanded = expandFlows(config.flows, (flow) => {
+      const ref = flowRepoRef(flow, config.upstream);
+      return lists[repoKey(ref.owner, ref.repo)];
+    });
+    Telemetry.operationCompleted(Operation.FLOW_PATTERN_EVAL, performance.now() - startedAtMs);
+    return expanded;
+  }, [config.flows, config.upstream, lists]);
 
   const patterns = useMemo(() => {
     const map = new Map<string, PatternStatus>();

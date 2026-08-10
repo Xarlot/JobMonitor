@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // No DOM lib on purpose. This package is imported by the Electron main process and by the
+    // Node receiver as well as by the renderer, so anything reachable from here must not assume a
+    // browser. `crypto.getRandomValues` is the one global it uses, and that exists in all three.
+    "types": ["node"]
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts"]
+}

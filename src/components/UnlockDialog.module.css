@@ -1,0 +1,51 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.roundedP4 {
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid;
+  border-color: var(--borderColor-default);
+  border-radius: var(--borderRadius-large);
+  padding: var(--base-size-24);
+  background-color: var(--bgColor-muted);
+}
+
+.flexCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-16);
+}
+
+.accentFg {
+  color: var(--fgColor-accent);
+}
+
+.title {
+  font-size: var(--text-title-size-medium);
+}
+
+.fgMutedBody {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-medium);
+  margin-bottom: var(--base-size-16);
+}
+
+.mb3 {
+  margin-bottom: var(--base-size-16);
+}
+
+.flexGap2 {
+  display: flex;
+  gap: var(--base-size-8);
+  justify-content: space-between;
+}
+
+.flexCentred {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-left: var(--base-size-16);
+  padding-right: var(--base-size-16);
+}

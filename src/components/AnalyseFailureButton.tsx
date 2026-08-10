@@ -21,6 +21,7 @@ import { SparkleFillIcon } from '@primer/octicons-react';
 import { useFailures } from '../context/FailuresContext';
 import { useNavigation } from '../context/NavigationContext';
 import { useAiAvailable } from '../hooks/useAiAvailable';
+import styles from './AnalyseFailureButton.module.css';
 
 /**
  * Find the failure a row stands for.
@@ -67,7 +68,7 @@ export function AnalyseFailureButton({
       variant="invisible"
       icon={SparkleFillIcon}
       aria-label="Analyse in Failures"
-      sx={{ mr: 1 }}
+      className={styles.mr1}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
         navigation.openFailure(failureKey);

@@ -9,20 +9,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Box,
-  Button,
-  Checkbox,
-  CounterLabel,
-  Flash,
-  IconButton,
-  Label,
-  Octicon,
-  SegmentedControl,
-  Spinner,
-  Text,
-  Tooltip,
-} from '@primer/react';
+import { Button, Checkbox, CounterLabel, Flash, IconButton, Label, SegmentedControl, Spinner, Text, Tooltip } from '@primer/react';
 import {
   AlertIcon,
   CheckIcon,
@@ -64,52 +51,16 @@ import {
 } from '../lib/failureReport';
 import { markdownToHtml } from '../lib/markdownToHtml';
 import { formatRelative } from '../lib/format';
-import { subtleScrollbarSx } from '../lib/scrollbar';
+import { subtleScrollbar } from '../lib/scrollbar';
 import {
   EMPTY_FAILURE_DETAIL,
   useFailureDetails,
   type FailureDetail,
 } from '../hooks/useFailureDetails';
+import styles from './FailuresView.module.css';
+import { Icon } from './Icon';
+import { Feature, Telemetry } from '../lib/telemetry';
 
-/** Rendered-HTML preview for the Teams target. */
-const richBoxSx = {
-  p: 3,
-  bg: 'canvas.default',
-  color: 'fg.default',
-  borderRadius: 2,
-  border: '1px solid',
-  borderColor: 'border.default',
-  overflowY: 'auto',
-  flex: 1,
-  minHeight: 0,
-  fontSize: 1,
-  '& h3': { fontSize: 2, mt: 0, mb: 2 },
-  '& h4': { fontSize: 1, mt: 3, mb: 1 },
-  '& p': { my: 2 },
-  '& ul': { pl: 4, my: 2 },
-  '& pre': { overflowX: 'auto', fontSize: 0 },
-  '& a': { color: 'accent.fg' },
-  ...subtleScrollbarSx,
-} as const;
-
-const monoBoxSx = {
-  m: 0,
-  p: 3,
-  fontFamily: 'mono',
-  fontSize: 0,
-  lineHeight: 1.5,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  bg: 'canvas.inset',
-  color: 'fg.default',
-  borderRadius: 2,
-  border: '1px solid',
-  borderColor: 'border.default',
-  overflowY: 'auto',
-  flex: 1,
-  minHeight: 0,
-  ...subtleScrollbarSx,
-} as const;
 
 /**
  * Assemble the Markdown report for one failure. Module scope, not a closure over
@@ -177,13 +128,15 @@ const RESULT_ICONS: { depth: ClaudeDepth; icon: typeof ZapIcon; label: string }[
 function ResultIcons({ have }: { have: ReadonlySet<string> | undefined }) {
   if (!have?.size) return null;
   return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+    <div className={styles.centerGap1}>
       {RESULT_ICONS.filter((r) => have.has(r.depth)).map((r) => (
         <Tooltip key={r.depth} text={`Claude ${r.label}`} direction="n">
-          <Octicon icon={r.icon} size={12} sx={{ color: 'done.fg' }} />
+          <button type="button" className={styles.trigger}>
+            <Icon icon={r.icon} size={12} className={styles.doneFg} />
+          </button>
         </Tooltip>
       ))}
-    </Box>
+    </div>
   );
 }
 
@@ -206,50 +159,33 @@ function FailureRow({
 }) {
   const count = testCountLabel(detail);
   return (
-    <Box
+    <div
       // Anchor for arriving from a run — see the focus effect in FailuresView.
       id={`failure-${failure.key}`}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2,
-        px: 2,
-        py: 2,
-        borderTop: '1px solid',
-        borderColor: 'border.muted',
-        bg: focused ? 'accent.subtle' : 'transparent',
-        cursor: 'pointer',
-        ':hover': { bg: focused ? 'accent.subtle' : 'canvas.subtle' },
-      }}
+      className={focused ? styles.failureRowFocused : styles.failureRow}
       onClick={onFocus}
     >
-      <Box as="span" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <span onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <Checkbox checked={selected} onChange={onToggle} aria-label={`Select ${failure.jobName}`} />
-      </Box>
-      <Octicon icon={AlertIcon} size={14} sx={{ color: 'danger.fg', flexShrink: 0 }} />
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Text sx={{ fontSize: 1, display: 'block', wordBreak: 'break-word' }}>
+      </span>
+      <AlertIcon size={14} className={styles.dangerFg} />
+      <div className={styles.grow}>
+        <Text className={styles.bodyBlock}>
           {failure.jobName}
         </Text>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            color: 'fg.muted',
-          }}
+        <div
+          className={styles.flexCenter}
         >
-          {count && <Text sx={{ fontSize: 0 }}>{count}</Text>}
+          {count && <Text className={styles.small}>{count}</Text>}
           {failure.completedAt && (
-            <Text sx={{ fontSize: 0 }}>{formatRelative(failure.completedAt)}</Text>
+            <Text className={styles.small}>{formatRelative(failure.completedAt)}</Text>
           )}
           <ResultIcons have={results} />
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 }
-
 
 /** One PR's or one flow's failures, under a header that collapses. */
 function FailureGroupBlock({
@@ -275,21 +211,9 @@ function FailureGroupBlock({
   onFocusRow: (key: string) => void;
 }) {
   return (
-    <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          pl: 3,
-          pr: 2,
-          py: 2,
-          bg: 'canvas.subtle',
-          borderTop: '1px solid',
-          borderColor: 'border.default',
-          cursor: 'pointer',
-          ':hover': { bg: 'canvas.inset' },
-        }}
+    <div>
+      <div
+        className={styles.sectionHeader}
         onClick={onToggleGroup}
         role="button"
         tabIndex={0}
@@ -301,15 +225,15 @@ function FailureGroupBlock({
           }
         }}
       >
-        <Octicon
+        <Icon
           icon={collapsed ? ChevronRightIcon : ChevronDownIcon}
           size={14}
-          sx={{ color: 'fg.muted', flexShrink: 0 }}
+          className={styles.fgMuted}
         />
-        <Octicon
+        <Icon
           icon={group.kind === 'flow' ? WorkflowIcon : GitPullRequestIcon}
           size={14}
-          sx={{ color: 'fg.muted', flexShrink: 0 }}
+          className={styles.fgMuted}
         />
         {/*
           Plain text, not a link: the whole header toggles, and a wide title link
@@ -317,19 +241,12 @@ function FailureGroupBlock({
           gets its own button on the right.
         */}
         <Text
-          sx={{
-            fontSize: 0,
-            fontWeight: 'bold',
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
+          className={styles.smallBold}
           title={group.title}
         >
           {group.title}
         </Text>
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow2} />
         {/* A collapsed group must still say how much it is hiding. */}
         {collapsed && <CounterLabel>{group.jobs.length}</CounterLabel>}
         <Label variant={GROUP_BADGE_VARIANT[group.badge] ?? 'secondary'}>{group.badge}</Label>
@@ -348,7 +265,7 @@ function FailureGroupBlock({
           rel="noreferrer"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
         />
-      </Box>
+      </div>
       {!collapsed &&
         group.jobs.map((failure) => (
           <FailureRow
@@ -362,7 +279,7 @@ function FailureGroupBlock({
             onFocus={() => onFocusRow(failure.key)}
           />
         ))}
-    </Box>
+    </div>
   );
 }
 
@@ -580,13 +497,13 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
 
   if (failures.length === 0) {
     return (
-      <Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-          <Octicon icon={CheckIcon} size={16} sx={{ color: 'success.fg' }} />
-          <Text sx={{ fontWeight: 'bold' }}>Nothing is failing</Text>
+      <div>
+        <div className={styles.flexCenter2}>
+          <CheckIcon size={16} className={styles.successFg} />
+          <Text className={styles.bold}>Nothing is failing</Text>
           {isFetchingChecks && <Spinner size="small" />}
-        </Box>
-        <Text as="p" sx={{ color: 'fg.muted', fontSize: 1 }}>
+        </div>
+        <Text as="p" className={styles.fgMutedBody}>
           Failing jobs from your open pull requests, the{' '}
           {config.mergedPrs.count > 0
             ? `${config.mergedPrs.count} most recently merged`
@@ -595,32 +512,26 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
           — with a Markdown report ready to paste into Teams or a GitHub issue.
           {config.mergedPrs.count === 0 && ' Merged PRs are currently switched off in Settings.'}
         </Text>
-      </Box>
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          mb: 3,
-          flexWrap: 'wrap',
-        }}
+    <div>
+      <div
+        className={styles.flexCenter3}
       >
-        <Text sx={{ fontWeight: 'bold' }}>
+        <Text className={styles.bold}>
           {failures.length} failing {failures.length === 1 ? 'job' : 'jobs'}
         </Text>
         {isFetchingChecks && <Spinner size="small" />}
-        <Box sx={{ flex: 1 }} />
+        <div className={styles.grow2} />
         {chosen.length > 0 && (
           <Button leadingVisual={CopyIcon} onClick={copySelected}>
             Copy {chosen.length} selected
           </Button>
         )}
-        <Text sx={{ fontSize: 0, color: 'fg.muted' }}>
+        <Text className={styles.smallFgMuted}>
           {format === 'teams' ? 'copies as rich text' : 'copies as Markdown'}
         </Text>
         <SegmentedControl aria-label="Report format" size="small">
@@ -634,58 +545,31 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
             Teams
           </SegmentedControl.Button>
         </SegmentedControl>
-      </Box>
+      </div>
 
       {copied && (
-        <Flash variant="success" sx={{ mb: 3 }}>
+        <Flash variant="success" className={styles.mb3}>
           Copied to the clipboard.
         </Flash>
       )}
       {copyFailed && (
-        <Flash variant="warning" sx={{ mb: 3 }}>
+        <Flash variant="warning" className={styles.mb3}>
           Couldn’t reach the clipboard — select the text below and copy it manually.
         </Flash>
       )}
 
-      <Box
+      <div
         ref={panesRef}
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: ['1fr', '1fr', 'minmax(280px, 380px) 1fr'],
-          gap: 3,
-          alignItems: 'stretch',
-          // Fill the rest of the viewport: the report is the tall thing here, and
-          // capping it left most of the window empty. Each column scrolls on its own.
-          height: fillHeight ?? undefined,
-        }}
+        className={styles.split} style={{ height: fillHeight ?? undefined }}
       >
         {/* Left: the failures, grouped by the PR or flow they came from. */}
-        <Box
-          sx={{
-            border: '1px solid',
-            borderColor: 'border.default',
-            borderRadius: 2,
-            overflowY: 'auto',
-            minHeight: 0,
-            ...subtleScrollbarSx,
-          }}
-        >
+        <div className={`${styles.list} ${subtleScrollbar}`}>
           {sections.map((section) => {
             const sectionOpen = !collapsedSections.has(section.kind);
             return (
-              <Box key={section.kind}>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    px: 2,
-                    py: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'border.default',
-                    cursor: 'pointer',
-                    ':hover': { bg: 'canvas.subtle' },
-                  }}
+              <div key={section.kind}>
+                <div
+                  className={styles.groupHeader}
                   onClick={() => toggleSection(section.kind)}
                   role="button"
                   tabIndex={0}
@@ -697,15 +581,15 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                     }
                   }}
                 >
-                  <Octicon
+                  <Icon
                     icon={sectionOpen ? ChevronDownIcon : ChevronRightIcon}
                     size={16}
-                    sx={{ color: 'fg.muted', flexShrink: 0 }}
+                    className={styles.fgMuted}
                   />
-                  <Text sx={{ fontSize: 1, fontWeight: 'bold' }}>{section.title}</Text>
-                  <Box sx={{ flex: 1 }} />
+                  <Text className={styles.bodyBold}>{section.title}</Text>
+                  <div className={styles.grow2} />
                   <CounterLabel>{section.count}</CounterLabel>
-                </Box>
+                </div>
                 {sectionOpen &&
                   section.groups.map((group) => (
                     <FailureGroupBlock
@@ -721,13 +605,13 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       onFocusRow={setFocusKey}
                     />
                   ))}
-              </Box>
+              </div>
             );
           })}
-        </Box>
+        </div>
 
         {/* Right: the report for whatever is focused. */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className={styles.flexCol}>
           {focused && focusedDetail && (
             <>
               {/*
@@ -743,58 +627,24 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 keeps a floor rather than shrinking first: a job name squeezed to "…f-pdfs"
                 identifies nothing, and losing a row is cheaper than losing the name.
               */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  mb: 2,
-                  flexWrap: 'wrap',
-                }}
+              <div
+                className={styles.flexCenter4}
               >
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    minWidth: 0,
-                    // Natural width, and it does not grow: a short name shares the row
-                    // with the buttons, a long one takes what it needs and pushes them to
-                    // their own line. Shrinking is the last resort (ellipsis), not the
-                    // first response.
-                    flex: '0 1 auto',
-                  }}
+                <div
+                  className={styles.titleGroup}
                 >
                   <Text
                     // Truncated rather than wrapped: the report immediately below repeats
                     // the job name in full as its heading.
                     title={focused.jobName}
-                    sx={{
-                      fontWeight: 'bold',
-                      fontSize: 1,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
+                    className={styles.boldBody}
                   >
                     {focused.jobName}
                   </Text>
                   {focusedDetail.loadingLog && <Spinner size="small" />}
-                </Box>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    flexWrap: 'wrap',
-                    justifyContent: 'flex-end',
-                    // Grows so that on a line of its own it fills the width and its
-                    // right-aligned contents land on the right edge; never shrinks, which
-                    // is what forces the wrap instead of crushing the buttons.
-                    flex: '1 1 auto',
-                    flexShrink: 0,
-                  }}
+                </div>
+                <div
+                  className={styles.actionGroup}
                 >
                   {/*
                   Desktop only, and only when both CLIs are there: this shells out to
@@ -822,7 +672,7 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       >
                         {quickTriage?.running ? (
                           <>
-                            <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+                            <Spinner size="small" className={styles.mr1} />
                             Checking…
                           </>
                         ) : quickTriage?.analysis ? (
@@ -840,7 +690,7 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       >
                         {blameTriage?.running ? (
                           <>
-                            <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+                            <Spinner size="small" className={styles.mr1} />
                             Tracing…
                           </>
                         ) : blameTriage?.document ? (
@@ -858,7 +708,7 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       >
                         {deepTriage?.running ? (
                           <>
-                            <Spinner size="small" sx={{ mr: 1, verticalAlign: 'text-bottom' }} />
+                            <Spinner size="small" className={styles.mr1} />
                             Investigating…
                           </>
                         ) : deepTriage?.analysis ? (
@@ -872,7 +722,11 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                   <Button
                     variant="primary"
                     leadingVisual={CopyIcon}
-                    onClick={() => focusedReport && putOnClipboard(focusedReport)}
+                    onClick={() => {
+                      if (!focusedReport) return;
+                      Telemetry.featureUsed(Feature.FAILURES_REPORT_COPIED);
+                      putOnClipboard(focusedReport);
+                    }}
                   >
                     {format === 'teams' ? 'Copy for Teams' : 'Copy markdown'}
                   </Button>
@@ -893,10 +747,10 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       rel="noreferrer"
                     />
                   )}
-                </Box>
-              </Box>
+                </div>
+              </div>
               {focusedDetail.error && (
-                <Flash variant="warning" sx={{ mb: 2, fontSize: 0 }}>
+                <Flash variant="warning" className={styles.mb2Small}>
                   {focusedDetail.error}
                 </Flash>
               )}
@@ -906,7 +760,7 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 understand it. Separate views rather than one long scroll, because the
                 report deliberately carries only a tail of the log.
               */}
-              <SegmentedControl aria-label="What to show" size="small" sx={{ mb: 2 }}>
+              <SegmentedControl aria-label="What to show" size="small" className={styles.mb2}>
                 <SegmentedControl.Button
                   selected={pane === 'report'}
                   onClick={() => setPane('report')}
@@ -921,7 +775,7 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 <Button
                   size="small"
                   variant="invisible"
-                  sx={{ ml: 2 }}
+                  className={styles.ml2}
                   aria-pressed={raw}
                   onClick={() => setRaw((v) => !v)}
                 >
@@ -949,25 +803,25 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 // Rendered, because that is what goes on the clipboard for Teams — and
                 // it doubles as a fallback: selecting this and copying by hand gives
                 // Teams the same rich text.
-                <Box
-                  sx={richBoxSx}
+                <div
+                  className={`${styles.richBox} ${subtleScrollbar}`}
                   dangerouslySetInnerHTML={{
                     __html: markdownToHtml(focusedReport ?? ''),
                   }}
                 />
               ) : raw ? (
-                <Box as="pre" sx={monoBoxSx}>
+                <pre className={`${styles.monoBox} ${subtleScrollbar}`}>
                   {focusedReport}
-                </Box>
+                </pre>
               ) : (
                 // Rendered by default. GitHub renders this Markdown when you paste it, so
                 // showing it rendered is the truer preview — and it puts the log tail
                 // through the highlighter instead of leaving a wall of grey `###` and
                 // `<details>` tags. The raw text is one click away, since it is what the
                 // Copy button actually puts on the clipboard.
-                <Box sx={{ ...richBoxSx, p: 0, border: 'none' }}>
+                <div className={`${styles.richBoxFlush} ${subtleScrollbar}`}>
                   <MarkdownView markdown={focusedReport ?? ''} />
-                </Box>
+                </div>
               )}
             </>
           )}
@@ -987,21 +841,14 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
           )}
           {/* Nothing auto-focuses, since every group starts collapsed. */}
           {!focused && (
-            <Box
-              sx={{
-                border: '1px dashed',
-                borderColor: 'border.default',
-                borderRadius: 2,
-                p: 4,
-                color: 'fg.muted',
-                fontSize: 1,
-              }}
+            <div
+              className={styles.roundedP4}
             >
               Open a group and pick a failing job to see its bug report.
-            </Box>
+            </div>
           )}
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 }

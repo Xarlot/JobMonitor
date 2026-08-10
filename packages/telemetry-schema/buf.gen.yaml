@@ -1,0 +1,10 @@
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt:
+      # Emit plain TypeScript that runs unchanged in the browser, in Electron's main process and
+      # in Node. No runtime reflection registry beyond what protobuf-es needs to encode.
+      - target=ts
+      - import_extension=js

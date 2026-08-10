@@ -1,0 +1,17 @@
+/* Generated from the `sx` props this component used before Primer 38 removed them. */
+
+.small {
+  font-size: var(--text-body-size-small);
+}
+
+.centerGap2 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
