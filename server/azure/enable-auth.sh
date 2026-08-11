@@ -137,10 +137,23 @@ EOF
     exit 1
   fi
   echo "  created: $CLIENT_ID"
-else
-  az ad app update --id "$CLIENT_ID" --web-redirect-uris "$REDIRECT" --output none
-  echo "  redirect URI confirmed"
 fi
+
+# Easy Auth asks for `response_type=code id_token` — the hybrid flow — so the registration has to be
+# allowed to issue ID tokens. The portal's wizard turns that on when it creates a registration for you;
+# `az ad app create` does not, and there is no hint of the difference until the end of a sign-in.
+#
+# Applied unconditionally: it is idempotent, and the state is printed either way so a run says what it
+# found rather than only what it changed.
+say "Registration platform settings"
+echo "  before: $(az ad app show --id "$CLIENT_ID" \
+  --query '{idTokens: web.implicitGrantSettings.enableIdTokenIssuance, redirectUris: web.redirectUris}' -o json | tr -d '\n ')"
+az ad app update --id "$CLIENT_ID" \
+  --web-redirect-uris "$REDIRECT" \
+  --enable-id-token-issuance true \
+  --output none
+echo "  after:  $(az ad app show --id "$CLIENT_ID" \
+  --query '{idTokens: web.implicitGrantSettings.enableIdTokenIssuance, redirectUris: web.redirectUris}' -o json | tr -d '\n ')"
 
 # ---------------------------------------------------------------------------------------------------
 # The client secret
