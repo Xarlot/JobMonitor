@@ -58,13 +58,33 @@ describe('index.html', () => {
   });
 
   /**
-   * Primer's theme CSS declares `color-scheme` itself, scoped to the same attributes. A copy here
-   * would be a second opinion able to drift from the first, and the measurement said it was never
-   * wrong: the computed value was already correct in both schemes before any of this changed.
+   * `color-scheme` on the **root**, which is where the browser reads it from to paint the viewport
+   * scrollbar. Primer looks like it covers this and does not: `BaseStyles` declares it on
+   * `[data-color-mode=light] input` and `[data-color-mode=dark] input` — text fields only — and on
+   * `html` just for `auto` mode, inside a media query. Pick a theme explicitly and the root has no
+   * scheme, which is a light scrollbar down the side of a dark app.
+   *
+   * These rules were once removed on the grounds that Primer already had them. Two things made that
+   * look true: a grep that matched `prefers-color-scheme` as if it were a declaration, and
+   * `getComputedStyle`, which reports the *used* value and so answers `dark` whether or not anything
+   * declared it. Hence asserting the text of the rules, which is the only thing that distinguishes
+   * declared from inferred.
    */
-  it('leaves color-scheme to Primer', () => {
-    // The lookbehind is load-bearing: `prefers-color-scheme: dark` contains this as a substring, so
-    // without it the media query the fix depends on trips the assertion against it.
-    expect(html).not.toMatch(/(?<!prefers-)color-scheme:\s*(light|dark)\b/);
+  it('declares color-scheme on the root, for all three theme modes', () => {
+    // The lookbehind is load-bearing throughout: `prefers-color-scheme: dark` contains
+    // `color-scheme: dark` as a substring, so without it the media query matches as a declaration —
+    // which is exactly the mistake being guarded against.
+    const declarations = [...html.matchAll(/(?<!prefers-)color-scheme:\s*(light|dark)/g)];
+    expect(declarations.length).toBeGreaterThanOrEqual(4);
+
+    const rule = /html\s*\{([^}]*)\}/.exec(html);
+    expect(rule?.[1]).toMatch(/(?<!prefers-)color-scheme:\s*light/);
+
+    const dark = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*html\s*\{([^}]*)\}/.exec(html);
+    expect(dark?.[1]).toMatch(/(?<!prefers-)color-scheme:\s*dark/);
+
+    // And the explicit modes, which are the ones Primer leaves to the inputs.
+    expect(html).toMatch(/html\[data-color-mode='light'\]\s*\{[^}]*color-scheme:\s*light/);
+    expect(html).toMatch(/html\[data-color-mode='dark'\]\s*\{[^}]*color-scheme:\s*dark/);
   });
 });

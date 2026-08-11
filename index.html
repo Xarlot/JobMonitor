@@ -19,10 +19,24 @@
       desktop app it is the window's own `backgroundColor` (#0d1117), which showed up as a black band
       down the side of a light UI.
 
-      `color-scheme` is deliberately *not* set here. Primer's theme CSS already declares it, scoped to
-      the same theme attributes, so a copy in this file would be a second opinion that can drift from
-      the first — measured before changing anything: the computed value was already `light` and `dark`
-      correctly, so the scrollbar's colours were never the problem. Its background was.
+      `color-scheme` is set here too, and it has to be. It is what tells the browser how to paint the
+      viewport scrollbar, and the browser reads it from the **root element**.
+
+      Primer looks like it covers this and does not. `BaseStyles` ships:
+
+        [data-color-mode=light] input                    { color-scheme: light }
+        [data-color-mode=dark]  input                    { color-scheme: dark  }
+        [data-color-mode=auto][data-light-theme*=light]  { color-scheme: light }   (inside @media)
+        [data-color-mode=auto][data-dark-theme*=dark]    { color-scheme: dark  }   (inside @media)
+
+      In `auto` the last two match `html` and it works. With a theme chosen explicitly the selector
+      ends in `input`, so the declaration reaches text fields and nothing else, and the root is left
+      with no scheme at all — a light scrollbar down the side of a dark app.
+
+      An earlier version of this file dropped these rules on the grounds that Primer already declared
+      them. That was wrong twice: the grep behind it matched `prefers-color-scheme` as though it were a
+      declaration, and the measurement behind it read `getComputedStyle`, which reports the *used*
+      value and so says `dark` whether or not anything declared it.
 
       Inline rather than in a stylesheet so it applies before the bundle parses. The literal fallbacks
       cover only that instant; once the theme CSS is in, the tokens win — #ffffff and #212830 are the
@@ -31,12 +45,22 @@
     <style>
       html {
         scrollbar-gutter: stable;
+        color-scheme: light;
         background-color: var(--bgColor-default, #ffffff);
       }
       @media (prefers-color-scheme: dark) {
         html {
+          color-scheme: dark;
           background-color: var(--bgColor-default, #212830);
         }
+      }
+      /* A theme chosen explicitly outranks the media query in both directions, by specificity rather
+         than by order — so this holds however the rules end up sorted. */
+      html[data-color-mode='light'] {
+        color-scheme: light;
+      }
+      html[data-color-mode='dark'] {
+        color-scheme: dark;
       }
     </style>
     <link
