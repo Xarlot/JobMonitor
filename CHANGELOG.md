@@ -75,13 +75,15 @@ were hiding behind that silence.
   same sentence on every row forever and bury the thing a person wants to finish — their own work,
   waiting to be offered. It fills the silence instead, on the rows where there is nothing else to do.
   An open backmerge is reported as the answer rather than a second one being suggested.
-- **A Diagnostics tab** (desktop, opt-in under **Settings → Diagnostics**) that reads Job Monitor's own
-  log inside the app: the tail of the file, newest first, following live. Filter by scope, or search —
-  the search covers each record's attached details, so a run id, PR number or failure fingerprint finds
-  its own lines even when the sentence never mentions them. Every line expands into the facts behind it.
-  It reads a bounded tail rather than the whole 5 MB, says so (`the last 512 KB of 4.1 MB`) instead of
-  implying it has everything, and shows a line that failed to parse rather than leaving a silent gap
-  where a crash mid-write happened. Off by default: it is a window on the app rather than on the work.
+- **A Diagnostics tab** (desktop) that reads Job Monitor's own log inside the app: the tail of the file,
+  newest first, following live. Filter by scope, or search — the search covers each record's attached
+  details, so a run id, PR number or failure fingerprint finds its own lines even when the sentence never
+  mentions them. Every line expands into the facts behind it. It reads a bounded tail rather than the
+  whole 5 MB, says so (`the last 512 KB of 4.1 MB`) instead of implying it has everything, and shows a
+  line that failed to parse rather than leaving a silent gap where a crash mid-write happened. **On by
+  default**, and switched off by unticking it under **Settings → Diagnostics**: the people who need this
+  tab are the ones who have just been surprised by something and do not yet know the log exists, so
+  asking them to find a setting first asks them at the worst possible moment.
 - **Every auto-rerun decision is logged**, with the facts needed to act on it — the age against the
   configured window for a run judged too old, the fingerprint and the streak for a repeated failure, the
   record that settled it for one already handled. The engine's own state is logged whenever it changes,

@@ -23,6 +23,7 @@ import {
 } from '@primer/octicons-react';
 import { useConfig } from '../context/ConfigContext';
 import { usePolling } from '../hooks/usePolling';
+import { readTelemetrySpool } from '../storage/desktopTelemetry';
 import { TelemetryPane } from './TelemetryPane';
 import {
   filterRecords,
@@ -126,30 +127,52 @@ function LogRow({ record }: { record: LogRecord }) {
 }
 
 /**
- * Diagnostics has two halves that answer different questions: what the app *did* (the log) and
- * what it is about to *send* (the telemetry queue). They share a tab because they share an
- * audience — someone checking on the app's behaviour — and separating them into two settings
- * pages would bury the second one.
+ * Diagnostics answers what the app *did*: the log.
+ *
+ * It has a second half — the telemetry queue, what the app is about to *send* — and that one is a
+ * **development build only**. The two share this tab because they share an audience, someone checking
+ * on the app's behaviour, but only one of them is for the people running a release.
  */
 export function DiagnosticsView() {
   const [pane, setPane] = useState<'log' | 'telemetry'>('log');
+  const [showTelemetry, setShowTelemetry] = useState(false);
+
+  /*
+   * The flag comes from the **main process** (`devBuild = !app.isPackaged`), not from
+   * `import.meta.env.DEV`. Those answer different questions — how the renderer bundle was built,
+   * versus whether the app is packaged — and they disagree in exactly the case that matters. The
+   * controls inside the pane are gated on the same value, so there is one source of truth for it.
+   */
+  useEffect(() => {
+    let alive = true;
+    void readTelemetrySpool().then((snapshot) => {
+      if (alive) setShowTelemetry(snapshot?.meta?.devBuild === true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div>
-      <div className={styles.flexGap2_2}>
-        <SegmentedControl aria-label="Diagnostics view" size="small">
-          <SegmentedControl.Button selected={pane === 'log'} onClick={() => setPane('log')}>
-            Log
-          </SegmentedControl.Button>
-          <SegmentedControl.Button
-            selected={pane === 'telemetry'}
-            onClick={() => setPane('telemetry')}
-          >
-            Telemetry
-          </SegmentedControl.Button>
-        </SegmentedControl>
-      </div>
-      {pane === 'log' ? <DiagnosticsLogView /> : <TelemetryPane />}
+      {/* A segmented control offering one segment is not a choice; without telemetry there is no
+          switch to show at all. */}
+      {showTelemetry && (
+        <div className={styles.flexGap2_2}>
+          <SegmentedControl aria-label="Diagnostics view" size="small">
+            <SegmentedControl.Button selected={pane === 'log'} onClick={() => setPane('log')}>
+              Log
+            </SegmentedControl.Button>
+            <SegmentedControl.Button
+              selected={pane === 'telemetry'}
+              onClick={() => setPane('telemetry')}
+            >
+              Telemetry
+            </SegmentedControl.Button>
+          </SegmentedControl>
+        </div>
+      )}
+      {showTelemetry && pane === 'telemetry' ? <TelemetryPane /> : <DiagnosticsLogView />}
     </div>
   );
 }

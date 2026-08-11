@@ -214,15 +214,18 @@ export const autoMergeSchema = z
 /**
  * The in-app diagnostics log viewer.
  *
- * Off by default and opt-in per machine: it is a developer's window on the app's own
- * behaviour, so it earns a place in the main navigation only for someone who has gone
- * looking for it. The log file is written either way — this switch only decides whether
- * there is a tab for reading it without leaving the app.
+ * **On by default.** It was opt-in on the reasoning that a window on the app's own behaviour earns a
+ * place in the navigation only for someone who went looking for it — which had it backwards: the
+ * people who need it are the ones who have just been surprised by something and do not yet know the
+ * log exists, and asking them to find a setting first is asking them at the worst moment. It costs
+ * nothing when unused, since the log is written either way and the tab reads it only while open.
+ *
+ * Switch it off under **Settings → Diagnostics**; a machine that already has a preference keeps it.
  */
 export const diagnosticsSchema = z
   .object({
     /** Show a "Diagnostics" tab in the main navigation. Desktop only. */
-    showLogTab: z.boolean().default(false),
+    showLogTab: z.boolean().default(true),
     /** How much of the end of the log to read per refresh. */
     tailKB: z.number().int().min(16).max(5120).default(512),
     /** Seconds between refreshes while "Live" is on. */
@@ -399,9 +402,9 @@ export const monitorConfigSchema = z.object({
   mergedPrs: mergedPrsSchema,
   /** Markdown failure-report generation. */
   failureReports: failureReportsSchema,
-  /** The in-app diagnostics log viewer (desktop, opt-in). */
+  /** The in-app diagnostics log viewer (desktop, on by default). */
   diagnostics: diagnosticsSchema,
-  /** Shared `feature/**` branches: the tab and its three actions (opt-in). */
+  /** Shared `feature/**` branches: the tab and its three actions (on by default). */
   featureBranches: featureBranchesSchema,
   /** Local AI integration via the `claude` CLI. */
   ai: aiSchema,
@@ -460,7 +463,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   mergedPrs: { count: 10 },
   failureReports: { prefetchAnnotations: true, logTailLines: 80, format: 'github' },
   autoMerge: { mergeMethod: 'squash' },
-  diagnostics: { showLogTab: false, tailKB: 512, followSeconds: 3 },
+  diagnostics: { showLogTab: true, tailKB: 512, followSeconds: 3 },
   featureBranches: { enabled: true, prefix: 'feature/' },
   ai: {
     enabled: true,

@@ -1,16 +1,16 @@
 /**
- * The development-only controls in the Telemetry pane are not in a packaged build.
+ * The Telemetry pane's controls appear only in a development build.
  *
- * There was no test for this, which is the wrong shape of gap for what it guards. The pane itself is
- * *meant* to be visible in a packaged build — collection has no opt-out, so being able to read every
- * record queued on your own machine is the whole of the transparency the README promises. What must
- * not appear there is the pair of controls beneath it: a switch that turns collection off and a
- * button that publishes on demand.
+ * The pane as a whole is now development-only too — `DiagnosticsView` does not offer it otherwise,
+ * which is what `diagnosticsView.test.tsx` covers. This file stays because the two gates are
+ * independent: this one guards the controls *within* the pane, so a future caller that renders it
+ * somewhere else cannot accidentally expose a switch that turns collection off and a button that
+ * publishes on demand.
  *
  * The flag is computed in the **main process** (`devBuild = !app.isPackaged`) rather than in the
- * renderer, and the main process refuses `setCollecting` in a packaged build regardless — so hiding
- * these is defence in depth rather than the only thing standing between a user and an opt-out. It
- * still has to hold: a switch that appears and then silently refuses is worse than no switch.
+ * renderer, and the main process refuses `setCollecting` in a packaged build regardless — so this is
+ * defence in depth rather than the only thing standing between a user and an opt-out. It still has to
+ * hold: a switch that appears and then silently refuses is worse than no switch.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,11 +71,9 @@ describe('TelemetryPane', () => {
     show();
 
     /*
-     * The `installation` assertion is doing two jobs. It waits for the snapshot — asserting
-     * "absent" immediately would pass before the flag had even arrived and prove nothing — and it
-     * pins the other half of the requirement: the pane itself stays. Collection has no opt-out, so
-     * being able to read the records queued on your own machine is the whole of the transparency
-     * the README promises, and hiding it along with the controls would remove it.
+     * The `installation` assertion is what makes the two below mean anything: it waits for the
+     * snapshot to arrive. Asserting "absent" immediately would pass before the flag had been read
+     * and would prove nothing at all.
      */
     await waitFor(() => expect(screen.getByText(/installation/i)).toBeInTheDocument());
     expect(collectSwitch()).toBeNull();

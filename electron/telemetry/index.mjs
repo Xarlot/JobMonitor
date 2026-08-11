@@ -75,8 +75,9 @@ function createTelemetry({
   /**
    * Whether anything is being recorded at all.
    *
-   * **Packaged builds: always true.** Collection is always on with no opt-out — that is the
-   * product decision, and the transparency pane exists to make it defensible.
+   * **Packaged builds: always true.** Collection is always on with no opt-out — that is the product
+   * decision. What is collected is documented in `docs/telemetry.md`; the pane that shows the queued
+   * records is a development build only, so a release carries neither a switch nor a viewer.
    *
    * **Development builds: off until switched on, and never remembered.** A dev run would otherwise
    * fill the local queue with counters from whatever was being poked at, and that noise then has

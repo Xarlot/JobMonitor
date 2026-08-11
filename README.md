@@ -2,8 +2,7 @@
 
 **Job Monitor** is a dashboard for keeping an eye on your GitHub Actions — your pull‑request
 checks and your workflow “flows” — in one place. It reads everything straight from GitHub with
-your own token; there’s no server, no account, nothing leaves your machine except requests to
-`api.github.com`.
+your own token; there’s no server and no account.
 
 It reads, with two exceptions you have to ask for: it can **re‑run the failed jobs** of a run — on
 demand, or automatically for pull requests waiting on auto‑merge — and it can **arm auto‑merge** on a
@@ -54,7 +53,7 @@ that lives in the tray and pops a notification when something finishes.
   **quick read** in about a minute, or a **deep analysis** that goes and investigates. It also
   writes the title and description of a pull request shipping a feature branch — you edit the
   result before anything is published, and a browser falls back to a template.
-- **A Diagnostics tab** (desktop app, opt‑in) — read Job Monitor's own log live, to see why it did
+- **A Diagnostics tab** (desktop app) — read Job Monitor's own log live, to see why it did
   what it did: every auto‑rerun decision including the ones that chose *not* to fire, every analysis,
   and every request that failed.
 
@@ -234,11 +233,11 @@ path to a log of every analysis — the commands run, how long each took, and ho
 every auto‑rerun decision and any request that failed. It holds sizes and outcomes, never your token
 and never the contents of a CI log.
 
-Tick **Read the log in a Diagnostics tab** there and the main navigation grows a **Diagnostics** tab
-that follows that log live — newest first, filtered by scope, searchable (the search covers the
-attached details, so a run id or PR number finds its own records), and each line expandable into the
-facts behind it. Handy for “why didn’t auto‑rerun fire?”, which is otherwise invisible from the UI.
-Off by default, and desktop‑only.
+The main navigation carries a **Diagnostics** tab that follows that log live — newest first, filtered
+by scope, searchable (the search covers the attached details, so a run id or PR number finds its own
+records), and each line expandable into the facts behind it. Handy for “why didn’t auto‑rerun fire?”,
+which is otherwise invisible from the UI. Desktop‑only, and it can be switched off by unticking
+**Read the log in a Diagnostics tab** under **Settings → Diagnostics**.
 
 ### Reading the log
 
@@ -663,9 +662,6 @@ so does the auto‑rerun, at the slower background polling rate.
 Job Monitor is **backend‑less** for everything it does for you. Your token is encrypted locally, and
 your GitHub data goes only to `api.github.com` (plus GitHub’s log storage when you open logs).
 
-The **desktop app** additionally sends anonymous usage and crash telemetry. The **web version is
-unaffected** — it collects nothing, stores nothing and sends nothing. Details below.
-
 Every request is a read except for a short list of writes. Each is behind an explicit click or off
 by default, and every one is hidden unless your token is verified as able to perform it:
 
@@ -680,52 +676,6 @@ by default, and every one is hidden unless your token is verified as able to per
 merges them when their required checks pass. It also cannot start a workflow, cancel a run, push
 code, comment, or change a repository setting. Every write goes through one function that refuses to
 run unless the token has been proven capable — `development.md` lists each endpoint.
-
-### Telemetry (desktop app only)
-
-The desktop app reports anonymous usage and crash data so we can see which features are worth
-keeping and which releases broke something. **It is always on and there is no opt‑out.** Since you
-can't turn it off, you can at least see all of it: **Settings → Diagnostics → Telemetry** shows the
-exact records queued on your machine, before and after they are sent.
-
-**What is sent**
-
-- A random 128‑bit **installation ID**, generated on first run. It is not derived from your
-  username, hostname, MAC address, machine GUID, or any hardware identifier, and there is no mapping
-  anywhere from it back to a person. It identifies an installation, not you.
-- **Feature counters** — how many times each feature was used, as numbers against a fixed list
-  (`flows`, `artifacts`, `auto‑rerun`, …). There is no free‑text field anywhere in the format, so
-  nothing about *your* repositories can travel in one.
-- **Operation timings**, as histograms — counts per duration bucket, plus sum and max. Individual
-  timings are never sent.
-- **Usage summaries** in one‑hour buckets — app starts, sessions, foreground time, running time,
-  clean shutdowns.
-- **Crashes** — the exception *type*, a fingerprint, and a sanitized stack trace.
-
-**What is never sent**
-
-Your GitHub token. Repository, branch, PR, workflow, job or artifact names. Log or annotation
-contents. File paths, filenames, usernames, hostnames, IP addresses, command‑line arguments or
-environment variables. Exception *messages* — only the type — because a message is the one place a
-path or a token realistically leaks into a crash report. Stack traces are stripped of absolute
-paths, home directories and usernames before they are written to disk, and the server rejects
-anything that still looks like a path, URL, email or token.
-
-**How it is sent**
-
-Counters are accumulated in memory and written to a local queue every 15 minutes. About once an
-hour the queue is encrypted and published through [Ably](https://ably.com), a managed pub/sub
-service that carries the payload without being able to read it. The queue is capped at a few megabytes and 7
-days; if you are offline it simply waits, and if it fills up it drops the oldest records. **A failed
-send never affects the app.**
-
-The raw queue lives next to the diagnostics log, under your user data directory
-(`%APPDATA%\Job Monitor\telemetry` on Windows, `~/Library/Application Support/Job Monitor/telemetry`
-on macOS, `~/.config/Job Monitor/telemetry` on Linux). It is newline‑delimited JSON — readable with
-any text editor.
-
-Full field‑by‑field documentation, including the wire schema, is in
-**[docs/telemetry.md](docs/telemetry.md)**.
 
 ---
 

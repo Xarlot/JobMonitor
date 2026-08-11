@@ -64,12 +64,19 @@ describe('configStore', () => {
     const result = safeParseConfig(legacy);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Existing preferences survive; the new ones arrive switched off.
+    // Existing preferences survive, and each new field arrives at its own default.
     expect(result.config.notifications).toEqual({ pr: true, flow: false, autoRerun: false });
     expect(result.config.prAutoRerun.enabled).toBe(false);
     expect(result.config.mergedPrs.count).toBe(10);
-    // A config saved before the log viewer existed must not gain a tab on upgrade.
-    expect(result.config.diagnostics).toEqual({ showLogTab: false, tailKB: 512, followSeconds: 3 });
+    /*
+     * The log viewer arrives switched **on**, and that is the intended reading of an upgrade: a
+     * missing key is the absence of a preference, not a decision against the tab. Nobody who saved
+     * this config declined the viewer — it did not exist to decline.
+     *
+     * The writes are the opposite case and stay off above, because there the default is the safe
+     * side of a choice with consequences. A tab that reads a log has none.
+     */
+    expect(result.config.diagnostics).toEqual({ showLogTab: true, tailKB: 512, followSeconds: 3 });
   });
 
   it('rejects an out-of-range attempt ceiling', () => {

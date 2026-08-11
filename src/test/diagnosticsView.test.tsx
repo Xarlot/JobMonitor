@@ -16,7 +16,10 @@ const RECORDS = [
   '{"at":"2026-08-03T12:42:43.000Z","scope":"claude","message":"WARN: gh could not produce the run log"}',
 ].join('\n');
 
-function stubBridge(tail: { text: string; truncated: boolean; size: number } | null) {
+function stubBridge(
+  tail: { text: string; truncated: boolean; size: number } | null,
+  telemetry?: { devBuild: boolean },
+) {
   const read = vi.fn().mockResolvedValue(tail);
   (globalThis as { desktop?: unknown }).desktop = {
     isDesktop: true,
@@ -25,6 +28,33 @@ function stubBridge(tail: { text: string; truncated: boolean; size: number } | n
       path: vi.fn().mockResolvedValue({ file: '/tmp/logs/job-monitor.ndjson', dir: '/tmp/logs' }),
       reveal: vi.fn(),
     },
+    // Absent unless a test asks for it: most of these cases are about the log, and a bridge without
+    // a telemetry half is also the shape the browser build has.
+    ...(telemetry
+      ? {
+          telemetry: {
+            read: vi.fn().mockResolvedValue({
+              available: true,
+              records: [],
+              stats: null,
+              meta: {
+                installationId: '0'.repeat(32),
+                appVersion: '3.0.0',
+                platform: 'linux',
+                arch: 'x64',
+                electronVersion: '43.3.0',
+                sendEnabled: !telemetry.devBuild,
+                devBuild: telemetry.devBuild,
+                collecting: !telemetry.devBuild,
+                disabled: false,
+                crashesThisSession: 0,
+              },
+            }),
+            setCollecting: vi.fn(),
+            sendNow: vi.fn(),
+          },
+        }
+      : {}),
   };
   return read;
 }
@@ -121,5 +151,48 @@ describe('DiagnosticsView', () => {
   it('explains that a browser has no such file', async () => {
     renderView();
     await waitFor(() => expect(screen.getByText(/no such file in a browser tab/)).toBeTruthy());
+  });
+
+  /*
+   * The telemetry queue viewer is a development tool and must not be reachable from a release build.
+   *
+   * This is the gate that matters, and it is the outer one: the pane's own controls are gated
+   * separately (`telemetryPane.test.tsx`), but a packaged build should not offer the pane at all, so
+   * there is nothing to reach those controls through.
+   *
+   * Asserting the switch is absent needs care — it is absent for a moment on every render, before the
+   * flag has been read, so a bare "not present" passes for the wrong reason. Both cases therefore wait
+   * on the log arriving first, which is the same await the flag rides on.
+   */
+  describe('the telemetry pane', () => {
+    const segment = () => screen.queryByRole('button', { name: /^telemetry$/i });
+
+    it('is not offered in a packaged build', async () => {
+      stubBridge({ text: RECORDS, truncated: false, size: RECORDS.length }, { devBuild: false });
+      renderView();
+
+      await waitFor(() => expect(screen.getByText(/3 records/)).toBeTruthy());
+      expect(segment()).toBeNull();
+      // And with one pane left there is no switch to show either.
+      expect(screen.queryByLabelText(/diagnostics view/i)).toBeNull();
+    });
+
+    it('is offered in a development build', async () => {
+      stubBridge({ text: RECORDS, truncated: false, size: RECORDS.length }, { devBuild: true });
+      renderView();
+
+      await waitFor(() => expect(segment()).not.toBeNull());
+
+      fireEvent.click(segment() as HTMLElement);
+      await waitFor(() => expect(screen.getByText(/installation/i)).toBeTruthy());
+    });
+
+    it('is not offered when the bridge has no telemetry half', async () => {
+      stubBridge({ text: RECORDS, truncated: false, size: RECORDS.length });
+      renderView();
+
+      await waitFor(() => expect(screen.getByText(/3 records/)).toBeTruthy());
+      expect(segment()).toBeNull();
+    });
   });
 });
