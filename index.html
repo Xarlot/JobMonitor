@@ -1,14 +1,43 @@
 <!doctype html>
-<html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark">
+<!-- `data-dark-theme` must name the theme whose CSS is actually imported: this app loads
+     dark-dimmed.css, which is scoped to `[data-dark-theme="dark_dimmed"]`, so "dark" matches nothing
+     and every token is undefined until ThemeContext rewrites the attribute after mount. -->
+<html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark_dimmed">
   <head>
     <meta charset="UTF-8" />
     <!-- %CSP% -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="no-referrer" />
-    <!-- Always reserve the vertical scrollbar gutter so centered content doesn't
-         shift horizontally when switching between short and tall tabs. -->
+    <!--
+      Always reserve the vertical scrollbar gutter so centered content doesn't shift horizontally
+      when switching between short and tall tabs.
+
+      That gutter is why the document itself has to be painted. The app's background sits on a div
+      (`min-height: 100vh`), which does not extend into the reserved gutter or the overscroll area —
+      Primer 36's styled-components BaseStyles painted the document and 38 does not, so those strips
+      fell through to whatever is behind the page. In a browser that is white and invisible; in the
+      desktop app it is the window's own `backgroundColor` (#0d1117), which showed up as a black band
+      down the side of a light UI.
+
+      `color-scheme` is deliberately *not* set here. Primer's theme CSS already declares it, scoped to
+      the same theme attributes, so a copy in this file would be a second opinion that can drift from
+      the first — measured before changing anything: the computed value was already `light` and `dark`
+      correctly, so the scrollbar's colours were never the problem. Its background was.
+
+      Inline rather than in a stylesheet so it applies before the bundle parses. The literal fallbacks
+      cover only that instant; once the theme CSS is in, the tokens win — #ffffff and #212830 are the
+      values of `--bgColor-default` in the two themes this app loads.
+    -->
     <style>
-      html { scrollbar-gutter: stable; }
+      html {
+        scrollbar-gutter: stable;
+        background-color: var(--bgColor-default, #ffffff);
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background-color: var(--bgColor-default, #212830);
+        }
+      }
     </style>
     <link
       rel="icon"
