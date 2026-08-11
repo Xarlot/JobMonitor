@@ -18,6 +18,15 @@ APP="${APP:-jobmonitor-telemetry}"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
+# `az` asks before installing a command's extension, and it asks on **stderr**. An earlier version of
+# this script discarded stderr on its lookups to keep expected "not found" noise down, and the effect
+# was a script that sat silently at a step forever: the question was written to a discarded stream and
+# the answer never came. Nothing here discards stderr any more, and this removes the question as well.
+#
+# So an expected failure now prints. A red "not found" at a lookup step is normal on a first run — the
+# script says what it decided on the line after.
+az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors >/dev/null 2>&1 || true
+
 # App Service's Entra provider needs an app registration to sign people in against, and a tenant to
 # sign them in to. `az webapp auth microsoft update` does not create either — it only points the web
 # app at them — so this did nothing but fail with "Either --issuer or --tenant-id must be specified".
@@ -30,7 +39,7 @@ say "Finding or creating the app registration"
 # app at fresh credentials while the registration people had already consented to sat unused. Asking
 # the web app is the only way to be certain of configuring the one actually in the sign-in path.
 CLIENT_ID="$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query 'identityProviders.azureActiveDirectory.registration.clientId' -o tsv 2>/dev/null || true)"
+  --query 'identityProviders.azureActiveDirectory.registration.clientId' -o tsv || true)"
 
 if [[ -n "$CLIENT_ID" && "$CLIENT_ID" != "None" ]]; then
   echo "  already configured on the web app"
@@ -39,7 +48,7 @@ fi
 # Then by display name, so a re-run does not leave a second registration behind. `az ad app list`
 # answers empty rather than failing when there is none, hence the `-o tsv` and the empty check.
 if [[ -z "$CLIENT_ID" || "$CLIENT_ID" == "None" ]]; then
-  CLIENT_ID="$(az ad app list --display-name "$APP" --query '[0].appId' -o tsv 2>/dev/null || true)"
+  CLIENT_ID="$(az ad app list --display-name "$APP" --query '[0].appId' -o tsv || true)"
 fi
 
 if [[ -z "$CLIENT_ID" || "$CLIENT_ID" == "None" ]]; then
@@ -81,7 +90,7 @@ fi
 say "Checking the auth configuration version"
 CONFIG_VERSION="$(az webapp auth config-version show \
   --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query configVersion -o tsv 2>/dev/null || true)"
+  --query configVersion -o tsv || true)"
 
 if [[ "$CONFIG_VERSION" == "v1" ]]; then
   say "Upgrading auth settings from v1 to v2"
@@ -101,24 +110,6 @@ az webapp auth microsoft update \
   --yes \
   --output none
 
-# One call, and every flag here is the **v2** spelling. v1 called this `--action` and took
-# `LoginWithAzureActiveDirectory`; v2 calls it `--unauthenticated-client-action` and takes
-# `RedirectToLoginPage`. The old names fail loudly, which is the good case — but only after the
-# registration exists, so a half-applied script is the normal way to meet them.
-#
-# `--redirect-provider` is deliberately not passed: with exactly one identity provider configured
-# there is nothing to choose between, and naming it is another spelling to get wrong.
-#
-# The ingest route is excluded in the same call. The scheduled trigger is a GitHub Actions job with
-# no Entra identity, so it cannot pass an interactive sign-in; the route carries its own bearer token
-# instead — and it is not an ingestion endpoint in any case, it accepts no batch, only a nudge to go
-# and read Ably.
-#
-# Applied by reading the whole v2 configuration, editing it, and writing it back — not by named
-# flags. Three attempts at this script died on flag spellings that differ between auth v1 and v2
-# (`--action` vs `--unauthenticated-client-action`, and values to match), and `excludedPaths` has no
-# flag *or* portal field at all: it exists only in the configuration object. Read-modify-write
-# touches exactly the two properties it means to and cannot be defeated by a renamed option.
 # Easy Auth signs people in with the authorization code flow, which exchanges the code for a token
 # at `/.auth/login/aad/callback` — and that exchange needs a **client secret**. Without one the sign-in
 # starts correctly, the user authenticates, and the callback answers 401: the failure lands at the end
@@ -132,10 +123,10 @@ SECRET_SETTING="MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
 say "Checking the client secret"
 HAVE_SETTING="$(az webapp config appsettings list \
   --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query "[?name=='${SECRET_SETTING}'].value" -o tsv 2>/dev/null || true)"
+  --query "[?name=='${SECRET_SETTING}'].value" -o tsv || true)"
 HAVE_REF="$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
   --query 'identityProviders.azureActiveDirectory.registration.clientSecretSettingName' \
-  -o tsv 2>/dev/null || true)"
+  -o tsv || true)"
 echo "  app setting present: $([[ -n "$HAVE_SETTING" ]] && echo yes || echo no)"
 echo "  referenced by auth:  ${HAVE_REF:-no}"
 
@@ -163,6 +154,16 @@ else
   echo "  reusing the existing secret"
 fi
 
+# Applied by reading the whole v2 configuration, editing it and writing it back, rather than through
+# named flags. Three attempts at this script died on spellings that differ between auth v1 and v2
+# (`--action` versus `--unauthenticated-client-action`, and values to match), and `excludedPaths` has
+# no flag *or* portal field at all — it exists only in the configuration object. Read-modify-write
+# touches exactly the properties it means to and cannot be defeated by a renamed option.
+#
+# What `excludedPaths` covers is the ingest route. The scheduled trigger is a GitHub Actions job with
+# no Entra identity, so it cannot pass an interactive sign-in; it carries its own bearer token
+# instead — and it is not an ingestion endpoint in any case, it accepts no batch, only a nudge to go
+# and read Ably.
 say "Requiring authentication, and excluding the ingest route"
 CONFIG="$(mktemp)"
 az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" -o json > "$CONFIG"
