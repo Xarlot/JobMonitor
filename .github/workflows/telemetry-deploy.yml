@@ -102,15 +102,36 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # The registry credential is stored by App Service and reused on **every** container start —
+      # platform maintenance, a settings change, a manual restart — not only during this deploy. So
+      # it cannot be `GITHUB_TOKEN`, which is revoked the moment this job ends: the first pull would
+      # succeed here and the app would then fail to start days later, for no visible reason.
+      #
+      # A dedicated read-only token instead. The image stays internal, which rules out the other way
+      # to solve this — a public package needs no credential at all.
       - name: Point the app at this exact image
+        env:
+          # Through the environment rather than interpolated into the script: the expansion happens
+          # before the shell sees the line, so a token containing a shell metacharacter would
+          # otherwise be parsed as one.
+          PULL_USER: ${{ vars.GHCR_PULL_USER }}
+          PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         run: |
+          # Checked rather than assumed. An empty password is accepted by `az` without complaint and
+          # the deploy reports success; the app then cannot pull, which surfaces as a container that
+          # will not start and says nothing about why.
+          if [ -z "$PULL_USER" ] || [ -z "$PULL_TOKEN" ]; then
+            echo "::error::GHCR_PULL_USER / GHCR_PULL_TOKEN are not both set. App Service needs a" \
+                 "durable read-only registry credential — see the comment above this step."
+            exit 1
+          fi
           az webapp config container set \
             --name "${{ vars.AZURE_WEBAPP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --container-image-name "${{ env.IMAGE }}@${{ needs.build.outputs.digest }}" \
             --container-registry-url https://ghcr.io \
-            --container-registry-user "${{ github.actor }}" \
-            --container-registry-password "${{ secrets.GITHUB_TOKEN }}"
+            --container-registry-user "$PULL_USER" \
+            --container-registry-password "$PULL_TOKEN"
 
       - name: Restart
         run: |
