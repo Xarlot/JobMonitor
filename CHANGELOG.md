@@ -7,34 +7,106 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 ## [3.0.0]
 
 **Everything this app is built on moved a major version at once** — React, Primer, Electron,
-TypeScript and the table library. Nothing about what the app *does* has changed; this is the release
-that pays off six accumulated upgrades so the next feature is written against current parts. It is a
-major version because the user interface was rewritten to get there, not because the product was
-redesigned.
+TypeScript and the table library. It is a major version because the user interface was rewritten to
+get there, not because the product was redesigned: almost everything looks and behaves as it did.
 
-The upgrades are not independent: Primer 36 requires React 18 exactly, so React 19 is unreachable
+The upgrades are not independent. Primer 36 requires React 18 exactly, so React 19 is unreachable
 without Primer 38 — which removes the `sx` prop, `Box` and `Octicon` outright. There is no
 incremental path, so the styling layer moved in one change: **804 `sx` props, 402 `Box` elements and
 53 `Octicon` elements across 41 files**, now 43 CSS module files.
 
-### Changed
-- **Styles are a stylesheet rather than generated in the browser.** Primer 38 ships plain CSS, so the
-  app no longer builds its own at startup through styled-components — and that dependency is gone.
+Two features arrive with it. **Long-lived feature branches get a tab of their own**, and it answers
+"why is this sitting there" — work on a branch shared between a fork and the upstream was invisible
+here, because both ends of its pull requests live in the upstream and the Pull requests tab's
+fork-head filter excluded them entirely. And **the auto-rerun engine stops being a black box**: it
+worked out a precise reason for every run it passed over and then threw it away, so a pull request
+that had quietly stopped being retried looked identical to one with nothing to do. Every decision is
+now recorded — including the decisions *not* to act — and readable inside the app. Three real bugs
+were hiding behind that silence.
+
+### Added
+- **A Feature branches tab**, on by default. Establishing that a repository has no shared branches
+  under the prefix costs two requests per poll — cheap enough that defaulting to off would mainly have
+  meant the tab went unfound by the people it was built for. Switching it off under **Settings → PR
+  automation** stops all of it. A feature branch is one under a
+  prefix — `feature/` by default — that exists in **both** your fork and the upstream; a branch only one
+  of them has is not shared work and does not appear. Branches are found through GitHub's prefix-matching
+  refs endpoint rather than by listing every branch and filtering here, so a repository with hundreds of
+  them costs two requests instead of sixteen.
+- **A stage strip per pull request** — opened → checks → mergeable → auto-merge armed → merged — with the
+  reason it is stuck spelled out: *waiting on required checks or a review*, *behind the base branch*,
+  *conflicts — this one needs a working copy*. That last piece comes from `mergeable_state`, which only
+  the single-pull-request endpoint carries and which GitHub computes asynchronously, so it is polled
+  until it means something rather than read once and believed.
+- **Three actions, one loop, and none of them merge.** Bring the default branch into the feature branch — through a `sync/main-into-<branch>` branch cut at
+  the default branch's current tip, so the pull request is pinned to one commit and can actually
+  finish, matching the `create-merge.yml` workflow these repositories are already driven by; an
+  existing sync branch is reused rather than moved, because whatever pull request it already has is
+  the one to look at;
+  pull the upstream's copy of the branch down into your fork; offer your fork's work back to the
+  upstream's copy of the same branch — a cross-fork pull request, the only one this app opens, with the
+  same branch name on both sides. Nothing here targets the default branch: getting a feature branch into
+  `main` is somebody else's decision. Every action **opens a pull request and arms auto-merge**, and
+  GitHub does the merging when the required checks pass — landing directly in a feature branch is
+  forbidden by branch protection, so a merge button here would be a route around the rule that forbids it.
+  If GitHub declines to queue one, that is reported rather than worked around.
+- **The actions are icons with tooltips.** Four labelled buttons naming two branches filled the row and
+  still read alike ("Sync from main" beside "Ship to main"); the tooltip carries a sentence naming both
+  ends of what is about to happen, which no button label could — including *why* an action is
+  unavailable, since a disabled control that explains nothing is a dead end. Disabled ones stay
+  hoverable for exactly that reason.
+- **Claude writes the offered pull request's title and description** (desktop app), from the commits your
+  fork has that the upstream's copy of the branch does not — which the app fetches itself, so the task is one turn with no tools
+  and no shell. You see and edit the result before anything is published, and a browser, a missing CLI or
+  a slow reply all fall back to a template rather than stopping the pull request. Issue references and
+  @mentions are stripped from whatever comes back: a hallucinated `Fixes #123` closes somebody's issue the
+  moment the pull request merges. Model and effort are configurable under **Settings → AI integration**.
+- **A fork repo name** under **Settings → Repository**, for the rare fork that was renamed. Blank still
+  means "same name as the upstream", which is what every earlier version assumed outright.
+- **How far each feature branch is behind the default branch**, shown in warning colour next to the
+  fork standing — `47 commits behind 2026.1`. A branch can match the upstream exactly and still have
+  drifted months behind the branch it merges into, and of the two numbers on that row only this one
+  gets worse while nobody touches anything. Measured on the upstream's copy, since that is the shared
+  branch, and absent when the branch is level or ahead. One more comparison per branch per poll,
+  ETag-cached like the rest.
 - **The backmerge is recommended, and its button turns green, when the branch has fallen behind the
   default branch and no backmerge is open.** Ranked *below* the fork standing deliberately: falling
   behind is a continuous chore wherever the default branch is busy, so leading with it would print the
   same sentence on every row forever and bury the thing a person wants to finish — their own work,
   waiting to be offered. It fills the silence instead, on the rows where there is nothing else to do.
   An open backmerge is reported as the answer rather than a second one being suggested.
-- **Bringing the default branch into a feature branch now goes through a sync branch.** It used to
-  open a pull request whose head was the default branch itself, which cannot finish: `main` keeps
-  moving, so the diff changes under review and the head cannot be deleted on merge. A
-  `sync/main-into-<branch>` branch is created at the default branch's current tip and the pull request
-  comes from there, matching the `create-merge.yml` workflow these repositories are already driven by
-  — same branch name, same title, same merge commit — so two tools performing one operation produce
-  one shape of pull request. An existing sync branch is reused rather than moved: whatever pull
-  request it already has is the one to look at, and moving the branch would change what reviewers had
-  already seen.
+- **A Diagnostics tab** (desktop, opt-in under **Settings → Diagnostics**) that reads Job Monitor's own
+  log inside the app: the tail of the file, newest first, following live. Filter by scope, or search —
+  the search covers each record's attached details, so a run id, PR number or failure fingerprint finds
+  its own lines even when the sentence never mentions them. Every line expands into the facts behind it.
+  It reads a bounded tail rather than the whole 5 MB, says so (`the last 512 KB of 4.1 MB`) instead of
+  implying it has everything, and shows a line that failed to parse rather than leaving a silent gap
+  where a crash mid-write happened. Off by default: it is a window on the app rather than on the work.
+- **Every auto-rerun decision is logged**, with the facts needed to act on it — the age against the
+  configured window for a run judged too old, the fingerprint and the streak for a repeated failure, the
+  record that settled it for one already handled. The engine's own state is logged whenever it changes,
+  since `off`, `no-permission` and `no-workflows` stop the poll entirely and a tick-side log would go
+  quiet exactly when someone asks why nothing happened. A verdict is written when it *changes* rather
+  than on every poll, so a size-capped file cannot fill with one repeated sentence.
+- **An arm auto-merge button** on every open pull request. It clears the PR's description and asks GitHub
+  to merge as soon as the required checks pass. It confirms first and shows you the description it is
+  about to delete, because that text cannot be recovered — a pull request body has no edit history for
+  this app or the API to restore from. Clearing happens *before* arming, deliberately: a PR that is
+  already green merges within seconds of being armed, so clearing afterwards would race the merge and
+  lose. Pick the strategy — squash, merge commit or rebase — under **Settings → PR automation**.
+- **An `auto-merge` badge** on pull requests that already have it armed, naming the strategy and who
+  armed it. It is also how you tell at a glance which PRs the auto-rerun engine will act on at all,
+  which the list previously gave no way to see.
+- **Auto-rerun activity now shows on the pull request itself**, as a `re-run ×3` badge with the detail in
+  a hint: every attempt with its workflow and time, and, if the engine has since gone idle, why.
+- **A test for the runs grid**, which had none. Column definitions are data, so a table configured
+  with the wrong feature set builds a valid object that typechecks and renders nothing — the new test
+  asserts output rather than construction: rows arrive, in order, carrying the values the accessors
+  were supposed to reach.
+
+### Changed
+- **Styles are a stylesheet rather than generated in the browser.** Primer 38 ships plain CSS, so the
+  app no longer builds its own at startup through styled-components — and that dependency is gone.
 - **The Failures tab now says why a flow contributed nothing to it.** With debug logging on
   (`jobMonitorDebug.enable()`, or the Diagnostics tab on the desktop app) each flow records a verdict
   per poll: *latest run is success, not a failure*, *no runs loaded yet*, *failed but outside the scan
@@ -50,16 +122,6 @@ incremental path, so the styling layer moved in one change: **804 `sx` props, 40
   and they are most of what it offers. Anyone using the app in a browser previously had no way out of
   a job row at all. The one remaining condition is unchanged: the button appears only when the
   failure is actually in that tab, so it can never lead to an empty list.
-- **How far each feature branch is behind the default branch**, shown in warning colour next to the
-  fork standing — `47 commits behind 2026.1`. A branch can match the upstream exactly and still have
-  drifted months behind the branch it merges into, and of the two numbers on that row only this one
-  gets worse while nobody touches anything. Measured on the upstream's copy, since that is the shared
-  branch, and absent when the branch is level or ahead. One more comparison per branch per poll,
-  ETag-cached like the rest.
-- **The Feature branches tab is on by default.** It costs two requests per poll to establish that a
-  repository has no shared branches under the prefix — cheap enough that defaulting to off mainly
-  meant the tab went unfound by the people it was built for. Switching it off under **Settings → PR
-  automation** stops all of it, and an existing installation keeps whatever it had set.
 - **Flows and Feature branches swapped places** in the navigation, which now reads
   Overview · Pull requests · Flows · Feature branches · Failures. Feature branches sat next to Pull
   requests because that is what it deals in; in practice Flows is the everyday tab of the two.
@@ -72,6 +134,49 @@ incremental path, so the styling layer moved in one change: **804 `sx` props, 40
 - **Dependencies**: React 18.3 → 19.2, Primer 36.27 → 38.35, Electron 42.5 → 43.3 (Chromium 150,
   Node 24.18), TypeScript 6.0 → 7.0 (the native compiler; no source changes needed), TanStack Table
   8.21 → 9.1, jsdom 29 → 30, jest-dom 6 → 7. styled-components removed.
+- **Dialogs no longer close when you click outside them.** The ✕ and Escape close them; the backdrop
+  dims and blocks, and that is all it does. Several of these windows hold text you have typed — a pull
+  request's title and description, a custom prompt — and a mis-aimed click threw it away with no warning
+  and no undo. Escape stays because it is the keyboard route out of a dialog, and because it is not
+  something you hit by missing.
+- **A pull request with nothing to merge gets an empty description**, and no model is asked about it.
+  Handed an empty change set a model does not answer "nothing to say" — it hedges from the branch name
+  at length ("appears to relate to…", "a reviewer should check the actual diff"), which fills the space a
+  reader scans and tells them less than a blank body would. The brief now forbids that shape of writing
+  outright, for the thin-but-not-empty case that still reaches it.
+- **Auto-rerun now covers the feature-branch pull requests too.** Its rule has always been "auto-merge is
+  armed", and these arm it — but the dashboard cannot see them, so without this a single flaky check would
+  park an armed pull request indefinitely. All the existing brakes still apply unchanged.
+- **Write failures say what was refused.** Every refusal message was phrased for re-running jobs, which was
+  true when that was the only write; "this run is too old to re-run" in answer to a failed pull request is
+  not.
+- The `development.md` claim that everything is read-only bar one feature has been replaced with a table
+  of every write the app can make and how each is reached.
+- **The bundle is split by dependency instead of shipped as one 1.1 MB file.** Not for the download —
+  it is ~275 KB gzipped either way — but for caching: in one chunk, a one-line change to a component
+  invalidated React, Primer and styled-components along with it, so every release re-downloaded all of
+  them. They change a few times a year; this app changes weekly. Grouped by how they version rather
+  than by size, and the largest chunk is now 456 KB, which also silences the build's size warning.
+- **The desktop app's `app://` file server is now a tested module** (`electron/appAssets.cjs`). Every
+  JS chunk reaches the desktop app through it and nowhere else, so a change to how the bundle is split
+  could break the desktop build while the browser build kept working perfectly. Its failure mode is
+  also invisible: unknown paths fall back to `index.html`, and a browser will not execute HTML as a
+  module, so a renamed chunk meant a blank window. A `.js` request that hits the fallback is now
+  logged as the fault it is.
+- **A second write exists.** Arming auto-merge writes twice — `PATCH .../pulls/{n}` to clear the
+  description, and the `enablePullRequestAutoMerge` GraphQL mutation, which has no REST equivalent and is
+  the only GraphQL call in the app. Both go through the same gate as re-running jobs: every write in the
+  codebase funnels through one function that refuses to run unless the token has been proven able, and
+  the controls stay hidden otherwise. Nothing else is written — no dispatching, cancelling, pushing,
+  commenting, or merging a PR directly.
+- **"Stop when the failure repeats identically" is now a count**, not a switch: *Allow the same failure
+  this many times*, **5 by default**. The old behaviour was this same rule with the count fixed at 2 —
+  which gave a flaky test that fails identically twice and passes on the third go no chance. A
+  *different* failure in between starts the count over, and `0` switches the brake off.
+- **Auto-rerun activity moved out of the Failures tab.** One shared list there put it in the wrong place
+  twice: you had to be on that tab, and with more than one PR being retried it said nothing about which.
+- **The diagnostics log path moved into its own Settings tab**, out of **AI integration** — the log
+  covers the whole app, not just the analyses.
 
 ### Fixed
 - **A flow reports the last result it reached, not what it is doing now.** Its status was an aggregate
@@ -93,88 +198,6 @@ incremental path, so the styling layer moved in one change: **804 `sx` props, 40
   invisible to anyone not using a mouse. They are focusable controls now.
 - **Navigation icons stay at every window width.** Primer 38 hides them below 1440px by default to
   make room in a crowded nav; this one has five tabs that fit at any size the window can be.
-
-### Added
-- **A test for the runs grid**, which had none. Column definitions are data, so a table configured
-  with the wrong feature set builds a valid object that typechecks and renders nothing — the new test
-  asserts output rather than construction: rows arrive, in order, carrying the values the accessors
-  were supposed to reach.
-
-## [2.2.0]
-
-**Long-lived feature branches get a tab of their own, and it answers "why is this sitting there".** Work
-on a branch shared between your fork and the upstream was invisible here: both ends of its pull requests
-live in the upstream, so the PR tab's fork-head filter excluded them entirely. The new tab tracks those
-branches, shows how far each merge has actually got, and does the three things the routine around such a
-branch consists of. The interesting part is the second one — a pull request that is merely "open" tells
-you nothing, while one that is open, green, mergeable and *unarmed* tells you it is waiting for a person.
-
-### Added
-- **A Feature branches tab** (opt-in under **Settings → PR automation**). A feature branch is one under a
-  prefix — `feature/` by default — that exists in **both** your fork and the upstream; a branch only one
-  of them has is not shared work and does not appear. Branches are found through GitHub's prefix-matching
-  refs endpoint rather than by listing every branch and filtering here, so a repository with hundreds of
-  them costs two requests instead of sixteen.
-- **A stage strip per pull request** — opened → checks → mergeable → auto-merge armed → merged — with the
-  reason it is stuck spelled out: *waiting on required checks or a review*, *behind the base branch*,
-  *conflicts — this one needs a working copy*. That last piece comes from `mergeable_state`, which only
-  the single-pull-request endpoint carries and which GitHub computes asynchronously, so it is polled
-  until it means something rather than read once and believed.
-- **Three actions, one loop, and none of them merge.** Bring the default branch into the feature branch;
-  pull the upstream's copy of the branch down into your fork; offer your fork's work back to the
-  upstream's copy of the same branch — a cross-fork pull request, the only one this app opens, with the
-  same branch name on both sides. Nothing here targets the default branch: getting a feature branch into
-  `main` is somebody else's decision. Every action **opens a pull request and arms auto-merge**, and
-  GitHub does the merging when the required checks pass — landing directly in a feature branch is
-  forbidden by branch protection, so a merge button here would be a route around the rule that forbids it.
-  If GitHub declines to queue one, that is reported rather than worked around.
-- **The actions are icons with tooltips.** Four labelled buttons naming two branches filled the row and
-  still read alike ("Sync from main" beside "Ship to main"); the tooltip carries a sentence naming both
-  ends of what is about to happen, which no button label could — including *why* an action is
-  unavailable, since a disabled control that explains nothing is a dead end. Disabled ones stay
-  hoverable for exactly that reason.
-- **Claude writes the offered pull request's title and description** (desktop app), from the commits your
-  fork has that the upstream's copy of the branch does not — which the app fetches itself, so the task is one turn with no tools
-  and no shell. You see and edit the result before anything is published, and a browser, a missing CLI or
-  a slow reply all fall back to a template rather than stopping the pull request. Issue references and
-  @mentions are stripped from whatever comes back: a hallucinated `Fixes #123` closes somebody's issue the
-  moment the pull request merges. Model and effort are configurable under **Settings → AI integration**.
-- **A fork repo name** under **Settings → Repository**, for the rare fork that was renamed. Blank still
-  means "same name as the upstream", which is what every earlier version assumed outright.
-
-### Changed
-- **Dialogs no longer close when you click outside them.** The ✕ and Escape close them; the backdrop
-  dims and blocks, and that is all it does. Several of these windows hold text you have typed — a pull
-  request's title and description, a custom prompt — and a mis-aimed click threw it away with no warning
-  and no undo. Escape stays because it is the keyboard route out of a dialog, and because it is not
-  something you hit by missing.
-- **A pull request with nothing to merge gets an empty description**, and no model is asked about it.
-  Handed an empty change set a model does not answer "nothing to say" — it hedges from the branch name
-  at length ("appears to relate to…", "a reviewer should check the actual diff"), which fills the space a
-  reader scans and tells them less than a blank body would. The brief now forbids that shape of writing
-  outright, for the thin-but-not-empty case that still reaches it.
-- **Auto-rerun now covers the feature-branch pull requests too.** Its rule has always been "auto-merge is
-  armed", and these arm it — but the dashboard cannot see them, so without this a single flaky check would
-  park an armed pull request indefinitely. All the existing brakes still apply unchanged.
-- **Write failures say what was refused.** Every refusal message was phrased for re-running jobs, which was
-  true when that was the only write; "this run is too old to re-run" in answer to a failed pull request is
-  not.
-- The `development.md` claim that everything is read-only bar one feature has been replaced with a table
-  of every write the app can make and how each is reached. It was already stale at 2.1.0.
-
-- **The bundle is split by dependency instead of shipped as one 1.1 MB file.** Not for the download —
-  it is ~275 KB gzipped either way — but for caching: in one chunk, a one-line change to a component
-  invalidated React, Primer and styled-components along with it, so every release re-downloaded all of
-  them. They change a few times a year; this app changes weekly. Grouped by how they version rather
-  than by size, and the largest chunk is now 456 KB, which also silences the build's size warning.
-- **The desktop app's `app://` file server is now a tested module** (`electron/appAssets.cjs`). Every
-  JS chunk reaches the desktop app through it and nowhere else, so a change to how the bundle is split
-  could break the desktop build while the browser build kept working perfectly. Its failure mode is
-  also invisible: unknown paths fall back to `index.html`, and a browser will not execute HTML as a
-  module, so a renamed chunk meant a blank window. A `.js` request that hits the fallback is now
-  logged as the fault it is.
-
-### Fixed
 - **Syncing a branch into your fork reported a failure after succeeding.** `merge-upstream` answers with
   an **owner-qualified** branch — `DevExpress:feature/x`, not `feature/x` — and the check that GitHub had
   acted on the branch asked for compared it against the bare name, so it fired on every successful sync:
@@ -211,59 +234,6 @@ you nothing, while one that is open, green, mergeable and *unarmed* tells you it
   anything older than a week, so all 26 of its assertions passed until seven days after they were written
   and then failed for good, saying nothing about the code. The clock is now frozen to the date they were
   written against.
-
-## [2.1.0]
-
-**The auto-rerun engine stops being a black box.** It used to work out a precise reason for every run it
-passed over and then throw it away, so a pull request that quietly stopped being retried looked
-identical to one with nothing to do. Every decision is now recorded — including the decisions *not* to
-act — and readable inside the app. Three real bugs were hiding behind that silence, and all three are
-fixed here. Pull requests also gain a **merge** button that clears the description and hands the PR to
-GitHub to merge once its checks pass.
-
-### Added
-- **A Diagnostics tab** (desktop, opt-in under **Settings → Diagnostics**) that reads Job Monitor's own
-  log inside the app: the tail of the file, newest first, following live. Filter by scope, or search —
-  the search covers each record's attached details, so a run id, PR number or failure fingerprint finds
-  its own lines even when the sentence never mentions them. Every line expands into the facts behind it.
-  It reads a bounded tail rather than the whole 5 MB, says so (`the last 512 KB of 4.1 MB`) instead of
-  implying it has everything, and shows a line that failed to parse rather than leaving a silent gap
-  where a crash mid-write happened. Off by default: it is a window on the app rather than on the work.
-- **Every auto-rerun decision is logged**, with the facts needed to act on it — the age against the
-  configured window for a run judged too old, the fingerprint and the streak for a repeated failure, the
-  record that settled it for one already handled. The engine's own state is logged whenever it changes,
-  since `off`, `no-permission` and `no-workflows` stop the poll entirely and a tick-side log would go
-  quiet exactly when someone asks why nothing happened. A verdict is written when it *changes* rather
-  than on every poll, so a size-capped file cannot fill with one repeated sentence.
-- **An arm auto-merge button** on every open pull request. It clears the PR's description and asks GitHub
-  to merge as soon as the required checks pass. It confirms first and shows you the description it is
-  about to delete, because that text cannot be recovered — a pull request body has no edit history for
-  this app or the API to restore from. Clearing happens *before* arming, deliberately: a PR that is
-  already green merges within seconds of being armed, so clearing afterwards would race the merge and
-  lose. Pick the strategy — squash, merge commit or rebase — under **Settings → PR automation**.
-- **An `auto-merge` badge** on pull requests that already have it armed, naming the strategy and who
-  armed it. It is also how you tell at a glance which PRs the auto-rerun engine will act on at all,
-  which the list previously gave no way to see.
-- **Auto-rerun activity now shows on the pull request itself**, as a `re-run ×3` badge with the detail in
-  a hint: every attempt with its workflow and time, and, if the engine has since gone idle, why.
-
-### Changed
-- **A second write exists.** Arming auto-merge writes twice — `PATCH .../pulls/{n}` to clear the
-  description, and the `enablePullRequestAutoMerge` GraphQL mutation, which has no REST equivalent and is
-  the only GraphQL call in the app. Both go through the same gate as re-running jobs: every write in the
-  codebase funnels through one function that refuses to run unless the token has been proven able, and
-  the controls stay hidden otherwise. Nothing else is written — no dispatching, cancelling, pushing,
-  commenting, or merging a PR directly.
-- **"Stop when the failure repeats identically" is now a count**, not a switch: *Allow the same failure
-  this many times*, **5 by default**. The old behaviour was this same rule with the count fixed at 2 —
-  which gave a flaky test that fails identically twice and passes on the third go no chance. A
-  *different* failure in between starts the count over, and `0` switches the brake off.
-- **Auto-rerun activity moved out of the Failures tab.** One shared list there put it in the wrong place
-  twice: you had to be on that tab, and with more than one PR being retried it said nothing about which.
-- **The diagnostics log path moved into its own Settings tab**, out of **AI integration** — the log
-  covers the whole app, not just the analyses.
-
-### Fixed
 - **A pull request being actively retried would silently stop being retried.** The "ignore runs older
   than" window was measured from the run's `created_at`, which GitHub never moves — so a run re-run for
   three days still reported itself as three days old and fell out of a 72-hour window while its last
