@@ -6,9 +6,10 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 
 ## [3.0.0]
 
-**Everything this app is built on moved a major version at once** — React, Primer, Electron,
-TypeScript and the table library. It is a major version because the user interface was rewritten to
-get there, not because the product was redesigned: almost everything looks and behaves as it did.
+**Nearly everything this app is built on moved a major version at once** — React, Primer, TypeScript
+and the table library. It is a major version because the user interface was rewritten to get there, not
+because the product was redesigned: almost everything looks and behaves as it did. Electron is the
+exception, and not by choice — 43 was upgraded to and then reverted, because it breaks the tray.
 
 The upgrades are not independent. Primer 36 requires React 18 exactly, so React 19 is unreachable
 without Primer 38 — which removes the `sx` prop, `Box` and `Octicon` outright. There is no
