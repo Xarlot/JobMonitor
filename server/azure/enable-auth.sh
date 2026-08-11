@@ -168,14 +168,53 @@ say "Requiring authentication, and excluding the ingest route"
 CONFIG="$(mktemp)"
 az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" -o json > "$CONFIG"
 
+# Printed rather than assumed. An earlier version of this script left `redirectToProvider` unset and
+# said so in a comment: "with exactly one identity provider configured there is nothing to choose
+# between". The app in fact had **seven** enabled, six of them with empty registrations — App Service
+# creates the whole set — so there was everything to choose between and nothing to choose from, and
+# Easy Auth answered 401 to every path including its own `/.auth/login/*` endpoints. A blanket 401
+# that also covers a provider name which does not exist is the signature of that state.
+say "Identity providers before"
+# `select(has("enabled"))` rather than `type == "object"` keeps this off `customOpenIdConnectProviders`,
+# a map of providers rather than a provider. And the value is interpolated directly rather than through
+# `// "unset"`: jq's `//` treats **false** as absent, so the alternative operator would report every
+# disabled provider as unset — precisely the state this listing exists to show.
+jq -r '.identityProviders // {} | to_entries[]
+       | select((.value | type) == "object" and (.value | has("enabled")))
+       | "  \(.key): enabled=\(.value.enabled) registration=\(
+            if (.value.registration.clientId // "") == "" then "empty" else "set" end)"' "$CONFIG"
+
 # `clientSecretSettingName` is set in the same read-modify-write, because a secret that exists as an
 # app setting but is not referenced from the auth configuration produces exactly the same 401.
+#
+# `redirectToProvider` names the one to send people to, and the others are switched off rather than
+# deleted — reversible, and a disabled provider with an empty registration is inert either way. The
+# `has("enabled")` guard keeps this off `customOpenIdConnectProviders`, which is a map of providers
+# rather than a provider, and would otherwise acquire a meaningless `enabled` field.
 jq --arg secretSetting "$SECRET_SETTING" \
    '.platform.enabled = true
     | .globalValidation.unauthenticatedClientAction = "RedirectToLoginPage"
+    | .globalValidation.redirectToProvider = "azureActiveDirectory"
     | .globalValidation.excludedPaths = ["/api/ingest"]
-    | .identityProviders.azureActiveDirectory.registration.clientSecretSettingName = $secretSetting' \
+    | .identityProviders.azureActiveDirectory.registration.clientSecretSettingName = $secretSetting
+    | .identityProviders |= with_entries(
+        if .key == "azureActiveDirectory" then .
+        elif (.value | type) == "object" and (.value | has("enabled")) then .value.enabled = false
+        else . end)' \
    "$CONFIG" > "${CONFIG}.new"
+
+# Checked before it is applied. This writes the *entire* auth configuration in one call, so a jq
+# expression that produced something unexpected would not fail loudly — it would hand App Service a
+# valid document describing an app with no authentication on it. `set -e` covers jq exiting non-zero;
+# this covers jq exiting zero with the wrong thing.
+if ! jq -e '.platform.enabled == true
+            and (.globalValidation.redirectToProvider == "azureActiveDirectory")
+            and ((.identityProviders.azureActiveDirectory.registration.clientId // "") | length > 0)' \
+     "${CONFIG}.new" > /dev/null; then
+  echo "Refusing to apply: the edited configuration is missing something it must have." >&2
+  echo "Nothing was changed. The document is at ${CONFIG}.new if you want to look." >&2
+  exit 1
+fi
 
 az webapp auth set \
   --name "$APP" --resource-group "$RESOURCE_GROUP" \
@@ -186,8 +225,14 @@ rm -f "$CONFIG" "${CONFIG}.new"
 say "Verifying"
 # `secret` reports the setting *name*, never a value — that is all the configuration holds.
 state=$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query '{enabled:platform.enabled, action:globalValidation.unauthenticatedClientAction, excluded:globalValidation.excludedPaths, clientId:identityProviders.azureActiveDirectory.registration.clientId, secret:identityProviders.azureActiveDirectory.registration.clientSecretSettingName}' -o json)
+  --query '{enabled:platform.enabled, action:globalValidation.unauthenticatedClientAction, redirectTo:globalValidation.redirectToProvider, excluded:globalValidation.excludedPaths, clientId:identityProviders.azureActiveDirectory.registration.clientId, secret:identityProviders.azureActiveDirectory.registration.clientSecretSettingName}' -o json)
 echo "  $state"
+
+say "Identity providers after"
+az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" -o json \
+  | jq -r '.identityProviders // {} | to_entries[]
+           | select((.value | type) == "object" and (.value | has("enabled")))
+           | "  \(.key): enabled=\(.value.enabled)"'
 
 say "Restarting so the new settings are picked up"
 az webapp restart --name "$APP" --resource-group "$RESOURCE_GROUP" --output none
