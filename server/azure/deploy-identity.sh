@@ -14,6 +14,9 @@ RESOURCE_GROUP="${RESOURCE_GROUP:-jobmonitor-telemetry-rg}"
 APP_NAME="${APP_NAME:-jobmonitor-telemetry-deploy}"
 REPO="${REPO:-DevExpress/JavaJobMonitor}"
 BRANCH="${BRANCH:-master}"
+# Must match `environment:` in .github/workflows/telemetry-deploy.yml — that name is half the subject
+# the federated credential is checked against.
+ENVIRONMENT="${ENVIRONMENT:-telemetry}"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -29,20 +32,39 @@ fi
 # The service principal is what a role can be assigned to; the registration alone cannot hold one.
 az ad sp create --id "$APPID" >/dev/null 2>&1 || true
 
-say "Federated credential for ${REPO} on ${BRANCH}"
-# Scoped to one repository and one ref. A token minted by any other repo, or by a pull request from
-# a fork, does not match the subject and is refused — which is the whole reason this is preferable
-# to a client secret sitting in a repository setting.
-if ! az ad app federated-credential list --id "$APPID" --query "[?name=='github-${BRANCH}']" -o tsv | grep -q .; then
+say "Federated credential for ${REPO}, environment ${ENVIRONMENT}"
+# The subject must match the token GitHub actually mints, and **a job that declares an environment
+# gets an environment subject, not a branch one**: `repo:owner/name:environment:telemetry`, with no
+# ref in it at all. A `ref:refs/heads/master` credential looks obviously right and is refused with
+# AADSTS700213, naming the subject it wanted — read that message rather than re-deriving.
+#
+# Scoped to one repository and one environment. A token minted by any other repository, or by a job
+# that does not enter this environment, does not match and is refused — which is the whole reason
+# this is preferable to a client secret sitting in a repository setting.
+if ! az ad app federated-credential list --id "$APPID" \
+     --query "[?name=='github-env-${ENVIRONMENT}']" -o tsv | grep -q .; then
   az ad app federated-credential create --id "$APPID" --parameters "{
-    \"name\": \"github-${BRANCH}\",
+    \"name\": \"github-env-${ENVIRONMENT}\",
     \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"repo:${REPO}:ref:refs/heads/${BRANCH}\",
+    \"subject\": \"repo:${REPO}:environment:${ENVIRONMENT}\",
     \"audiences\": [\"api://AzureADTokenExchange\"]
   }" >/dev/null
   echo "  created"
 else
   echo "  already there"
+fi
+
+# A branch-scoped credential from an earlier run is removed rather than left lying around. It is not
+# merely unused: it would let a job that never enters the environment authenticate all the same,
+# which quietly defeats any approval rule put on that environment later.
+if az ad app federated-credential list --id "$APPID" \
+   --query "[?name=='github-${BRANCH}'].id" -o tsv | grep -q .; then
+  say "Removing the obsolete branch-scoped credential"
+  az ad app federated-credential delete --id "$APPID" \
+    --federated-credential-id "github-${BRANCH}" --yes >/dev/null 2>&1 \
+    || az ad app federated-credential delete --id "$APPID" \
+         --federated-credential-id "github-${BRANCH}" >/dev/null
+  echo "  removed"
 fi
 
 SUB="$(az account show --query id -o tsv)"
