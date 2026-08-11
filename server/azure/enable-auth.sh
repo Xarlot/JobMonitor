@@ -60,19 +60,29 @@ SITE="https://management.azure.com/subscriptions/${SUBSCRIPTION}/resourceGroups/
 # Read the current configuration
 # ---------------------------------------------------------------------------------------------------
 
+# One function for both reads, because there are two — before the edit and after it — and the first
+# version of this script had them as separate lines. Fixing the method on one left the other on POST,
+# so the write succeeded and the verification step was what failed. Anything read twice should be read
+# by one piece of code.
+#
+# GET, not the POST `.../list` that app settings use. Reading through a POST is the pattern for
+# settings that contain secrets; this resource holds only the *name* of the setting carrying the client
+# secret, so it is readable by GET — and answers `Method Not Allowed` to a POST at this API version.
+# The POST stays as a fallback for older ones.
+read_auth() {
+  local out="$1"
+  if ! az rest --method get --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" \
+       -o json > "$out" 2>"$WORK/err"; then
+    echo "  GET failed, trying POST .../list" >&2
+    cat "$WORK/err" >&2
+    az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
+      -o json > "$out"
+  fi
+}
+
 say "Reading the current auth configuration"
-# GET, not the POST `.../list` that app settings use. Reading secrets through a POST is the pattern
-# for settings that contain them; this resource holds only the *name* of the setting carrying the
-# client secret, so it is readable by GET — and answers `Method Not Allowed` to a POST at this API
-# version. The POST stays as a fallback for older ones.
 CFG="$WORK/auth.json"
-if ! az rest --method get --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" \
-     -o json > "$CFG" 2>"$WORK/err"; then
-  echo "  GET failed, trying POST .../list" >&2
-  cat "$WORK/err" >&2
-  az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
-    -o json > "$CFG"
-fi
+read_auth "$CFG"
 
 # Printed, not assumed. The whole reason this script is on its fifth version is that each one acted
 # on a belief about this document instead of on the document.
@@ -249,8 +259,7 @@ az webapp restart --name "$APP" --resource-group "$RESOURCE_GROUP" --output none
 # ---------------------------------------------------------------------------------------------------
 
 say "Verifying — read back from ARM, not from what we sent"
-az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
-  -o json > "$WORK/after.json"
+read_auth "$WORK/after.json"
 jq -r '.properties
        | "  platform.enabled:        \(.platform.enabled)",
          "  requireAuthentication:   \(.globalValidation.requireAuthentication)",
