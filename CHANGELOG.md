@@ -133,9 +133,19 @@ were hiding behind that silence.
   package also ships: features are opt-in, the row model is constructed rather than passed as a
   getter, and the cell accessor changed. A compatibility shim is a decision to do the work later with
   less context.
-- **Dependencies**: React 18.3 → 19.2, Primer 36.27 → 38.35, Electron 42.5 → 43.3 (Chromium 150,
-  Node 24.18), TypeScript 6.0 → 7.0 (the native compiler; no source changes needed), TanStack Table
-  8.21 → 9.1, jsdom 29 → 30, jest-dom 6 → 7. styled-components removed.
+- **Dependencies**: React 18.3 → 19.2, Primer 36.27 → 38.35, TypeScript 6.0 → 7.0 (the native
+  compiler; no source changes needed), TanStack Table 8.21 → 9.1, jsdom 29 → 30, jest-dom 6 → 7.
+  styled-components removed.
+- **Electron stays on 42** (42.5 → 42.8), the one upgrade in this release that was made and then
+  reverted. Chromium 150 rewrote the StatusNotifierItem implementation, and under Electron 43 the tray
+  icon renders as the icon theme's missing-image placeholder on Cinnamon while **the tray menu does not
+  open at all** — no Open, no Exit, which is the entire interface of a tray-resident app whose window is
+  hidden. 42 registers its item under a unique bus name with the menu at `/com/canonical/dbusmenu`; 43
+  registers `org.freedesktop.StatusNotifierItem-<pid>-1` with `/org/chromium/DbusMenu/1`. The icon
+  itself is identical in both, so this is not about the icon file: the previous icon reproduces the
+  placeholder under 43. Passing a path instead of a `nativeImage` and re-setting the icon after
+  registration were both tried and change nothing. The range allows 42's own security patches and stops
+  before 43.
 - **Dialogs no longer close when you click outside them.** The ✕ and Escape close them; the backdrop
   dims and blocks, and that is all it does. Several of these windows hold text you have typed — a pull
   request's title and description, a custom prompt — and a mis-aimed click threw it away with no warning

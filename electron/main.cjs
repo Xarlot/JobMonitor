@@ -408,6 +408,23 @@ function showAbout() {
     .catch(() => {});
 }
 
+/*
+ * **This is why `electron` is pinned below 43 in package.json.**
+ *
+ * Chromium 150 (Electron 43) rewrote the StatusNotifierItem implementation. On Cinnamon the result is
+ * that the icon renders as the icon theme's missing-image placeholder *and the menu below never
+ * opens* — so a tray-resident app whose window is hidden has no interface at all, not even Exit.
+ *
+ * 42 registers the item under a unique bus name with its menu at `/com/canonical/dbusmenu`; 43
+ * registers `org.freedesktop.StatusNotifierItem-<pid>-1` with `/org/chromium/DbusMenu/1`. Both publish
+ * the same icon in the same way, so the icon file is not involved — the old icon reproduces the
+ * placeholder under 43. Neither passing a path here instead of a `nativeImage`, nor calling
+ * `setImage` again after registration, makes any difference; both were tried against the real bus.
+ *
+ * `src/test/trayIcon.test.ts` fails if the dependency range is ever widened to allow 43, because the
+ * next routine dependency sweep will otherwise take it and the symptom appears only on a desktop
+ * nobody runs the tests on.
+ */
 function createTray() {
   const image = nativeImage.createFromPath(TRAY_ICON);
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image);

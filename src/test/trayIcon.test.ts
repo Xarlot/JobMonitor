@@ -97,6 +97,27 @@ describe('the tray icon', () => {
    * and CI both run. Skipped rather than failed in that case: this file's job is the wiring above,
    * and a red test on a clean checkout would train people to ignore it.
    */
+  /**
+   * Electron must stay below 43, and the tray is the reason.
+   *
+   * Chromium 150 rewrote the StatusNotifierItem implementation. On Cinnamon that makes the icon render
+   * as the theme's missing-image placeholder **and stops the menu opening at all** — no Open, no Exit,
+   * which is the whole interface of a tray-resident app with its window hidden.
+   *
+   * This assertion exists because the failure is invisible here: it needs a desktop session, a
+   * particular tray host, and a person looking at a panel. A routine dependency sweep would take 43
+   * with everything green.
+   */
+  it('is not built against an Electron that breaks the tray', () => {
+    const range = JSON.parse(read('package.json')).devDependencies.electron as string;
+    const major = Number(/(\d+)/.exec(range)?.[1]);
+    expect(Number.isFinite(major)).toBe(true);
+    expect(major, `electron ${range} allows 43+, which breaks the tray on Cinnamon`).toBeLessThan(43);
+    // A caret is what keeps 42's own security patches flowing while stopping short of 43; a bare
+    // exact pin would freeze those too, and `>=` or `*` would let 43 straight back in.
+    expect(range.startsWith('^')).toBe(true);
+  });
+
   const generated = ['electron/tray.png', 'electron/appicon.png'];
   it.skipIf(generated.some((f) => !existsSync(join(root, f))))(
     'produces the sizes it claims to',
