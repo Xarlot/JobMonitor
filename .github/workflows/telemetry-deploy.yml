@@ -141,15 +141,43 @@ jobs:
 
       # A deploy that "succeeded" while the app fails to boot is the failure mode worth catching:
       # App Service reports the container as set regardless of whether it starts.
+      #
+      # Probed at `/api/ingest`, not at a page, and with POST. Every page is behind Entra ID, and
+      # Easy Auth sits in *front* of the container — it answers 401 whether or not anything is
+      # running, so treating that as success would make this step assert nothing. (It returns 401
+      # rather than the 302 the configuration asks for, because it only redirects requests that look
+      # like a browser's.) `/api/ingest` is the one excluded path, so a reply to it comes from the
+      # application itself.
+      #
+      # POST without a token, because of the order inside that handler: it loads the configuration
+      # first and checks the token second. So 401 means more than "the container serves" — it means
+      # the app settings parsed, the Ably key and receiver keys are present and the right shape. A
+      # container that starts and is misconfigured answers 503 with `not configured` instead, which
+      # is a different failure and reported as one.
+      #
+      # Nothing happens as a result of the request: it is refused before any work is done.
       - name: Wait for the app to answer
         run: |
-          url="https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/health"
+          url="https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ingest"
           for attempt in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)
-            # 302 is success once Entra ID is enabled — the app answered and redirected to login.
-            case "$code" in
-              200|302) echo "up (HTTP $code) after ${attempt} attempt(s)"; exit 0 ;;
+            reply=$(curl -s --max-time 10 -w '\n%{http_code}' -X POST "$url" || true)
+            code=${reply##*$'\n'}
+            body=${reply%$'\n'*}
+
+            if [ "$code" = "401" ]; then
+              echo "up after ${attempt} attempt(s): the app answered, and its configuration loaded"
+              exit 0
+            fi
+
+            # App Service also answers 503 while a container is still starting, so the two are told
+            # apart by the body — ours is JSON from the route, the platform's is an HTML page.
+            case "$body" in
+              *'not configured'*)
+                echo "::error::The container is running but its configuration is invalid. One of the" \
+                     "app settings is missing or malformed — compare against server/azure/.env.receiver."
+                exit 1 ;;
             esac
+
             echo "attempt ${attempt}: HTTP ${code:-none}"
             sleep 10
           done
