@@ -14,8 +14,20 @@
  *   build/icon.png        512×512  → electron-builder derives .ico / .icns from it
  *   electron/appicon.png  256×256  → window, notifications, About; packed with the app
  *   electron/tray.png      32×32   → the tray
- *   electron/tray@2x.png   64×64   → the tray on a HiDPI panel. `nativeImage.createFromPath` picks
- *                                    this up by name; without it the icon is resampled and soft.
+ *
+ * **There is deliberately no `tray@2x.png`.** It looks like free HiDPI support — `createFromPath`
+ * picks it up by name — and on Linux it makes the tray icon worse. Electron publishes exactly *one*
+ * pixmap on the StatusNotifierItem bus, and with a 2x representation loaded that one is the 64×64,
+ * which the panel then resamples down to its own 22px. Measured on the real bus, three cases:
+ *
+ *   tray.png alone          → 1 pixmap, 32×32
+ *   tray.png + tray@2x.png  → 1 pixmap, 64×64
+ *   a 22px tray.png alone   → 1 pixmap, 22×22
+ *
+ * So 32 is the base: close enough to every panel size that the downscale is invisible, and the same
+ * size this shipped at before. macOS would genuinely benefit from the 2x file, but not at the price
+ * of the platform this app is used on, and the two cannot be separated — the name is what makes
+ * Electron load it, on every platform.
  *
  * Run via `npm run icons` (invoked by the electron:* scripts and CI).
  */
@@ -42,4 +54,3 @@ const trayIcon = read('build/tray.svg');
 render(appIcon, 512, 'build/icon.png');
 render(appIcon, 256, 'electron/appicon.png');
 render(trayIcon, 32, 'electron/tray.png');
-render(trayIcon, 64, 'electron/tray@2x.png');

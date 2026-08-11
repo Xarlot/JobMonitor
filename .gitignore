@@ -14,7 +14,6 @@ build/icon.png
 build/icon.ico
 build/icon.icns
 electron/tray.png
-electron/tray@2x.png
 electron/appicon.png
 
 # Telemetry build-time credentials: the Ably publish key, the receiver public key and the

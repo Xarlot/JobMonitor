@@ -51,11 +51,25 @@ describe('the tray icon', () => {
     }
   });
 
-  it('is rendered at both scales, from the tray source', () => {
+  /**
+   * No `@2x`, and this is the assertion that would otherwise be got wrong twice.
+   *
+   * A 2x file reads as free HiDPI support: `nativeImage.createFromPath` picks it up by name, so it
+   * costs one line. On Linux it makes the icon worse, because Electron publishes exactly **one**
+   * pixmap on the StatusNotifierItem bus and with a 2x representation loaded that one is the 64×64 —
+   * which the panel then resamples down to its own 22px. Measured on the real bus: `tray.png` alone
+   * publishes 32×32, `tray.png` plus `tray@2x.png` publishes 64×64.
+   *
+   * It was added and then removed for exactly that reason, so the absence is asserted rather than
+   * left to be rediscovered.
+   */
+  it('is rendered once, at the base size, from the tray source', () => {
     const script = read('scripts/make-icon.mjs');
     expect(script).toMatch(/render\(trayIcon, 32, 'electron\/tray\.png'\)/);
-    // Without the @2x representation the panel resamples a 32px image and the mark goes soft.
-    expect(script).toMatch(/render\(trayIcon, 64, 'electron\/tray@2x\.png'\)/);
+    // The call, not the string: the comment above it names the file in order to explain its absence,
+    // and a bare substring search fails on the explanation rather than on the mistake.
+    expect(script).not.toMatch(/render\([^)]*tray@2x/);
+    expect(existsSync(join(root, 'electron/tray@2x.png'))).toBe(false);
     expect(script).toMatch(/render\(appIcon, 256, 'electron\/appicon\.png'\)/);
   });
 
@@ -83,12 +97,11 @@ describe('the tray icon', () => {
    * and CI both run. Skipped rather than failed in that case: this file's job is the wiring above,
    * and a red test on a clean checkout would train people to ignore it.
    */
-  const generated = ['electron/tray.png', 'electron/tray@2x.png', 'electron/appicon.png'];
+  const generated = ['electron/tray.png', 'electron/appicon.png'];
   it.skipIf(generated.some((f) => !existsSync(join(root, f))))(
     'produces the sizes it claims to',
     () => {
       expect(pngSize('electron/tray.png')).toEqual({ width: 32, height: 32 });
-      expect(pngSize('electron/tray@2x.png')).toEqual({ width: 64, height: 64 });
       expect(pngSize('electron/appicon.png')).toEqual({ width: 256, height: 256 });
     },
   );
