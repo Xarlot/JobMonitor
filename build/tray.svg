@@ -1,0 +1,23 @@
+<!--
+  The tray icon, which is deliberately not the app icon.
+
+  A tray icon is drawn *on* the panel, not in a tile of its own, so it must carry no background: the
+  app icon's dark rounded square reads as a sticker on a light panel and very nearly vanishes on a
+  dark one, leaving a thin green squiggle floating in the tray. It also spends most of a 16px budget
+  on the tile, so the mark inside it gets about ten pixels and stops being legible at all.
+
+  So: the mark alone, on transparency, scaled up to use the canvas the tile used to occupy. The scale
+  stops at 1.4 rather than filling the frame — the waveform's peak would touch the edge, and panels
+  that add no padding of their own would clip it. The stroke is thickened from the app icon's 1.2 to
+  1.6 for the same reason the scale exists: at 16px the difference between 1.2 and 1.6 is the
+  difference between a mark and a smudge.
+
+  Green on both a light and a dark panel, checked at 16, 22, 24 and 32px. A darker green reads better
+  on light panels and measurably worse on dark ones, which is the wrong trade for a mark that has to
+  work everywhere.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <path d="M3 8h2l1.5-3 2 6L11 8h2" fill="none" stroke="#2da44e" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round"
+        transform="translate(8 8) scale(1.4) translate(-8 -8)"/>
+</svg>

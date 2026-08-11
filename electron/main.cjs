@@ -36,7 +36,20 @@ const { initRunLog, logEvent, readRunLogTail, runLogDir, runLogPath } = require(
 
 const APP_ID = 'com.devexpress.javajobmonitor'; // must match electron-builder appId
 const DIST = path.join(__dirname, '..', 'dist');
+/*
+ * Two icons, not one.
+ *
+ * The tray draws its icon *on* the panel, so it gets the mark alone on transparency
+ * (`build/tray.svg`). Everywhere the icon appears inside a frame of its own — window and taskbar,
+ * notifications, the About dialog — gets the full app tile, because a bare mark there reads as a
+ * missing icon rather than as a minimal one.
+ *
+ * These were the same file until the tray showed it: the tile's dark rounded square looks pasted on
+ * a light panel, all but disappears on a dark one, and at 16px leaves the mark about ten pixels to
+ * be legible in.
+ */
 const TRAY_ICON = path.join(__dirname, 'tray.png');
+const APP_ICON = path.join(__dirname, 'appicon.png');
 const isDev = !app.isPackaged;
 // Set to the Vite dev server (e.g. http://localhost:5173) for live HMR; when
 // unset the app loads the bundled build over app://.
@@ -252,7 +265,7 @@ function createWindow() {
     show: false,
     backgroundColor: '#0d1117',
     autoHideMenuBar: true, // no menu bar (revealed with Alt if a menu existed)
-    icon: fs.existsSync(TRAY_ICON) ? TRAY_ICON : undefined,
+    icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -381,7 +394,7 @@ function showAbout() {
       title: 'About Job Monitor',
       message: 'Job Monitor',
       detail,
-      icon: nativeImage.createFromPath(TRAY_ICON),
+      icon: nativeImage.createFromPath(APP_ICON),
       buttons: ['Open repository', 'Releases', 'Report an issue', 'Close'],
       defaultId: 3,
       cancelId: 3,
@@ -660,7 +673,7 @@ function info(title, message, detail) {
 
 function notify(title, body) {
   try {
-    new Notification({ title, body, icon: TRAY_ICON }).show();
+    new Notification({ title, body, icon: APP_ICON }).show();
   } catch {
     /* notifications unavailable; ignore */
   }
