@@ -61,14 +61,17 @@ SITE="https://management.azure.com/subscriptions/${SUBSCRIPTION}/resourceGroups/
 # ---------------------------------------------------------------------------------------------------
 
 say "Reading the current auth configuration"
-# Reading this resource is a POST to `.../list`, the same shape as app settings — a GET exists only in
-# newer API versions, so it is the fallback rather than the first choice.
+# GET, not the POST `.../list` that app settings use. Reading secrets through a POST is the pattern
+# for settings that contain them; this resource holds only the *name* of the setting carrying the
+# client secret, so it is readable by GET — and answers `Method Not Allowed` to a POST at this API
+# version. The POST stays as a fallback for older ones.
 CFG="$WORK/auth.json"
-if ! az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
+if ! az rest --method get --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" \
      -o json > "$CFG" 2>"$WORK/err"; then
-  echo "  POST .../list failed, trying GET" >&2
+  echo "  GET failed, trying POST .../list" >&2
   cat "$WORK/err" >&2
-  az rest --method get --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" -o json > "$CFG"
+  az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
+    -o json > "$CFG"
 fi
 
 # Printed, not assumed. The whole reason this script is on its fifth version is that each one acted
@@ -140,6 +143,10 @@ fi
 # one — `app setting present: yes`, `referenced by auth: no` — which is invisible from the portal and
 # indistinguishable from a redirect-URI problem when you only see the 401 at the end of the flow.
 say "Checking the client secret"
+# Announced before it runs. This call takes several seconds against a warm subscription and longer
+# against a cold one, and a step that prints only after finishing is indistinguishable from the hang
+# this script produced earlier — which is exactly why the previous run was interrupted here.
+echo "  listing app settings (a few seconds)..."
 HAVE_SETTING="$(az webapp config appsettings list \
   --name "$APP" --resource-group "$RESOURCE_GROUP" \
   --query "[?name=='${SECRET_SETTING}'].name" -o tsv || true)"
