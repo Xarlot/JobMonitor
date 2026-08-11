@@ -17,7 +17,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/javajobmonitor/telemetry-receiver
+  # Lowercase and spelled out rather than built from `github.repository_owner`, which is `DevExpress`:
+  # ghcr rejects any uppercase letter in an image path, and the expression language has no `lower()`.
+  IMAGE: ghcr.io/devexpress/javajobmonitor/telemetry-receiver
 
 jobs:
   test:
@@ -58,6 +60,11 @@ jobs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
+
+      # The default builder uses the `docker` driver, which cannot export a cache — `cache-to` then
+      # fails the build outright rather than degrading to no caching. This switches to
+      # `docker-container`, which can.
+      - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
