@@ -11,49 +11,104 @@
 # front of the process, so there is no unauthenticated code path to get wrong, and access is managed
 # with the same directory as everything else — including revocation, which is the part a hand-rolled
 # login always gets wrong.
+#
+# ## Why this talks to ARM directly
+#
+# The auth configuration is read and written through `az rest` against the `authsettingsV2` resource,
+# not through `az webapp auth`. Four earlier versions of this script died on that command family:
+#
+#   - the v1 and v2 flags have different names for the same settings (`--action` versus
+#     `--unauthenticated-client-action`), and the wrong one fails only once a registration exists,
+#   - `excludedPaths` has no flag at all, and no field in the portal either,
+#   - and finally, once the `authV2` extension installed itself, `az webapp auth show` began
+#     answering `null` for an app whose configuration it had returned correctly the day before.
+#     The CLI says as much — "The behavior of this command has been altered by the following
+#     extension: authV2" — but a command that silently returns nothing is worse than one that fails:
+#     a read-modify-write on `null` produces a document that describes an app with no authentication.
+#
+# The REST contract does not move under us and does not depend on which extensions are installed.
 set -euo pipefail
 
 RESOURCE_GROUP="${RESOURCE_GROUP:-jobmonitor-telemetry-rg}"
 APP="${APP:-jobmonitor-telemetry}"
+API_VERSION="${API_VERSION:-2023-01-01}"
+SECRET_SETTING="MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+CRED_NAME="app-service-easy-auth"
+# Set FORCE_NEW_SECRET=1 to issue a fresh client secret even when one is already wired up — which is
+# what to reach for when sign-in fails and the existing secret has simply expired.
+FORCE_NEW_SECRET="${FORCE_NEW_SECRET:-0}"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
-# `az` asks before installing a command's extension, and it asks on **stderr**. An earlier version of
+# `az` asks before installing a command's extension, and it asks on stderr. An earlier version of
 # this script discarded stderr on its lookups to keep expected "not found" noise down, and the effect
-# was a script that sat silently at a step forever: the question was written to a discarded stream and
-# the answer never came. Nothing here discards stderr any more, and this removes the question as well.
-#
-# So an expected failure now prints. A red "not found" at a lookup step is normal on a first run — the
-# script says what it decided on the line after.
+# was a script that sat silently at a step forever: the question went to a discarded stream and the
+# answer never came. Nothing here discards stderr, and this removes the question as well.
 az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors >/dev/null 2>&1 || true
 
-# App Service's Entra provider needs an app registration to sign people in against, and a tenant to
-# sign them in to. `az webapp auth microsoft update` does not create either — it only points the web
-# app at them — so this did nothing but fail with "Either --issuer or --tenant-id must be specified".
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+chmod 700 "$WORK"
+
+SUBSCRIPTION="$(az account show --query id -o tsv)"
 TENANT_ID="$(az account show --query tenantId -o tsv)"
+ISSUER="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
 REDIRECT="https://${APP}.azurewebsites.net/.auth/login/aad/callback"
+SITE="https://management.azure.com/subscriptions/${SUBSCRIPTION}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Web/sites/${APP}"
+
+# ---------------------------------------------------------------------------------------------------
+# Read the current configuration
+# ---------------------------------------------------------------------------------------------------
+
+say "Reading the current auth configuration"
+# Reading this resource is a POST to `.../list`, the same shape as app settings — a GET exists only in
+# newer API versions, so it is the fallback rather than the first choice.
+CFG="$WORK/auth.json"
+if ! az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
+     -o json > "$CFG" 2>"$WORK/err"; then
+  echo "  POST .../list failed, trying GET" >&2
+  cat "$WORK/err" >&2
+  az rest --method get --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" -o json > "$CFG"
+fi
+
+# Printed, not assumed. The whole reason this script is on its fifth version is that each one acted
+# on a belief about this document instead of on the document.
+echo "  bytes: $(wc -c < "$CFG")"
+echo "  top-level keys: $(jq -c 'keys' "$CFG")"
+echo "  platform.enabled: $(jq -c '.properties.platform.enabled' "$CFG")"
+echo "  unauthenticatedClientAction: $(jq -c '.properties.globalValidation.unauthenticatedClientAction' "$CFG")"
+echo "  redirectToProvider: $(jq -c '.properties.globalValidation.redirectToProvider' "$CFG")"
+echo "  excludedPaths: $(jq -c '.properties.globalValidation.excludedPaths' "$CFG")"
+echo "  clientId: $(jq -r '.properties.identityProviders.azureActiveDirectory.registration.clientId // "unset"' "$CFG")"
+echo "  clientSecretSettingName: $(jq -r '.properties.identityProviders.azureActiveDirectory.registration.clientSecretSettingName // "unset"' "$CFG")"
+
+say "Identity providers before"
+jq -r '.properties.identityProviders // {} | to_entries[]
+       | select((.value | type) == "object")
+       | "  \(.key): enabled=\(if (.value | has("enabled")) then (.value.enabled | tostring) else "unset" end)"
+         + " registration=\(if ((.value.registration.clientId // .value.registration.appId // .value.registration.consumerKey // "") | length) == 0 then "empty" else "set" end)"' \
+   "$CFG" || echo "  (none)"
+
+# ---------------------------------------------------------------------------------------------------
+# The app registration people sign in against
+# ---------------------------------------------------------------------------------------------------
 
 say "Finding or creating the app registration"
-# **The registration the web app is already pointed at wins**, whatever it is called. Looking it up
-# by display name first would find a different one — or none — and then create a second, pointing the
-# app at fresh credentials while the registration people had already consented to sat unused. Asking
-# the web app is the only way to be certain of configuring the one actually in the sign-in path.
-CLIENT_ID="$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query 'identityProviders.azureActiveDirectory.registration.clientId' -o tsv || true)"
-
-if [[ -n "$CLIENT_ID" && "$CLIENT_ID" != "None" ]]; then
-  echo "  already configured on the web app"
-fi
-
-# Then by display name, so a re-run does not leave a second registration behind. `az ad app list`
-# answers empty rather than failing when there is none, hence the `-o tsv` and the empty check.
-if [[ -z "$CLIENT_ID" || "$CLIENT_ID" == "None" ]]; then
+# **The registration already named in the configuration wins**, whatever it is called. Looking it up
+# by display name first can find a different one — or none — and then create a second, pointing the
+# app at fresh credentials while the registration people had already consented to sits unused.
+CLIENT_ID="$(jq -r '.properties.identityProviders.azureActiveDirectory.registration.clientId // ""' "$CFG")"
+if [[ -n "$CLIENT_ID" ]]; then
+  echo "  taken from the auth configuration: $CLIENT_ID"
+else
   CLIENT_ID="$(az ad app list --display-name "$APP" --query '[0].appId' -o tsv || true)"
+  [[ "$CLIENT_ID" == "None" ]] && CLIENT_ID=""
+  [[ -n "$CLIENT_ID" ]] && echo "  found by display name: $CLIENT_ID"
 fi
 
-if [[ -z "$CLIENT_ID" || "$CLIENT_ID" == "None" ]]; then
-  # Directory writes are a separate permission from resource writes: an operator who can create a
-  # web app often cannot create a registration. Say which of the two failed, because the fix is a
+if [[ -z "$CLIENT_ID" ]]; then
+  # Directory writes are a separate permission from resource writes: an operator who can create a web
+  # app often cannot create a registration. Say which of the two failed, because the fix is a
   # different person.
   if ! CLIENT_ID="$(az ad app create \
         --display-name "$APP" \
@@ -62,198 +117,161 @@ if [[ -z "$CLIENT_ID" || "$CLIENT_ID" == "None" ]]; then
         --query appId -o tsv)"; then
     cat >&2 <<EOF
 
-Could not create the app registration. That is a *directory* permission, separate from the ones
-that provisioned the web app, so this may need someone with Application Developer in Entra.
-
-The portal does the same thing in one step and is the easier route here:
-
-  App Service → ${APP} → Authentication → Add identity provider → Microsoft
-  → Create new app registration → Current tenant, single tenant
-  → Restrict access: Require authentication
-  → Unauthenticated requests: HTTP 302 redirect
-
-Then re-run this script: it will find the registration and only set the excluded path.
+Could not create the app registration. That is a *directory* permission, separate from the ones that
+provisioned the web app, so this may need someone with Application Developer in Entra.
 
 EOF
     exit 1
   fi
-  say "Created registration ${CLIENT_ID}"
+  echo "  created: $CLIENT_ID"
 else
-  say "Reusing registration ${CLIENT_ID}"
   az ad app update --id "$CLIENT_ID" --web-redirect-uris "$REDIRECT" --output none
+  echo "  redirect URI confirmed"
 fi
 
-# A freshly created web app can carry legacy `siteAuthSettings` — the v1 shape — even with auth
-# switched off, and every v2 command then refuses with "Cannot use auth v2 commands when the app is
-# using auth v1". `config-version upgrade` converts the settings in place; it is a no-op on an app
-# that is already v2, but asked first so a re-run stays quiet.
-say "Checking the auth configuration version"
-CONFIG_VERSION="$(az webapp auth config-version show \
-  --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query configVersion -o tsv || true)"
+# ---------------------------------------------------------------------------------------------------
+# The client secret
+# ---------------------------------------------------------------------------------------------------
 
-if [[ "$CONFIG_VERSION" == "v1" ]]; then
-  say "Upgrading auth settings from v1 to v2"
-  az webapp auth config-version upgrade \
-    --name "$APP" --resource-group "$RESOURCE_GROUP" --output none
-else
-  say "Already v2 (${CONFIG_VERSION:-unset})"
-fi
-
-say "Pointing ${APP} at it"
-# Unauthenticated requests are redirected to sign in rather than served; the default,
-# AllowAnonymous, would leave the pages open.
-az webapp auth microsoft update \
-  --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --client-id "$CLIENT_ID" \
-  --tenant-id "$TENANT_ID" \
-  --yes \
-  --output none
-
-# Easy Auth signs people in with the authorization code flow, which exchanges the code for a token
-# at `/.auth/login/aad/callback` — and that exchange needs a **client secret**. Without one the sign-in
-# starts correctly, the user authenticates, and the callback answers 401: the failure lands at the end
-# of the flow, where it looks like a redirect-URI or consent problem rather than a missing credential.
-#
-# The portal's "Add identity provider" wizard creates the secret silently, which is why this is easy
-# to miss when the same thing is done with `az webapp auth microsoft update --client-id --tenant-id`:
-# those flags configure everything except the one value the flow cannot work without.
-SECRET_SETTING="MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
-
+# Easy Auth signs people in with the authorization code flow, and exchanges the code for a token at
+# `/.auth/login/aad/callback`. That exchange needs a client secret, and it needs the configuration to
+# *point at* it: an app setting holding a perfectly good secret that nothing references fails exactly
+# like having no secret at all. Both halves are set here, because the observed failure was the second
+# one — `app setting present: yes`, `referenced by auth: no` — which is invisible from the portal and
+# indistinguishable from a redirect-URI problem when you only see the 401 at the end of the flow.
 say "Checking the client secret"
 HAVE_SETTING="$(az webapp config appsettings list \
   --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query "[?name=='${SECRET_SETTING}'].value" -o tsv || true)"
-HAVE_REF="$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query 'identityProviders.azureActiveDirectory.registration.clientSecretSettingName' \
-  -o tsv || true)"
+  --query "[?name=='${SECRET_SETTING}'].name" -o tsv || true)"
+HAVE_REF="$(jq -r '.properties.identityProviders.azureActiveDirectory.registration.clientSecretSettingName // ""' "$CFG")"
 echo "  app setting present: $([[ -n "$HAVE_SETTING" ]] && echo yes || echo no)"
 echo "  referenced by auth:  ${HAVE_REF:-no}"
 
-if [[ -z "$HAVE_SETTING" ]]; then
-  say "Creating a client secret"
-  # --append, emphatically: without it `credential reset` **deletes every existing credential** on
-  # the registration first. Nothing else uses this one today, but a command whose failure mode is
-  # "silently revoked something else" should not be one flag away from that.
+if [[ -z "$HAVE_SETTING" || -z "$HAVE_REF" || "$FORCE_NEW_SECRET" == "1" ]]; then
+  say "Issuing a client secret"
+  # --append, emphatically: without it `credential reset` **deletes every existing credential** on the
+  # registration first. A command whose failure mode is "silently revoked something else" should not
+  # be one flag away from that.
   #
-  # Captured into a variable and written through a file, never onto a command line: `az` invocations
-  # appear in shell history and in `ps` output while they run.
+  # A new secret rather than trusting the existing app setting, because its value cannot be read back
+  # to check — and an expired or mismatched secret produces the identical 401. The old one stays valid
+  # and simply goes unused.
   APP_SECRET="$(az ad app credential reset --id "$CLIENT_ID" --append \
-    --display-name app-service-easy-auth --years 2 --query password -o tsv)"
+    --display-name "$CRED_NAME" --years 2 --query password -o tsv)"
 
-  SETTINGS="$(mktemp)"
-  chmod 600 "$SETTINGS"
-  printf '[{"name":"%s","value":"%s","slotSetting":false}]' "$SECRET_SETTING" "$APP_SECRET" > "$SETTINGS"
+  # Written through a file: `az` invocations appear in shell history and in `ps` output while running.
+  SETTINGS="$WORK/settings.json"
+  : > "$SETTINGS"; chmod 600 "$SETTINGS"
+  jq -n --arg n "$SECRET_SETTING" --arg v "$APP_SECRET" \
+     '[{name: $n, value: $v, slotSetting: false}]' > "$SETTINGS"
   az webapp config appsettings set \
     --name "$APP" --resource-group "$RESOURCE_GROUP" \
     --settings "@$SETTINGS" --output none
-  rm -f "$SETTINGS"
   unset APP_SECRET
-  echo "  created, expires in 2 years"
+  echo "  issued, stored in ${SECRET_SETTING}, expires in 2 years"
 else
-  echo "  reusing the existing secret"
+  echo "  already wired up — run again with FORCE_NEW_SECRET=1 to replace it"
 fi
 
-# Applied by reading the whole v2 configuration, editing it and writing it back, rather than through
-# named flags. Three attempts at this script died on spellings that differ between auth v1 and v2
-# (`--action` versus `--unauthenticated-client-action`, and values to match), and `excludedPaths` has
-# no flag *or* portal field at all — it exists only in the configuration object. Read-modify-write
-# touches exactly the properties it means to and cannot be defeated by a renamed option.
-#
-# What `excludedPaths` covers is the ingest route. The scheduled trigger is a GitHub Actions job with
-# no Entra identity, so it cannot pass an interactive sign-in; it carries its own bearer token
-# instead — and it is not an ingestion endpoint in any case, it accepts no batch, only a nudge to go
-# and read Ably.
-say "Requiring authentication, and excluding the ingest route"
-CONFIG="$(mktemp)"
-az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" -o json > "$CONFIG"
+# ---------------------------------------------------------------------------------------------------
+# Write the configuration
+# ---------------------------------------------------------------------------------------------------
 
-# Printed rather than assumed. An earlier version of this script left `redirectToProvider` unset and
-# said so in a comment: "with exactly one identity provider configured there is nothing to choose
-# between". The app in fact had **seven** enabled, six of them with empty registrations — App Service
-# creates the whole set — so there was everything to choose between and nothing to choose from, and
-# Easy Auth answered 401 to every path including its own `/.auth/login/*` endpoints. A blanket 401
-# that also covers a provider name which does not exist is the signature of that state.
-say "Identity providers before"
-# `select(has("enabled"))` rather than `type == "object"` keeps this off `customOpenIdConnectProviders`,
-# a map of providers rather than a provider. And the value is interpolated directly rather than through
-# `// "unset"`: jq's `//` treats **false** as absent, so the alternative operator would report every
-# disabled provider as unset — precisely the state this listing exists to show.
-jq -r '.identityProviders // {} | to_entries[]
-       | select((.value | type) == "object" and (.value | has("enabled")))
-       | "  \(.key): enabled=\(.value.enabled) registration=\(
-            if (.value.registration.clientId // "") == "" then "empty" else "set" end)"' "$CONFIG"
-
-# `clientSecretSettingName` is set in the same read-modify-write, because a secret that exists as an
-# app setting but is not referenced from the auth configuration produces exactly the same 401.
+say "Requiring authentication, naming the provider, excluding the ingest route"
+# Every field that matters is set explicitly rather than relied upon to be present, so this produces a
+# correct document whether the app arrives configured, half-configured, or empty.
 #
-# `redirectToProvider` names the one to send people to, and the others are switched off rather than
-# deleted — reversible, and a disabled provider with an empty registration is inert either way. The
-# `has("enabled")` guard keeps this off `customOpenIdConnectProviders`, which is a map of providers
-# rather than a provider, and would otherwise acquire a meaningless `enabled` field.
-jq --arg secretSetting "$SECRET_SETTING" \
-   '.platform.enabled = true
+# `redirectToProvider` is one of them. An earlier version left it unset, on the reasoning that "with
+# exactly one identity provider configured there is nothing to choose between" — an assumption about
+# the intended configuration rather than the real one. When `RedirectToLoginPage` has no unambiguous
+# destination, Easy Auth answers 401 to every path *including its own* `/.auth/login/*` endpoints, and
+# a blanket 401 that also covers a provider name which does not exist is the signature of that state.
+#
+# Providers other than this one are disabled if they were enabled, and only then — nothing is deleted,
+# so it is reversible, and a provider with an empty registration is inert either way.
+# `customOpenIdConnectProviders` is excluded by name: it is a map of providers rather than a provider,
+# and would otherwise acquire a meaningless `enabled` field.
+BODY="$WORK/body.json"
+jq --arg clientId "$CLIENT_ID" \
+   --arg issuer "$ISSUER" \
+   --arg secretSetting "$SECRET_SETTING" \
+   '(.properties // {})
+    | .platform.enabled = true
+    | .globalValidation.requireAuthentication = true
     | .globalValidation.unauthenticatedClientAction = "RedirectToLoginPage"
     | .globalValidation.redirectToProvider = "azureActiveDirectory"
     | .globalValidation.excludedPaths = ["/api/ingest"]
+    | .login.tokenStore.enabled = true
+    | .identityProviders.azureActiveDirectory.enabled = true
+    | .identityProviders.azureActiveDirectory.registration.clientId = $clientId
+    | .identityProviders.azureActiveDirectory.registration.openIdIssuer = $issuer
     | .identityProviders.azureActiveDirectory.registration.clientSecretSettingName = $secretSetting
     | .identityProviders |= with_entries(
-        if .key == "azureActiveDirectory" then .
-        elif (.value | type) == "object" and (.value | has("enabled")) then .value.enabled = false
-        else . end)' \
-   "$CONFIG" > "${CONFIG}.new"
+        if (.key == "azureActiveDirectory" or .key == "customOpenIdConnectProviders") then .
+        elif ((.value | type) == "object") and (.value.enabled == true) then .value.enabled = false
+        else . end)
+    | {properties: .}' "$CFG" > "$BODY"
 
-# Checked before it is applied. This writes the *entire* auth configuration in one call, so a jq
-# expression that produced something unexpected would not fail loudly — it would hand App Service a
-# valid document describing an app with no authentication on it. `set -e` covers jq exiting non-zero;
-# this covers jq exiting zero with the wrong thing.
-if ! jq -e '.platform.enabled == true
-            and (.globalValidation.redirectToProvider == "azureActiveDirectory")
-            and ((.identityProviders.azureActiveDirectory.registration.clientId // "") | length > 0)' \
-     "${CONFIG}.new" > /dev/null; then
-  echo "Refusing to apply: the edited configuration is missing something it must have." >&2
-  echo "Nothing was changed. The document is at ${CONFIG}.new if you want to look." >&2
+# Checked before it is applied. This replaces the *entire* auth configuration in one call, so a jq
+# expression that succeeded while producing the wrong shape would not fail loudly — it would hand
+# App Service a valid document describing an app with no authentication on it. `set -e` covers jq
+# exiting non-zero; this covers jq exiting zero with the wrong thing.
+if ! jq -e '.properties.platform.enabled == true
+            and (.properties.globalValidation.requireAuthentication == true)
+            and (.properties.globalValidation.redirectToProvider == "azureActiveDirectory")
+            and ((.properties.globalValidation.excludedPaths // []) | index("/api/ingest") != null)
+            and ((.properties.identityProviders.azureActiveDirectory.registration.clientId // "") | length > 0)
+            and ((.properties.identityProviders.azureActiveDirectory.registration.clientSecretSettingName // "") | length > 0)' \
+     "$BODY" > /dev/null; then
+  echo "Refusing to apply: the document being sent is missing something it must have." >&2
+  jq -c '.properties | {platform, globalValidation, aad: .identityProviders.azureActiveDirectory}' "$BODY" >&2
   exit 1
 fi
 
-az webapp auth set \
-  --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --body "@${CONFIG}.new" \
+az rest --method put \
+  --url "${SITE}/config/authsettingsV2?api-version=${API_VERSION}" \
+  --headers Content-Type=application/json \
+  --body "@$BODY" \
   --output none
-rm -f "$CONFIG" "${CONFIG}.new"
-
-say "Verifying"
-# `secret` reports the setting *name*, never a value — that is all the configuration holds.
-state=$(az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" \
-  --query '{enabled:platform.enabled, action:globalValidation.unauthenticatedClientAction, redirectTo:globalValidation.redirectToProvider, excluded:globalValidation.excludedPaths, clientId:identityProviders.azureActiveDirectory.registration.clientId, secret:identityProviders.azureActiveDirectory.registration.clientSecretSettingName}' -o json)
-echo "  $state"
-
-say "Identity providers after"
-az webapp auth show --name "$APP" --resource-group "$RESOURCE_GROUP" -o json \
-  | jq -r '.identityProviders // {} | to_entries[]
-           | select((.value | type) == "object" and (.value | has("enabled")))
-           | "  \(.key): enabled=\(.value.enabled)"'
 
 say "Restarting so the new settings are picked up"
 az webapp restart --name "$APP" --resource-group "$RESOURCE_GROUP" --output none
 
+# ---------------------------------------------------------------------------------------------------
+# Read it back
+# ---------------------------------------------------------------------------------------------------
+
+say "Verifying — read back from ARM, not from what we sent"
+az rest --method post --url "${SITE}/config/authsettingsV2/list?api-version=${API_VERSION}" \
+  -o json > "$WORK/after.json"
+jq -r '.properties
+       | "  platform.enabled:        \(.platform.enabled)",
+         "  requireAuthentication:   \(.globalValidation.requireAuthentication)",
+         "  unauthenticatedAction:   \(.globalValidation.unauthenticatedClientAction)",
+         "  redirectToProvider:      \(.globalValidation.redirectToProvider)",
+         "  excludedPaths:           \(.globalValidation.excludedPaths | tostring)",
+         "  clientId:                \(.identityProviders.azureActiveDirectory.registration.clientId)",
+         "  clientSecretSettingName: \(.identityProviders.azureActiveDirectory.registration.clientSecretSettingName)",
+         "  openIdIssuer:            \(.identityProviders.azureActiveDirectory.registration.openIdIssuer)"' \
+   "$WORK/after.json"
+
+say "Identity providers after"
+jq -r '.properties.identityProviders // {} | to_entries[]
+       | select((.value | type) == "object")
+       | "  \(.key): enabled=\(if (.value | has("enabled")) then (.value.enabled | tostring) else "unset" end)"' \
+   "$WORK/after.json"
+
 cat <<EOF
 
-Authentication enabled. Confirm it from outside — 401 or a redirect to login, not a 200:
+Now sign in **in a browser, in a private window**. Stale .auth cookies produce their own 401s and are
+easy to mistake for the real thing.
+
+From the command line, 401 is the expected answer and not a fault: Easy Auth only redirects requests
+that look like a browser's, so the same state reads as a 302 in a browser and a 401 under curl. What
+would be wrong is a 200 — that would mean the pages are open.
 
   curl -s -o /dev/null -w '%{http_code}\\n' https://${APP}.azurewebsites.net/
 
-A 200 means the pages are still open and something above did not apply. 401 is what you want from
-curl: Easy Auth only redirects requests that look like a browser's, so a 302 appears in a browser
-and a 401 on the command line — the same state, reported two ways.
-
-Then sign in **in a browser**, which is the only way to test the half that curl cannot reach. If it
-ends at /.auth/login/aad/callback with a 401, the code-for-token exchange failed, and a missing or
-expired client secret is the first thing to check.
-
-That secret expires in two years. When it does, sign-in breaks for everyone at once while the app
-itself keeps running perfectly — re-running this script issues a new one.
-
-To restrict further to specific people or a group, assign users to the app registration in
-Entra ID and set "User assignment required" on the enterprise application.
+The client secret expires in two years. When it does, sign-in breaks for everyone at once while the
+app itself keeps serving perfectly — re-run this script with FORCE_NEW_SECRET=1 to issue another.
 EOF
