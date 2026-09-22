@@ -138,6 +138,29 @@ const ANALYSIS =
   'Pull the diff artifacts and compare the actual PDF against the baseline.\n' +
   'If the refactor changed `visualtests/baseline/`, regenerate the three affected pages.\n';
 
+/**
+ * The quick read's reply: the same prose, plus the records it is now asked for.
+ *
+ * Shorter than {@link FAILURE_CAUSE} and sourced from the log, which is the honest difference
+ * between the two tasks — this pass has no tools, so it lists what the log named and the third
+ * failure, whose name is only in the JUnit XML, is not among them. A shot showing both lists
+ * identical would imply the artifact pass buys nothing.
+ */
+const QUICK_ANALYSIS = `${ANALYSIS}
+<<<FAILURES>>>
+source: the job log
+failed: 3
+
+- kind: assertion
+  what: compareExportToPdfPdfs
+  group: com.example.reporting.ExportToPdfTests
+  message: Expected 0 diffs but got 3
+
+- kind: assertion
+  what: exportsInvoiceWithEmbeddedFonts
+  group: com.example.reporting.ExportToPdfTests
+  message: expected: <0> but was: <3> (page 2, page 5, page 6)`;
+
 /** A desktop bridge that answers instantly, so the shots never wait on a model. */
 function installBridge(data) {
   window.desktop = {
@@ -203,6 +226,7 @@ async function newPage({ width = 1400, height = 950, slow = null } = {}) {
     log: REWRITTEN_LOG,
     cause: FAILURE_CAUSE,
     marks: LOG_MARKS,
+    quick: QUICK_ANALYSIS,
     analysis: ANALYSIS,
     slow,
   });
