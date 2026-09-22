@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FAILURES_MARKER,
   failureItemCount,
+  failuresBlock,
   groupItems,
   parseFailureCause,
 } from '../lib/failureCause';
@@ -221,5 +222,50 @@ describe('groupItems', () => {
     const groups = groupItems(parseFailureCause('- what: one\n\n- what: two\n')!.items);
     expect(groups).toHaveLength(1);
     expect(groups[0].group).toBeNull();
+  });
+});
+
+describe('failuresBlock', () => {
+  /**
+   * The quick read answers with prose *and* records, and the two are kept apart from here on:
+   * the prose goes into the bug report, the records into the card. Slicing at the marker is what
+   * keeps a suggested fix from ending in a page of `kind:` lines.
+   */
+  it('slices the records out of a reply that also carried prose', () => {
+    const reply = [
+      '<<<PROBLEM>>>',
+      'The export test broke.',
+      '<<<SOLUTION>>>',
+      'Fix the rounding.',
+      FAILURES_MARKER,
+      'source: the job log',
+      '- kind: assertion',
+      '  what: exportsRotatedPage',
+      '  message: Expected 0 diffs but got 3',
+    ].join('\n');
+
+    const block = failuresBlock(reply);
+    expect(block).not.toBeNull();
+    expect(block).not.toMatch(/Fix the rounding/);
+    // Kept verbatim, marker and all, so the stored text parses on its own a week later.
+    expect(block?.startsWith(FAILURES_MARKER)).toBe(true);
+
+    const cause = parseFailureCause(block as string);
+    expect(cause?.items).toHaveLength(1);
+    expect(cause?.items[0].what).toBe('exportsRotatedPage');
+    expect(cause?.source).toBe('the job log');
+  });
+
+  it('has nothing to return when the reply carried no records', () => {
+    expect(failuresBlock('<<<PROBLEM>>>\nBroke.\n<<<SOLUTION>>>\nFix it.')).toBeNull();
+  });
+
+  /**
+   * The brief tells it to write the marker and nothing else when the log names no individual
+   * failures — which is the common case on a sharded suite. Storing that bare marker would have
+   * the card claiming an answer that has no content.
+   */
+  it('has nothing to return for a marker with no records under it', () => {
+    expect(failuresBlock(`<<<SOLUTION>>>\nFix it.\n${FAILURES_MARKER}\n\n`)).toBeNull();
   });
 });

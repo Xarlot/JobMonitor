@@ -85,6 +85,17 @@ export interface CachedAnalysis {
   /** The old name for {@link document}. Read only, so week-old entries still load. */
   rewrittenLog?: string;
   /**
+   * The `<<<FAILURES>>>` records from a reply that also carried prose — the quick read's list
+   * of what actually broke.
+   *
+   * Stored as the raw block rather than as parsed items, for the same reason {@link document}
+   * is: the parser is tolerant and still improving, and a week-old entry should be read by
+   * today's version of it. Stored apart from `problem`/`solution` because it is a different
+   * shape with a different renderer, and splicing it back into the prose is exactly the bug
+   * that put a page of `kind:` lines into a bug report's suggested fix.
+   */
+  failures?: string;
+  /**
    * Why an unfinished run stopped, and the CLI session to continue it from.
    *
    * Stored so a run that ran out of time is still resumable after a restart — the

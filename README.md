@@ -307,7 +307,7 @@ both badly — either too slow to run five times, or too shallow to be worth run
 
 | | **What failed** | **Quick read** | **Deep analysis** | **Who broke it** |
 |---|---|---|---|---|
-| Answers | **which things broke** | what failed | why it failed | **which commit, and whose** |
+| Answers | **which things broke** | what failed, and which tests | why it failed | **which commit, and whose** |
 | Time | under a minute or two | about a minute | a few minutes | a few minutes |
 | Model | Sonnet, medium | Sonnet, medium | Opus, high | Opus, medium |
 | Reads | the log, then the run's test report | the log already fetched | the run's log, artifacts, workflow, diff | the branch's run history |
@@ -378,6 +378,37 @@ failure count, branches and **links to the runs they failed in**.
 The quick read is told it has a **one-minute budget** and must answer from the log in front of it —
 no fetching, no asking for more. If the log doesn't say what broke, it says exactly that and names the
 one thing worth looking at next, which is a useful answer in a minute and the honest one.
+
+**It also lists the failing tests, when the log names them.** The names are usually right there — a run
+of `FAILED` lines, a pytest short summary, a compiler's errors — and reading them out is most of the
+value of the fastest button: they fill the band at the top of the report pane, so the description of a
+red job carries the failing test and its assertion without anybody opening a log. It lists only what the
+log actually says, and when the log names none — a sharded Gradle task reports that it failed and keeps
+the names in a report this pass can't reach — it says so instead of promoting `Process completed with
+exit code 1` into a list. That is when *What failed* is worth a click: it has the tools to go and read
+the artifact.
+
+**And when the log genuinely hasn't got them, it says so and says where they are.** A Gradle test
+task prints no per-test output by default — all that reaches the log is `There were failing tests.
+See the report at: …/build/reports/tests/test/index.html`. Every honest reading of that job then
+reports that it cannot see a test name, which is true and useless. So the app reads the runner's own
+sentence and puts it on the band: *the log doesn't name the failing tests — Gradle wrote them to
+`…/build/reports/tests/test`, which is in the run's artifacts*, with the button relabelled **Read the
+test report**, because that is the one click that can answer. The same line goes into the pasted bug
+report. Gradle, Maven and `dotnet test` are recognised; pytest and Jest print their own failures and
+are left alone.
+
+That is also why the annotation section is no longer always called *Failed tests*. GitHub files a
+job-level failure against `.github` with the workflow's line number, so a shard's report used to open
+with *Failed tests (2)* over `Process completed with exit code 1`. When nothing in the list points at
+a source file it is called what it is: *Reported by the workflow*.
+
+Getting those names into the answer meant getting them into the question. A log too big to send whole is
+trimmed to its head and its tail, which is right for a step that died on one exception and wrong for a
+test task that prints each failure and then thousands of lines of other output — the failures were being
+cut out of the middle, and the answer came back as "the log doesn't say which tests failed" about a log
+that said so plainly. The trim now keeps the lines from the middle that name a failure, using the same
+judgement the log viewer colours them with.
 
 The deep analysis follows a **skill** — `.claude/skills/failure-triage/` — rather than an ad-hoc prompt.
 It stays on the job you asked about instead of surveying the pull request, opens a neighbouring job only

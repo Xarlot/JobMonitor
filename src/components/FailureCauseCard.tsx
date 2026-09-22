@@ -32,6 +32,7 @@ import {
   type FailureItemKind,
 } from '../lib/failureCause';
 import type { ClaudeAnalysis } from '../lib/claudePrompt';
+import { describeTestReportHint, type TestReportHint } from '../lib/testReportHint';
 import { subtleScrollbar } from '../lib/scrollbar';
 import styles from './FailureCauseCard.module.css';
 import { Icon } from './Icon';
@@ -155,6 +156,8 @@ export function FailureCauseCard({
   analysis,
   running,
   error,
+  searched,
+  reportHint,
   inReport,
   onFind,
   onToggleInReport,
@@ -171,6 +174,26 @@ export function FailureCauseCard({
   analysis: ClaudeAnalysis | null;
   running: boolean;
   error: string | null;
+  /**
+   * Whether the pass that can read the run's artifacts has actually run.
+   *
+   * Separate from `cause` being present, because the quick read now fills this band too and the
+   * two lists are not equivalent: the quick read sees only the log, so when a sharded suite keeps
+   * its test names in a JUnit XML its list is short or empty. The button therefore offers to look
+   * *further* rather than to look *again*, which is the difference between a useful click and one
+   * that repeats work.
+   */
+  searched: boolean;
+  /**
+   * The runner's own statement that it kept the test names out of the log.
+   *
+   * Shown when there is nothing to list, because "no failing tests" is then the wrong thing for
+   * this band to imply: a Gradle task that writes its results to `build/reports` and says so is
+   * not a job without failing tests, it is a job whose failing tests are one artifact away. The
+   * annotations cannot say that, and the quick read — which can only read the log — correctly
+   * reports that it does not know.
+   */
+  reportHint: TestReportHint | null;
   inReport: boolean;
   onFind: () => void;
   onToggleInReport: () => void;
@@ -180,6 +203,14 @@ export function FailureCauseCard({
   const items = cause?.items ?? [];
   const counted = cause ? failureItemCount(cause) : 0;
   const hidden = counted - items.length;
+  /**
+   * The pointer is worth showing only while there is no list *and* nobody has been to look.
+   *
+   * Once the pass that reads the run's artifacts has run and still has nothing, pointing at the
+   * report is worse than silence: that is the step it just took, and repeating it as advice
+   * contradicts the answer sitting next to it.
+   */
+  const pointer = items.length === 0 && !running && !searched ? reportHint : null;
 
   return (
     <div className={styles.card}>
@@ -215,13 +246,30 @@ export function FailureCauseCard({
           </>
         )}
         {!running && (
-          <Button size="small" leadingVisual={cause ? SyncIcon : SearchIcon} onClick={onFind}>
-            {cause ? 'Look again' : 'Find out'}
+          <Button
+            size="small"
+            leadingVisual={searched ? SyncIcon : SearchIcon}
+            onClick={onFind}
+          >
+            {/*
+              The label names the step the reader has not taken. "Look again" after a pass that
+              only read the log would send them round the same loop; "Read the test report" is
+              the one action that can answer, and it is worth saying so on the button.
+            */}
+            {searched
+              ? 'Look again'
+              : pointer
+                ? 'Read the test report'
+                : items.length > 0
+                  ? 'Look in the artifacts'
+                  : 'Find out'}
           </Button>
         )}
       </div>
 
       {error && !running && <Text className={styles.error}>{error}</Text>}
+
+      {pointer && <Text className={styles.pointer}>{describeTestReportHint(pointer)}</Text>}
 
       {/*
         A cause with no items is a real answer — an infrastructure failure often has nothing to

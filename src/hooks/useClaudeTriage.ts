@@ -81,6 +81,7 @@ import {
   type ClaudeAnalysis,
   type ClaudeDepth,
 } from '../lib/claudePrompt';
+import { failuresBlock } from '../lib/failureCause';
 import { analysisKey, claudeAnalysisCache } from '../storage/failureCaches';
 import type { Annotation } from '../api/types';
 import type { FailedJobRef } from '../lib/failures';
@@ -114,6 +115,11 @@ export interface TriageState {
    * sections: the rewritten log, and the blame report.
    */
   document: string | null;
+  /**
+   * The `<<<FAILURES>>>` records, for a prose task that was also asked for them — today the
+   * quick read. Raw text, parsed by `parseFailureCause` at the point of use.
+   */
+  failures: string | null;
   /** The reply as it streams in — shown live while `running`. */
   partial: string;
   /** What Claude has been doing: most recent tool calls, newest last. */
@@ -138,6 +144,7 @@ export const IDLE_TRIAGE: TriageState = {
   sessionId: null,
   inReport: false,
   document: null,
+  failures: null,
   partial: '',
   activity: [],
   startedAt: null,
@@ -307,6 +314,7 @@ export function useClaudeTriage(): ClaudeTriage {
         // `rewrittenLog` is the old name; entries written under it are still in the
         // week-long cache and should keep working until they expire.
         document: cached.document ?? cached.rewrittenLog ?? null,
+        failures: cached.failures ?? null,
         // Restored too, so a reopened analysis still shows what produced it and how far
         // that evidence reached — and can still be continued if it never finished.
         activity: cached.activity ?? [],
@@ -517,13 +525,22 @@ export function useClaudeTriage(): ClaudeTriage {
         const document = returnsDocument(depth);
         const rewritten = document ? result.reply.trim() : null;
         const analysis = document ? null : parseClaudeAnalysis(result.reply);
+        // A prose task may have been asked for the records too — see `returnsFailureRecords`.
+        // Sliced off here rather than in the view so the prose and the records are never the
+        // same string twice, and so a reply that carried both survives the week-long cache as
+        // both.
+        const failures = document ? null : failuresBlock(result.reply);
 
-        // The trail goes in with the result — see CachedAnalysis.activity.
-        if (analysis || rewritten) {
+        // The trail goes in with the result — see CachedAnalysis.activity. `failures` counts as a
+        // result of its own: a reply that produced records but missed a prose marker is reported
+        // as malformed, and the records it did produce should still survive a remount rather than
+        // showing on screen until the component unmounts and then silently vanishing.
+        if (analysis || rewritten || failures) {
           claudeAnalysisCache.set(analysisKey(failure.key, depth), {
             problem: analysis?.problem ?? '',
             solution: analysis?.solution ?? '',
             document: rewritten ?? undefined,
+            failures: failures ?? undefined,
             activity: current.activity,
             narration: current.partial,
             incompleteReason: result.incompleteReason,
@@ -541,6 +558,7 @@ export function useClaudeTriage(): ClaudeTriage {
             requestId: null,
             analysis,
             document: rewritten,
+            failures,
             incompleteReason: result.incompleteReason ?? null,
             sessionId: result.sessionId ?? null,
             logTruncated: result.logTruncated,

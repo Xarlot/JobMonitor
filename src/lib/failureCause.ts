@@ -76,6 +76,26 @@ export interface FailureCause {
 
 export const FAILURES_MARKER = '<<<FAILURES>>>';
 
+/**
+ * The record block out of a reply that also carried prose.
+ *
+ * The quick read answers with the two prose sections *and* these records, and the three are
+ * kept apart from there on: the prose goes into the bug report, the records into the card. This
+ * returns the records verbatim — marker included, so the text stands on its own — for storing
+ * beside the analysis and parsing at the point of use, which is what lets a result cached last
+ * Tuesday be read by today's parser.
+ *
+ * Null when the marker is absent, and equally when nothing follows it: a model told to write
+ * the marker and no records when the log names none does exactly that, and storing a lone
+ * marker would have the card reporting an answer it does not have.
+ */
+export function failuresBlock(reply: string): string | null {
+  const at = reply.indexOf(FAILURES_MARKER);
+  if (at === -1) return null;
+  const block = reply.slice(at).trim();
+  return block.length > FAILURES_MARKER.length ? block : null;
+}
+
 /** Hard ceiling on records kept, so a runaway reply can't fill the pane or the cache. */
 const MAX_ITEMS = 300;
 /** Messages are meant to be one decisive line; anything longer is a pasted stack trace. */

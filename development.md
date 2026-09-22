@@ -1042,8 +1042,8 @@ the deltas are for display.
 
 ### Why the model writes prose only
 
-`src/lib/claudePrompt.ts` asks for exactly two sections behind sentinel markers — the problem
-statement and the suggested fix — and nothing else. Every link, SHA, workflow name and test name in
+`src/lib/claudePrompt.ts` asks for two prose sections behind sentinel markers — the problem statement
+and the suggested fix — and nothing else beyond them. Every link, SHA, workflow name and test name in
 the finished report comes from data the app already fetched, and the prompt says outright not to
 invent any. The reason is practical: a bug report carrying a confident, wrong URL is worse than one
 carrying none, and supplying a plausible link is precisely what a model does when the prose calls for
@@ -1055,6 +1055,81 @@ Markers rather than JSON because the payload is multi-paragraph Markdown full of
 newlines, which survives a marker split far more reliably than a model escaping it into JSON.
 `parseClaudeAnalysis` is deliberately lenient about preambles and a missing section, since throwing
 away a slow, billable call over a formatting slip would be the wrong trade.
+
+### The quick read answers with prose *and* records
+
+The quick pass is the button people actually press first, and it was answering only half the question:
+prose about a failure whose test names were sitting unread in the same prompt. So it now returns a
+**third section** — the `<<<FAILURES>>>` records, the same format `cause` returns — and one call fills
+both the paragraph and the list at the top of the report pane.
+
+Who is held to which contract is a function, `returnsFailureRecords`, beside `returnsDocument`, because
+three places have to agree about it: the built-in brief, the custom-prompt path (an override replaces
+the wording, never the contract, so a custom quick prompt must be handed the three-section one) and the
+test. Only `quick` takes it — `deep` has tools, and `cause` is the task briefed to spend them on this
+question, so asking a tool-using pass for a log-only list would be asking it for the weaker answer.
+
+Three consequences worth knowing before editing:
+
+- **`parseClaudeAnalysis` bounds each section by the next marker**, not by the end of the reply. Taking
+  "the solution runs to the end" on trust put a page of `kind:`/`what:` lines into the suggested fix,
+  on screen and then in whatever bug report was pasted from it.
+- **The records are stored apart from the prose**, as `CachedAnalysis.failures` — the raw block, marker
+  included, sliced out by `failuresBlock` and parsed at the point of use. Same reason `document` is
+  stored verbatim: the parser is tolerant and still improving, and a week-old entry should be read by
+  today's version of it.
+- **The card prefers `cause` when both exist.** `cause` has tools and goes to the run's test report;
+  the quick read only ever sees the log it was handed. Its button therefore reads *Look in the
+  artifacts* rather than *Look again*, which is the difference between a useful click and a repeated
+  one, and the *Add to the report* tick is written against whichever task produced the list.
+
+The brief's most important line is the escape hatch: **when the log does not name the individual
+failures, write the marker and nothing under it.** A sharded Gradle task reports only that it failed and
+keeps the names in a report this pass cannot reach. A model with no way to say so answers by promoting
+`Process completed with exit code 1` into a record — which is the annotation noise the whole feature
+exists to replace.
+
+### When the log has no names, read the runner's sentence rather than guessing
+
+`src/lib/testReportHint.ts`. A Gradle test task prints **no per-test output by default**: the log
+carries `Execution failed for task ':x:test'` and `There were failing tests. See the report at:
+file:///…/build/reports/tests/test/index.html`, and not one test name. Everything downstream then
+reports what it can see and is right to — the check-run annotations say `Process completed with exit
+code 1`, the quick read answers that the log does not name the failures — and the reader is left with
+a screen that looks like nothing failed on a job where two things did.
+
+The runner's own sentence is the answer, and it is a fixed string. So it is matched locally, like the
+highlighter and for the same reasons: documented output, instant, free, identical every time. The
+hint feeds three places from one definition (`describeTestReportHint`, so the wording cannot drift):
+the band's pointer line, its button — **Read the test report** rather than *Find out*, because that
+is the only click that can answer — and the pasted bug report, whose reader hits the same dead end.
+
+Deliberately narrow: only runners **known** to withhold the names. Gradle, Maven's surefire pointer
+and VSTest's TRX path. A pytest or Jest log carries its own failures, and telling that reader the
+detail is elsewhere would send them after an artifact they do not need — a false sentence on the one
+screen this is all meant to make trustworthy.
+
+The matching heading fix is in `buildFailureReport`: GitHub files a job-level failure against
+`.github` with the workflow's line number, so `namesSource` decides whether a list of annotations may
+be called *Failed tests* at all. When none of them points at a source file it is *Reported by the
+workflow* — the same rename the extracted list already triggers, for the same reason.
+
+### `trimLog` keeps the failure lines out of the middle it drops
+
+The quick pass sees exactly one log: the app's own, trimmed to `MAX_LOG_CHARS` (60k) with the head kept
+for context and the tail for the failure. That split is true of a step that died on one exception and
+false of a test task, which prints each failure as it happens and then thousands of lines of other
+output after it — so the model was handed a summary saying the task failed and nothing naming what, and
+reported that the log did not say which tests failed about a log that said so plainly, a few hundred
+thousand characters above the cut.
+
+So a quarter of the budget is held back, and `rescueFailureLines` spends it on the lines in the dropped
+middle that the **highlighter** classifies as `failure` or `error` — plus the two lines after each, since
+an assertion is often `expected: <0>` then `but was: <3>` and half a comparison is worse than none.
+Reusing `highlightLogLine` rather than keeping a second failure vocabulary here means a line the reader
+sees coloured red is a line the model was shown. Runs are kept in log order with an ellipsis between
+non-adjacent ones, so what arrives is still a log. When nothing is rescued the reserved budget goes back
+to the tail, so a log with no failures in its middle gets exactly the head/tail cut it always did.
 
 ### Security posture
 

@@ -19,6 +19,7 @@
 
 import type { Annotation } from '../api/types';
 import { FAILURES_MARKER } from './failureCause';
+import { highlightLogLine, type LogLineKind } from './logHighlight';
 import { failureAnnotations } from './failureReport';
 import type { FailureOrigin } from './failures';
 import { MARKS_MARKER } from './logMarks';
@@ -57,6 +58,17 @@ export type ClaudeDepth = 'quick' | 'deep' | 'log' | 'blame' | 'cause' | 'marks'
  */
 export function returnsDocument(depth: ClaudeDepth): boolean {
   return depth === 'log' || depth === 'blame' || depth === 'cause' || depth === 'marks';
+}
+
+/**
+ * Which prose task is also asked for the `<<<FAILURES>>>` records.
+ *
+ * A function beside {@link returnsDocument} for the same reason: the brief, the custom-prompt
+ * path and the test all have to agree about which contract a task is held to, and a boolean
+ * spelt out in three places drifts.
+ */
+export function returnsFailureRecords(depth: ClaudeDepth): boolean {
+  return depth === 'quick';
 }
 
 /** What the model is allowed to know about the failure. */
@@ -106,14 +118,96 @@ export interface ClaudePromptInput {
 const MAX_LOG_CHARS = 60_000;
 const HEAD_SHARE = 0.25;
 
+/**
+ * How much of the budget is held back for lines rescued out of the dropped middle.
+ *
+ * "The tail holds the failure" is true of a step that died on one exception and false of a test
+ * task, which prints each failure as it happens and then thousands of lines of other output
+ * after them. A blind head/tail cut then hands the model a summary line saying the task failed
+ * and nothing naming what — and the reader is told "the log doesn't say which tests failed"
+ * when the log said so plainly, a few hundred thousand characters above the cut.
+ */
+const RESCUE_SHARE = 0.25;
+/**
+ * Lines kept after each rescued one. An assertion is often two lines — `expected: <0>` then
+ * `but was: <3>` — and half a comparison is worse than none of it.
+ */
+const RESCUE_TRAILING_LINES = 2;
+
+/**
+ * The failure lines out of a stretch of log that is about to be thrown away.
+ *
+ * Reuses the highlighter's classification rather than keeping a second failure vocabulary here:
+ * it is the same judgement — does this line name a failure? — it is deliberately conservative,
+ * and one definition means a line the reader sees coloured red is a line the model was shown.
+ *
+ * Runs are kept in log order with an ellipsis where they are not adjacent, so what arrives is
+ * still a log rather than a bag of lines.
+ */
+function rescueFailureLines(middle: string, budget: number): { text: string; lines: number } {
+  const lines = middle.split('\n');
+  // Classified once. The middle of an over-long log is most of it, and this runs on a click.
+  const kinds = lines.map((line) => highlightLogLine(line).kind);
+
+  const keep = new Set<number>();
+  let used = 0;
+  /**
+   * Fill the budget with one kind of line, in log order, stopping when it runs out.
+   *
+   * Called for `failure` before `error` so the budget buys test names before it buys anything
+   * that merely says "Error:". They are not equal evidence, and a log whose middle opens with a
+   * page of retryable download errors would otherwise spend the whole allowance before reaching
+   * the assertions — which is the one outcome that leaves this no better than the blind cut.
+   */
+  const take = (wanted: LogLineKind) => {
+    for (let i = 0; i < lines.length; i += 1) {
+      if (kinds[i] !== wanted) continue;
+      const last = Math.min(i + RESCUE_TRAILING_LINES, lines.length - 1);
+      for (let j = i; j <= last; j += 1) {
+        if (keep.has(j) || !lines[j].trim()) continue;
+        if (used + lines[j].length + 1 > budget) return;
+        keep.add(j);
+        used += lines[j].length + 1;
+      }
+    }
+  };
+  take('failure');
+  take('error');
+
+  const out: string[] = [];
+  let kept = 0;
+  let previous = -2;
+  for (const index of [...keep].sort((a, b) => a - b)) {
+    // The separators are the only thing outside the budget above — two characters per gap in the
+    // text, against a tail sized from the whole reservation, so the arithmetic below still holds.
+    if (kept > 0 && index !== previous + 1) out.push('…');
+    out.push(lines[index]);
+    previous = index;
+    kept += 1;
+  }
+  return { text: out.join('\n'), lines: kept };
+}
+
 export function trimLog(log: string, maxChars: number = MAX_LOG_CHARS): string {
   if (log.length <= maxChars) return log;
   const headChars = Math.floor(maxChars * HEAD_SHARE);
-  const tailChars = maxChars - headChars;
-  const dropped = log.length - maxChars;
+  const rescueBudget = Math.floor(maxChars * RESCUE_SHARE);
+  // Sized against the provisional tail so the three slices are disjoint: a rescued line that
+  // also appeared in the tail would read as the failure having happened twice.
+  const rescued = rescueFailureLines(
+    log.slice(headChars, log.length - (maxChars - headChars - rescueBudget)),
+    rescueBudget,
+  );
+  // With nothing rescued the held-back budget goes back to the tail, which is the plain
+  // head/tail cut this started as — no log pays for the rescue unless it got one.
+  const tailChars = rescued.lines > 0 ? maxChars - headChars - rescueBudget : maxChars - headChars;
+  const dropped = log.length - headChars - tailChars - rescued.text.length;
   return [
     log.slice(0, headChars),
-    `\n\n… ${dropped.toLocaleString('en-US')} characters omitted from the middle …\n\n`,
+    `\n\n… ${dropped.toLocaleString('en-US')} characters omitted from the middle`,
+    rescued.lines > 0
+      ? `, except for the ${rescued.lines} line${rescued.lines === 1 ? '' : 's'} below that name a failure …\n\n${rescued.text}\n\n… end of the omitted section …\n\n`
+      : ` …\n\n`,
     log.slice(log.length - tailChars),
   ].join('');
 }
@@ -133,20 +227,69 @@ function originLines(origin: FailureOrigin): string[] {
   ];
 }
 
-/** The reply contract, shared by both briefs. */
-const OUTPUT_CONTRACT = `Reply with exactly two sections, introduced by these markers on their own lines, and nothing else — no preamble, no sign-off, no code fence around the markers:
+/**
+ * The record-shaped third section, asked for by the quick read.
+ *
+ * Same format as the `cause` task returns — see src/lib/failureCause.ts — so one parser and one
+ * card serve both. The terms are much tighter, though, because this pass has no tools: the log
+ * pasted below is the whole of its evidence, so it lists what that log names and nothing else.
+ *
+ * Why the quick read carries it at all: it is the pass people actually run first, the log is
+ * already in its prompt, and "which tests failed" costs it one more section rather than another
+ * call. Before this, a reader who pressed the fastest button got prose about a failure whose
+ * test list sat unread two paragraphs above it in the same log.
+ *
+ * No `cause:` line, unlike the cause task: the problem statement above already is that sentence,
+ * and asking for it twice only invites two slightly different versions of it.
+ */
+const FAILURES_SECTION = `${FAILURES_MARKER}
+One record per concrete thing that broke, **read out of the log below**, in the order the log gives them. This is the list the reader sees without opening anything, so it is the failing tests with their assertions, the compile errors with their file and line, the step that timed out, the runner that died — never a restatement of the step that reported them.
+
+- kind: assertion
+  what: exportsRotatedPage
+  group: com.example.reporting.ExportToPdfTests
+  where: testing/exporttopdf/ExportToPdfTests.java:88
+  message: Expected 0 diffs but got 3
+
+- kind: error
+  what: keepsFormFields
+  group: com.example.reporting.ExportToPdfTests
+  message: NullPointerException: Cannot invoke "Form.fields()" because "form" is null`;
+
+/** The record rules, kept out of the prose rules because they govern a different shape. */
+const FAILURES_RULES = `For the \`${FAILURES_MARKER}\` records:
+- \`what:\` is the only required key, and every record needs one — the test, the file, the step or the check that broke.
+- \`kind:\` is one of \`test\`, \`assertion\`, \`error\`, \`compile\`, \`timeout\`, \`crash\`, \`infrastructure\`, \`dependency\`, \`lint\`, \`skipped\`.
+- \`group:\` is the suite, class or file the item belongs to. \`where:\` is \`path:line\`. \`message:\` is **one line** — the decisive assertion, exception or runner message, verbatim and trimmed, never a stack trace.
+- Leave a key **out** when the log does not carry it. Never write "unknown", "n/a" or a placeholder, and never invent a name, a path, a line number or a message.
+- Add \`source: the job log\` and, where the log states a total you did not list in full, \`failed: <that total>\`. List at most 60 records.
+- **If the log does not name the individual failures, write the marker and nothing under it.** That is a real answer and a common one: a Gradle task prints no per-test output by default, so all that reaches the log is \`There were failing tests. See the report at: …\`. Say so in the problem statement and **name the report file the log points at**, so the reader knows where the names are — never promote the step's own exit code into a record to have something to list.`;
+
+/**
+ * The reply contract, shared by the prose briefs.
+ *
+ * `withFailures` adds the third section. Only the quick read takes it: the deep read has tools
+ * and the `cause` task is the one briefed to spend them on this question, so asking a
+ * tool-using pass for a log-only list would be asking it for the weaker answer.
+ */
+function outputContract(withFailures: boolean): string {
+  return `Reply with exactly ${withFailures ? 'three' : 'two'} sections, in this order, introduced by these markers on their own lines, and nothing else — no preamble, no sign-off, no code fence around the markers:
 
 ${PROBLEM_MARKER}
 What actually went wrong, in prose, for a developer who knows this codebase but has not seen this failure. Aim for 2–5 sentences. Name the failing test (or file, or step) and quote the decisive line — the assertion, the exception, the diff — verbatim in backticks. If several things failed, lead with the root cause and say the rest look like consequences of it. If the evidence points at infrastructure rather than the code — a runner dying, a network or registry timeout, disk exhaustion, a rate limit, a flaky external service — say so plainly, because that changes who should pick this up.
 
 ${SOLUTION_MARKER}
 The most likely fix, as concrete as the evidence supports: which file and what change, or the exact command that reproduces it locally. Commit to one recommendation rather than listing possibilities. Where the evidence genuinely does not determine the cause, say what to check next and which extra output would settle it — do not guess a cause to have something to say.
-
+${withFailures ? `\n${FAILURES_SECTION}\n` : ''}
 Rules:
-- **Put each sentence on its own line.** Write one statement per line rather than a flowing paragraph — the reader sees this streamed live and then in a bug report, and short lines are scannable where a wall of prose is not. Do not add blank lines between them.
+- **Put each sentence on its own line** in the prose sections. Write one statement per line rather than a flowing paragraph — the reader sees this streamed live and then in a bug report, and short lines are scannable where a wall of prose is not. Do not add blank lines between them.
 - Never invent a URL, issue number, commit SHA, file path, test name or line number. Everything you state must come from the input below or from output you actually obtained. The report around your text already carries the verified links and metadata, so do not restate them.
 - Plain Markdown that renders both in a GitHub issue and in a Microsoft Teams message: no HTML, no headings, no tables, no nested collapsible blocks. Backticks for code and short bullet lists are fine.
-- Do not apologise and do not hedge every sentence — state what the evidence shows and mark genuine uncertainty once. Keep your process out of these two sections: narrate while you work, conclude here.`;
+- Do not apologise and do not hedge every sentence — state what the evidence shows and mark genuine uncertainty once. Keep your process out of the answer: narrate while you work, conclude here.
+${withFailures ? `\n${FAILURES_RULES}\n` : ''}`;
+}
+
+const OUTPUT_CONTRACT = outputContract(false);
 
 /**
  * The brief used when the CLI has tools.
@@ -190,9 +333,11 @@ export const CLAUDE_QUICK_BRIEF = `You are giving a developer a fast first read 
 
 **Budget: about one minute.** Answer from the facts and log below — do not investigate, do not fetch anything, do not ask for more. If the log does not say what broke, say exactly that in one line and name the single most useful thing to look at next. A short answer now is the whole point; a thorough one later is what the deep analysis is for.
 
-Keep it to a few lines. Name the failing test, file or step and quote the decisive line if it is there. Say whether this looks like a code failure or an infrastructure one — a runner dying, a timeout, a rate limit — because that decides who picks it up.
+Keep the prose to a few lines. Name the failing test, file or step and quote the decisive line if it is there. Say whether this looks like a code failure or an infrastructure one — a runner dying, a timeout, a rate limit — because that decides who picks it up.
 
-${OUTPUT_CONTRACT}`;
+**Then list what broke, one record each.** The log often carries the individual failures — a run of \`FAILED\` lines, a pytest short summary, a compiler's errors — and reading them out is most of the value of this pass: the reader sees them without opening the log at all. List only what the log actually names, and when it names none, say so and write no records.
+
+${outputContract(true)}`;
 
 /** The brief used when no tools are available — reason over what was pasted in. */
 /**
@@ -480,7 +625,7 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
   const brief = input.promptOverride?.trim()
     ? returnsDocument(input.depth)
       ? input.promptOverride.trim()
-      : `${input.promptOverride.trim()}\n\n${OUTPUT_CONTRACT}`
+      : `${input.promptOverride.trim()}\n\n${outputContract(returnsFailureRecords(input.depth))}`
     : builtIn;
 
   const extra = input.extraInstructions?.trim();
@@ -610,25 +755,47 @@ export interface ClaudeAnalysis {
 }
 
 /**
+ * Where a section ends: at the next marker that follows it, or at the end of the reply.
+ *
+ * Computed rather than assumed, because the sections no longer arrive in a fixed pair. The
+ * quick read appends a third, record-shaped section, and taking "the solution runs to the end
+ * of the reply" on trust put a page of `kind:`/`what:` lines into the suggested fix — in the
+ * pane, and then in the bug report.
+ */
+function sectionEnd(from: number, markers: readonly number[]): number | undefined {
+  let end: number | undefined;
+  for (const at of markers) {
+    if (at > from && (end === undefined || at < end)) end = at;
+  }
+  return end;
+}
+
+/**
  * Split the model's reply on the markers.
  *
  * Tolerant on purpose: a model that ignores the "nothing else" instruction and adds a
  * preamble, or emits only one section, should still yield something usable rather than
- * throwing away a slow and costly call. Returns null only when neither marker appears,
+ * throwing away a slow and costly call. Returns null only when neither prose marker appears,
  * which means the output bears no relation to what was asked for.
+ *
+ * The records are not read here — {@link parseFailureCause} owns that format, and this returns
+ * only the two prose parts the report is built from.
  */
 export function parseClaudeAnalysis(reply: string): ClaudeAnalysis | null {
   const problemAt = reply.indexOf(PROBLEM_MARKER);
   const solutionAt = reply.indexOf(SOLUTION_MARKER);
   if (problemAt === -1 && solutionAt === -1) return null;
+  const failuresAt = reply.indexOf(FAILURES_MARKER);
+  const markers = [problemAt, solutionAt, failuresAt].filter((at) => at !== -1);
 
   const problem =
     problemAt === -1
       ? ''
-      : reply
-          .slice(problemAt + PROBLEM_MARKER.length, solutionAt === -1 ? undefined : solutionAt)
-          .trim();
-  const solution = solutionAt === -1 ? '' : reply.slice(solutionAt + SOLUTION_MARKER.length).trim();
+      : reply.slice(problemAt + PROBLEM_MARKER.length, sectionEnd(problemAt, markers)).trim();
+  const solution =
+    solutionAt === -1
+      ? ''
+      : reply.slice(solutionAt + SOLUTION_MARKER.length, sectionEnd(solutionAt, markers)).trim();
 
   if (!problem && !solution) return null;
   return {

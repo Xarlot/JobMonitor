@@ -33,6 +33,39 @@ to the reader and a scroll bar. Both are the kind of search a model with `gh` do
   ("Reported by the workflow"). Opt-in, for the same reason the blame verdict is: every other fact in
   that document was fetched from the API. Until the task is run the band shows the quick or deep read's
   own opening sentence, so the cause is at the top of the pane whenever anything is known at all.
+- **The quick read now lists the failing tests, not just describes them.** It is the button people
+  press first, and it was answering half the question — prose about a failure whose test names were
+  sitting unread in the same prompt. It now answers with a third section of records alongside its two
+  prose ones, so one call fills both the paragraph and the list at the top of the report pane: the
+  failing test, its suite, the assertion verbatim. The band prefers the *What failed* task's list when
+  that has been run, since it has tools and goes to the run's own test report, and offers *Look in the
+  artifacts* rather than *Look again* when all it has is the log's version. When the log names no
+  individual failures — a sharded Gradle task reports that it failed and keeps the names in a report
+  this pass cannot reach — it is told to say so and list nothing, because promoting `Process completed
+  with exit code 1` into a list is the annotation noise all of this exists to replace.
+- **The log handed to the model keeps the lines that name a failure.** A log too big to send whole was
+  trimmed to its head and its tail — right for a step that died on one exception, wrong for a test task
+  that prints each failure as it happens and then thousands of lines of other output after them. The
+  failures were being cut out with the middle, and the answer came back as "the log doesn't say which
+  tests failed" about a log that said so plainly a few hundred thousand characters above the cut. A
+  quarter of the budget is now spent rescuing those lines, each with the two after it so an
+  `expected:`/`but was:` pair survives whole, using the same judgement the log viewer colours them with.
+  A log with nothing to rescue gets exactly the head-and-tail cut it always did.
+- **"Failed tests" no longer names things that are not tests.** GitHub files a job-level failure
+  against `.github` with the workflow's line number, so a Gradle shard's report opened with
+  *Failed tests (2)* over `.github:14769 — Process completed with exit code 1` — a heading that is
+  false in the direction that costs the reader time, since they go looking for a test by that name.
+  When not one annotation points at a source file the section is called what it is, *Reported by the
+  workflow*.
+- **When the runner kept the names out of the log, the app says where they went.** A Gradle test
+  task prints no per-test output by default: what reaches the log is `There were failing tests. See
+  the report at: …/build/reports/tests/test/index.html`, and every honest reading of that job — the
+  annotations, the quick read — correctly reports that it cannot see a single test name. So the
+  runner's own sentence is read, locally and for free, and the band says *the log doesn't name the
+  failing tests — Gradle wrote them to `…/build/reports/tests/test`, which is in the run's
+  artifacts*, with its button relabelled **Read the test report**. Same line in the pasted bug
+  report, where the reader hits exactly the same dead end. Gradle, Maven and `dotnet test` are
+  recognised; a pytest or Jest log carries its own failures and is deliberately left alone.
 - **The log view maps itself as it opens.** The local highlighter colours anything that *looks* like a
   failure, which in a failed run is forty lines, one of which is the reason. Opening the Log view now
   starts a scan, and the findings become ticks down the right edge of the log — red for something that

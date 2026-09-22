@@ -52,6 +52,18 @@
   font-size: var(--text-body-size-small);
 }
 
+/*
+  Not an error and not the headline: a fact about where the evidence is. Muted so it reads as the
+  footnote it is, but on its own line, because it is the sentence that turns an empty list from
+  "nothing failed" into "the names are one click away".
+*/
+.pointer {
+  display: block;
+  margin-top: var(--base-size-4);
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+}
+
 .groups {
   margin-top: var(--base-size-8);
   overflow-y: auto;

@@ -502,6 +502,68 @@ describe('what failed, in the report', () => {
     expect(md).not.toContain('Reported by the workflow');
   });
 
+  /**
+   * The report as it was actually read on a failing Gradle shard: two annotations, both about the
+   * runner, under a heading calling them failed tests. `.github:14769 — Process completed with
+   * exit code 1` is not a test, and a reader who goes looking for one by that name has been sent
+   * there by this document.
+   */
+  it('does not call the workflow’s own annotations failed tests', () => {
+    const md = buildFailureReport(
+      reportInput({
+        annotations: [
+          annotation({
+            path: '.github',
+            start_line: 14769,
+            title: null,
+            message: 'Process completed with exit code 1.',
+          }),
+          annotation({
+            path: '.github',
+            start_line: 14768,
+            title: 'Gradle Tests Failed (pdf & barcode)',
+            message: 'Gradle tests failed in shard pdf & barcode',
+          }),
+        ],
+      }),
+    );
+    expect(md).toContain('#### Reported by the workflow (2)');
+    expect(md).not.toContain('#### Failed tests');
+  });
+
+  /** One annotation naming a file is enough: those are real test results and read as them. */
+  it('still calls them failed tests when they point at the source', () => {
+    const md = buildFailureReport(
+      reportInput({ annotations: [annotation({ path: '.github' }), annotation()] }),
+    );
+    expect(md).toContain('#### Failed tests (2)');
+  });
+
+  /**
+   * The line that turns a dead end into a next step. Without it the document says the step exited
+   * non-zero and stops, and the names sit in an artifact nobody has been told about.
+   */
+  it('says where the names went when the annotations cannot', () => {
+    const md = buildFailureReport(
+      reportInput({
+        annotations: [annotation({ path: '.github', title: null, message: 'exit code 1' })],
+        reportHint: { tool: 'Gradle', where: 'printing-core-tests/build/reports/tests/test' },
+      }),
+    );
+    expect(md).toMatch(/Gradle wrote them to printing-core-tests/);
+  });
+
+  it('keeps the pointer out once the real list is there', () => {
+    const md = buildFailureReport(
+      reportInput({
+        annotations: [annotation({ path: '.github' })],
+        failureCause: cause,
+        reportHint: { tool: 'Gradle', where: 'build/reports/tests/test' },
+      }),
+    );
+    expect(md).not.toMatch(/Gradle wrote them to/);
+  });
+
   /** With a cause in hand, "no annotations were reported" is no longer worth saying. */
   it('drops the no-annotations note when the cause is there', () => {
     const md = buildFailureReport(reportInput({ annotations: [], failureCause: cause }));

@@ -12,6 +12,7 @@ import type { Annotation } from '../api/types';
 import { failureItemCount, type FailureCause } from './failureCause';
 import type { FailureOrigin } from './failures';
 import { fnv1aHex } from './hash';
+import { describeTestReportHint, type TestReportHint } from './testReportHint';
 
 /** What a failure *is*, stripped of everything that varies between attempts. */
 export interface FailureSignature {
@@ -139,6 +140,27 @@ export interface FailureReportInput {
    * "Gradle Tests Failed" names nothing anybody can go and fix.
    */
   failureCause?: FailureCause | null;
+  /**
+   * The runner's own statement that it kept the test names out of the log — see
+   * {@link testReportHint}.
+   *
+   * Carried into the document because the reader of a pasted bug report hits the same dead end as
+   * the reader of the pane: two annotations saying the step exited non-zero, and no test. One line
+   * naming the report that has them is the difference between a dead end and a next step.
+   */
+  reportHint?: TestReportHint | null;
+}
+
+/**
+ * Whether an annotation points at anything in the source.
+ *
+ * GitHub files a job-level failure against `.github` with the workflow's line number, which is how
+ * `Process completed with exit code 1` ends up looking like a test result. Calling a list of those
+ * "Failed tests" is simply false, and it is false in the direction that wastes the reader's time:
+ * they go looking for a test called `.github:14769`.
+ */
+function namesSource(a: Annotation): boolean {
+  return Boolean(a.path && a.path !== '.github' && !a.path.startsWith('.github/'));
 }
 
 function link(text: string, url: string | null): string {
@@ -261,7 +283,7 @@ export function buildFailureReport(input: FailureReportInput): string {
     jobName, failedStep, origin, headRef, headSha,
     workflowFile, runUrl, runNumber, runAttempt, jobUrl, completedAt,
     annotations, logTail, fingerprint, format, appVersion, generatedAt, analysis, blame,
-    failureCause,
+    failureCause, reportHint,
   } = input;
 
   const failures = failureAnnotations(annotations);
@@ -329,18 +351,29 @@ export function buildFailureReport(input: FailureReportInput): string {
   }
 
   if (failures.length > 0) {
-    // Renamed when the extracted list is present, because then this section is no longer the
-    // answer to "what failed" — it is what the workflow reported, which is usually the step
-    // rather than the thing that broke, and two sections claiming to be the same list would
-    // read as a bug in the report.
-    out.push(`#### ${failureCause ? 'Reported by the workflow' : 'Failed tests'} (${failures.length})`);
+    // "Failed tests" only when they are. The name is renamed away in two cases: when the extracted
+    // list is present, because then this section is what the *workflow* reported rather than the
+    // answer to "what failed"; and when not one annotation points at a source file, because then
+    // this is `Process completed with exit code 1` filed against `.github` and calling it a test
+    // sends the reader looking for a test by that name.
+    const areTests = !failureCause && failures.some(namesSource);
+    out.push(`#### ${areTests ? 'Failed tests' : 'Reported by the workflow'} (${failures.length})`);
     out.push(...failures.map(annotationLine));
+    // Only where this section was the reader's last hope of a test name: with an extracted list
+    // above, the question has already been answered better.
+    if (!failureCause && !areTests && reportHint) {
+      out.push(`- _${describeTestReportHint(reportHint)}_`);
+    }
     out.push('');
   } else if (!failureCause) {
     // Say so explicitly rather than leaving a gap: an empty section reads like a
     // bug in the report, whereas "no annotations" is a real and useful fact.
     out.push('#### Failed tests');
-    out.push('- _No failure annotations were reported — see the log below._');
+    out.push(
+      reportHint
+        ? `- _${describeTestReportHint(reportHint)}_`
+        : '- _No failure annotations were reported — see the log below._',
+    );
     out.push('');
   }
 

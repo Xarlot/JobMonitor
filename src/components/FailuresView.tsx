@@ -58,6 +58,7 @@ import {
 import { markdownToHtml } from '../lib/markdownToHtml';
 import { formatRelative } from '../lib/format';
 import { subtleScrollbar } from '../lib/scrollbar';
+import { testReportHint, type TestReportHint } from '../lib/testReportHint';
 import {
   EMPTY_FAILURE_DETAIL,
   useFailureDetails,
@@ -79,6 +80,7 @@ function buildReport(
   analysis: ClaudeAnalysis | null = null,
   blame: string | null = null,
   failureCause: FailureCause | null = null,
+  reportHint: TestReportHint | null = null,
 ): string {
   const annotations = detail.annotations ?? [];
   return buildFailureReport({
@@ -107,6 +109,7 @@ function buildReport(
     analysis,
     blame,
     failureCause,
+    reportHint,
   });
 }
 
@@ -461,16 +464,39 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
   /**
    * What the cause band shows, and — only when asked for — what the report carries.
    *
+   * Two tasks can produce this list and the dedicated one wins: it has tools, so when the log
+   * keeps the test names in a JUnit XML it goes and reads the artifact, where the quick read only
+   * ever sees the log it was handed. The quick read's records are the fallback, and in practice
+   * the one most people see — it is the button pressed first, and it now answers "which tests
+   * failed" in the same ten seconds it takes to answer "what happened".
+   *
    * Memoized on the reply text so its identity is stable across renders: it feeds the report memo
    * below, and a fresh parse every render would rebuild the report on every poll, which restamps
    * its "generated" footer and leaves the preview disagreeing with the clipboard.
    */
   const causeDocument = causeTriage?.document ?? null;
+  const causeRecords = causeDocument ?? quickTriage?.failures ?? null;
   const focusedCause = useMemo(
-    () => (causeDocument ? parseFailureCause(causeDocument) : null),
-    [causeDocument],
+    () => (causeRecords ? parseFailureCause(causeRecords) : null),
+    [causeRecords],
   );
-  const reportCause = causeTriage?.inReport ? focusedCause : null;
+  /**
+   * Which result the band is showing, so "add to the report" ticks the one it came from.
+   * Keyed off the document rather than off `focusedCause`, so a cause run that found nothing
+   * still owns the band it produced.
+   */
+  const causeSource: ClaudeDepth = causeDocument ? 'cause' : 'quick';
+  const causeState = causeDocument ? causeTriage : quickTriage;
+  const reportCause = causeState?.inReport ? focusedCause : null;
+  /**
+   * Whether the runner said it kept the test names out of the log.
+   *
+   * Read from the tail the pane already has — the runner says it at the end — so this costs no
+   * fetch and no model call. It is what stops an empty list reading as "nothing failed" on a job
+   * where two things did.
+   */
+  const logTail = focusedDetail?.logTail;
+  const reportHint = useMemo(() => (logTail ? testReportHint(logTail) : null), [logTail]);
   // Keyed off the open depth rather than a chain of ternaries, so adding a task cannot
   // leave its dialog silently unopenable — which is exactly what happened when blame was
   // added and this mapping still only knew about quick and deep.
@@ -478,11 +504,19 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
   const focusedReport = useMemo(
     () =>
       focused && focusedDetail
-        ? buildReport(focused, focusedDetail, format, reportAnalysis, reportBlame, reportCause)
+        ? buildReport(
+            focused,
+            focusedDetail,
+            format,
+            reportAnalysis,
+            reportBlame,
+            reportCause,
+            reportHint,
+          )
         : null,
     // Every part the report is assembled from, including the opt-in ones: leaving `reportBlame`
     // out meant ticking "add verdict to report" changed the preview only on the next poll.
-    [focused, focusedDetail, format, reportAnalysis, reportBlame, reportCause],
+    [focused, focusedDetail, format, reportAnalysis, reportBlame, reportCause, reportHint],
   );
 
   const startTriage = (depth: ClaudeDepth, options?: { resume?: boolean }) => {
@@ -903,10 +937,14 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                   analysis={reportAnalysis}
                   running={Boolean(causeTriage?.running)}
                   error={causeTriage?.error ?? null}
-                  inReport={Boolean(causeTriage?.inReport)}
+                  // Whether the pass that reads the run's artifacts has run, which is what
+                  // decides whether its button offers to look again or to look further.
+                  searched={Boolean(causeDocument)}
+                  reportHint={reportHint}
+                  inReport={Boolean(causeState?.inReport)}
                   onFind={() => startTriage('cause')}
                   onToggleInReport={() =>
-                    triage.setInReport(focused.key, 'cause', !causeTriage?.inReport)
+                    triage.setInReport(focused.key, causeSource, !causeState?.inReport)
                   }
                   onCopy={() =>
                     focusedCause && putOnClipboard(failureCauseSection(focusedCause).join('\n'))

@@ -9,6 +9,7 @@ import {
   CLAUDE_CAUSE_BRIEF,
   CLAUDE_MARKS_BRIEF,
   returnsDocument,
+  returnsFailureRecords,
   splitIntoSentenceLines,
   parseClaudeAnalysis,
   PROBLEM_MARKER,
@@ -273,6 +274,66 @@ describe('trimLog', () => {
     expect(trimmed.endsWith('TAIL')).toBe(true);
     expect(trimmed).toMatch(/omitted from the middle/);
   });
+
+  /**
+   * The case the quick read kept losing. A test task prints each failure as it happens and then
+   * thousands of lines of other output after it, so a blind head/tail cut hands the model the
+   * summary saying the task failed and nothing naming what — and the answer comes back as "the
+   * log doesn't say which tests failed" about a log that said so plainly.
+   */
+  it('rescues the failure lines out of the middle it drops', () => {
+    const noise = `${'quiet line\n'.repeat(400)}`;
+    const log = [
+      'HEAD',
+      noise,
+      'PdfExportTest > exportsRotatedPage FAILED',
+      '    expected: <0> but was: <3>',
+      noise,
+      'TAIL',
+    ].join('\n');
+
+    const trimmed = trimLog(log, 1000);
+    expect(trimmed).toContain('exportsRotatedPage FAILED');
+    expect(trimmed).toContain('but was: <3>');
+    expect(trimmed).toMatch(/except for the \d+ lines? below that name a failure/);
+    expect(trimmed.startsWith('HEAD')).toBe(true);
+    expect(trimmed.endsWith('TAIL')).toBe(true);
+  });
+
+  /** The rescue is paid for out of the tail, so it must not quietly inflate the prompt. */
+  it('stays within the budget it was given', () => {
+    const log = `HEAD\n${'FAILED something broke\n'.repeat(2000)}TAIL`;
+    const trimmed = trimLog(log, 2000);
+    // The budget covers the log text; the two explanatory markers are the only extra.
+    expect(trimmed.length).toBeLessThan(2000 + 400);
+  });
+
+  /**
+   * The budget buys test names before it buys anything that merely says "Error:". A middle that
+   * opens with a page of retryable download errors would otherwise spend the whole allowance
+   * before reaching the assertion — leaving this no better than the blind cut it replaces.
+   */
+  it('spends the rescue budget on failures before errors', () => {
+    const log = [
+      'HEAD',
+      'Error: could not reach the registry, retrying\n'.repeat(200),
+      'PdfExportTest > exportsRotatedPage FAILED',
+      'Error: could not reach the registry, retrying\n'.repeat(200),
+      'TAIL',
+    ].join('\n');
+
+    const trimmed = trimLog(log, 900);
+    expect(trimmed).toContain('exportsRotatedPage FAILED');
+  });
+
+  /** A log with nothing to rescue gets the plain head/tail cut, budget and all. */
+  it('gives the reserved budget back to the tail when nothing names a failure', () => {
+    const log = `HEAD${'x'.repeat(5000)}TAIL`;
+    const trimmed = trimLog(log, 1000);
+    expect(trimmed).not.toMatch(/name a failure/);
+    // 25% head + 75% tail, exactly as before the rescue existed.
+    expect(trimmed.slice(trimmed.lastIndexOf('\n') + 1).length).toBe(750);
+  });
 });
 
 describe('parseClaudeAnalysis', () => {
@@ -317,6 +378,34 @@ describe('parseClaudeAnalysis', () => {
   it('rejects markers with nothing between them', () => {
     expect(parseClaudeAnalysis(`${PROBLEM_MARKER}\n   \n${SOLUTION_MARKER}\n  `)).toBeNull();
   });
+
+  /**
+   * The quick read appends a third section, and "the solution runs to the end of the reply"
+   * would put a page of `kind:`/`what:` lines into the suggested fix — on screen, and then in
+   * whatever bug report was pasted from it.
+   */
+  it('stops the solution at the failure records', () => {
+    const reply = [
+      PROBLEM_MARKER,
+      'The export test broke.',
+      SOLUTION_MARKER,
+      'Fix the rounding.',
+      FAILURES_MARKER,
+      'source: the job log',
+      '- kind: assertion',
+      '  what: exportsRotatedPage',
+    ].join('\n');
+    expect(parseClaudeAnalysis(reply)).toEqual({
+      problem: 'The export test broke.',
+      solution: 'Fix the rounding.',
+    });
+  });
+
+  /** Same for a reply that skipped the solution: the records are not prose either. */
+  it('stops the problem at the failure records when the solution is missing', () => {
+    const reply = `${PROBLEM_MARKER}\nBroke.\n${FAILURES_MARKER}\n- what: exportsRotatedPage`;
+    expect(parseClaudeAnalysis(reply)?.problem).toBe('Broke.');
+  });
 });
 
 describe('CLAUDE_QUICK_BRIEF', () => {
@@ -347,6 +436,68 @@ describe('CLAUDE_QUICK_BRIEF', () => {
   it('allows admitting the log does not say, unlike the deep brief', () => {
     expect(CLAUDE_QUICK_BRIEF).toMatch(/does not say what broke/i);
     expect(CLAUDE_INVESTIGATION_BRIEF).toMatch(/not enough evidence/i);
+  });
+
+  /**
+   * The reason this pass carries a third section at all: it is the button people press first,
+   * and the failing test names are usually already in the log it was handed. Without this it
+   * wrote prose about a failure whose test list sat unread in the same prompt.
+   */
+  it('asks for the failure records as a third section', () => {
+    expect(CLAUDE_QUICK_BRIEF).toContain(FAILURES_MARKER);
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/exactly three sections/i);
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/what:/);
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/kind:/);
+  });
+
+  /**
+   * The escape hatch matters more than the list. A sharded Gradle task reports only that it
+   * failed and keeps the names in a report this pass cannot reach — and a model with no way to
+   * say "the log doesn't name them" answers by promoting `Process completed with exit code 1`
+   * into a record, which is the annotation noise this whole feature exists to replace.
+   */
+  it('tells it to write no records when the log names none', () => {
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/if the log does not name the individual failures/i);
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/never invent a name/i);
+  });
+
+  /** It has no tools, so its list is whatever the log says and nothing beyond it. */
+  it('scopes the records to the log it was handed', () => {
+    expect(CLAUDE_QUICK_BRIEF).toMatch(/read out of the log below/i);
+  });
+});
+
+describe('returnsFailureRecords', () => {
+  /**
+   * Deliberately only the quick read. The deep pass has tools and `cause` is the task briefed to
+   * spend them on this question, so asking a tool-using pass for a log-only list would be asking
+   * it for the weaker of the two answers it could give.
+   */
+  it('is the quick read alone', () => {
+    expect(returnsFailureRecords('quick')).toBe(true);
+    for (const depth of ['deep', 'log', 'blame', 'cause', 'marks'] as const) {
+      expect(returnsFailureRecords(depth)).toBe(false);
+    }
+  });
+
+  it('puts the third section in the quick prompt and keeps it out of the others', () => {
+    expect(buildClaudePrompt(input({ depth: 'quick' }))).toContain(FAILURES_MARKER);
+    expect(buildClaudePrompt(input({ depth: 'deep' }))).not.toContain(FAILURES_MARKER);
+    expect(buildClaudePrompt(input({ depth: 'quick', canInvestigate: false }))).toContain(
+      FAILURES_MARKER,
+    );
+  });
+
+  /**
+   * A custom brief replaces the wording, never the contract — and the contract a task is held
+   * to has to be the one its reply is parsed against, or a custom quick prompt silently loses
+   * the list.
+   */
+  it('holds a custom quick prompt to the same three sections', () => {
+    const p = buildClaudePrompt(input({ depth: 'quick', promptOverride: 'Be brief.' }));
+    expect(p).toContain('Be brief.');
+    expect(p).toContain(PROBLEM_MARKER);
+    expect(p).toContain(FAILURES_MARKER);
   });
 });
 
