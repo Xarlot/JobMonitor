@@ -346,6 +346,18 @@ the blame verdict is: every other fact in a report was fetched from the API, and
 which is which. Until it has run, the band shows the quick or deep read's own opening sentence, so the
 cause is on top of the pane whenever anything at all is known.
 
+**Adding it makes the band disappear**, because the list is now in the document right below it and a
+pane showing the same rows twice is a pane repeating itself. The band is the temporary one of the
+two: the report is what gets pasted.
+
+![The report on its own](docs/screenshots/report-window.png)
+
+**Open report** puts that document on its own, away from the split pane — the same text at full width,
+which is the difference between glancing at a report and reading the one you are about to paste into
+an issue. It is also where the band's one-way action is undone: **Take what failed back out** removes
+the section and brings the band back. An action that hides its own control needs its reverse
+somewhere, and the right somewhere is the document the list was carried into.
+
 #### No dialog for work you didn't ask for
 
 The analyses you *click* — the quick read, the deep analysis, who broke it — open a window with their

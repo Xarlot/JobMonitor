@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ThemeProvider, BaseStyles } from '@primer/react';
 import { FailureCauseCard } from '../components/FailureCauseCard';
 import { FAILURES_MARKER, parseFailureCause, type FailureCause } from '../lib/failureCause';
@@ -29,9 +29,8 @@ function renderCard(over: Partial<Parameters<typeof FailureCauseCard>[0]> = {}) 
           error={null}
           searched={false}
           reportHint={null}
-          inReport={false}
           onFind={() => {}}
-          onToggleInReport={() => {}}
+          onAddToReport={() => {}}
           onCopy={() => {}}
           {...over}
         />
@@ -116,6 +115,20 @@ describe('FailureCauseCard', () => {
     });
     expect(screen.getByText(/runner lost its connection/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /add to the report/i })).toBeNull();
+  });
+
+  /**
+   * One-way, and the label says so. There is no "In the report" state to show here: the band
+   * unmounts once the list is in the document, so a toggle that could read as already-on would be
+   * describing a screen nobody can see.
+   */
+  it('offers adding to the report as a one-way action', () => {
+    const onAddToReport = vi.fn();
+    renderCard({ cause: FROM_THE_LOG, onAddToReport });
+    const add = screen.getByRole('button', { name: /add to the report/i });
+    fireEvent.click(add);
+    expect(onAddToReport).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /in the report/i })).toBeNull();
   });
 
   /** Before this task has run, the prose read already opens with the sentence this band wants. */

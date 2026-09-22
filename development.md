@@ -1082,6 +1082,12 @@ Three consequences worth knowing before editing:
   the quick read only ever sees the log it was handed. Its button therefore reads *Look in the
   artifacts* rather than *Look again*, which is the difference between a useful click and a repeated
   one, and the *Add to the report* tick is written against whichever task produced the list.
+- **Adding is one-way from the band, because the band unmounts.** `FailuresView` renders
+  `FailureCauseCard` only while `inReport` is false: once the list is in the document below it, the
+  pane was showing the same rows twice. The card therefore has no "in the report" state to render and
+  takes `onAddToReport` rather than a toggle. The reverse lives in `ReportDialog` — an action that
+  hides its own control needs its undo somewhere the reader can still reach, and that is the document
+  the list went into.
 
 The brief's most important line is the escape hatch: **when the log does not name the individual
 failures, write the marker and nothing under it.** A sharded Gradle task reports only that it failed and

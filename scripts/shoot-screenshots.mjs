@@ -347,6 +347,18 @@ const shots = {
     return page;
   },
 
+  /** The report on its own, with the extracted list carried into it. */
+  async 'report-window'(page) {
+    await focusFailure(page);
+    // Carrying the list in is what makes the band disappear, so this shot shows both halves of
+    // that exchange: the document that gained the section, and the way back out of it.
+    await page.getByRole('button', { name: 'Add to the report' }).click();
+    await page.waitForTimeout(700);
+    await page.getByRole('button', { name: 'Open report' }).click();
+    await page.waitForTimeout(900);
+    return page.locator('[role=dialog]').first();
+  },
+
   async 'who-broke-it'(page) {
     await focusFailure(page);
     await page.getByRole('button', { name: /Who broke it/ }).click();

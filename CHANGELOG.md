@@ -66,6 +66,14 @@ to the reader and a scroll bar. Both are the kind of search a model with `gh` do
   artifacts*, with its button relabelled **Read the test report**. Same line in the pasted bug
   report, where the reader hits exactly the same dead end. Gradle, Maven and `dotnet test` are
   recognised; a pytest or Jest log carries its own failures and is deliberately left alone.
+- **Carrying the list into the report now clears the band, and the report gets a window of its own.**
+  Ticking *Add to the report* used to leave the same rows on screen twice — once in the band, once in
+  the document directly below it — which read as the pane repeating itself. The band now disappears,
+  since it is the temporary one of the two and the report is what gets pasted. **Open report** shows
+  that document on its own at full width, which is the difference between glancing at a report and
+  reading the one you are about to paste into an issue; it is also where **Take what failed back out**
+  lives, because an action that hides its own control needs its reverse somewhere the reader can still
+  reach.
 - **The log view maps itself as it opens.** The local highlighter colours anything that *looks* like a
   failure, which in a failed run is forty lines, one of which is the reason. Opening the Log view now
   starts a scan, and the findings become ticks down the right edge of the log — red for something that

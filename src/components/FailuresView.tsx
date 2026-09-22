@@ -22,6 +22,7 @@ import {
   SparkleFillIcon,
   FileIcon,
   GitCommitIcon,
+  ReportIcon,
   SyncIcon,
   TelescopeIcon,
   WorkflowIcon,
@@ -33,6 +34,7 @@ import { useClaudeTriage } from '../hooks/useClaudeTriage';
 import type { ClaudeAnalysis, ClaudeDepth } from '../lib/claudePrompt';
 import { AiProgressNotice } from './AiProgressNotice';
 import { ClaudeTriageDialog } from './ClaudeTriageDialog';
+import { ReportDialog } from './ReportDialog';
 import { parseFailureCause, type FailureCause } from '../lib/failureCause';
 import { FailureCauseCard } from './FailureCauseCard';
 import { ghLogAvailable } from '../storage/desktopClaude';
@@ -429,6 +431,8 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
   const triage = useClaudeTriage();
   /** Which depth's dialog is open, if any. */
   const [triageOpen, setTriageOpen] = useState<ClaudeDepth | null>(null);
+  /** The report on its own, away from the split pane. */
+  const [reportOpen, setReportOpen] = useState(false);
 
   // Measured, so the panes fill whatever the header/nav/toolbar leave behind.
   const panesRef = useRef<HTMLDivElement>(null);
@@ -861,6 +865,14 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                       </Button>
                     </>
                   )}
+                  {/*
+                    In the toolbar rather than beside the list it shows, because the band that
+                    holds that list unmounts the moment the list is carried into the report — and
+                    that is exactly when somebody wants to look at what they have just built.
+                  */}
+                  <Button leadingVisual={ReportIcon} onClick={() => setReportOpen(true)}>
+                    Open report
+                  </Button>
                   <Button
                     variant="primary"
                     leadingVisual={CopyIcon}
@@ -931,7 +943,13 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 arriving at a red job wants the sentence first and the paperwork after. Shown on
                 the report pane only, since the log pane has the log's own map for this.
               */}
-              {pane === 'report' && triage.available && (
+              {/*
+                Gone once its list is in the document below. The band and the report were showing
+                the same rows one above the other, which read as the pane repeating itself — and
+                the band is the temporary one of the two, since the report is what gets pasted.
+                The way back is in the report window, where the list now lives.
+              */}
+              {pane === 'report' && triage.available && !causeState?.inReport && (
                 <FailureCauseCard
                   cause={focusedCause}
                   analysis={reportAnalysis}
@@ -941,11 +959,8 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                   // decides whether its button offers to look again or to look further.
                   searched={Boolean(causeDocument)}
                   reportHint={reportHint}
-                  inReport={Boolean(causeState?.inReport)}
                   onFind={() => startTriage('cause')}
-                  onToggleInReport={() =>
-                    triage.setInReport(focused.key, causeSource, !causeState?.inReport)
-                  }
+                  onAddToReport={() => triage.setInReport(focused.key, causeSource, true)}
                   onCopy={() =>
                     focusedCause && putOnClipboard(failureCauseSection(focusedCause).join('\n'))
                   }
@@ -1000,6 +1015,26 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 </div>
               )}
             </>
+          )}
+          {reportOpen && focused && focusedReport && (
+            <ReportDialog
+              jobName={focused.jobName}
+              report={focusedReport}
+              format={format}
+              raw={raw}
+              // Only when there is something in the document to take out, and only against the
+              // task that put it there.
+              onRemoveFromReport={
+                causeState?.inReport
+                  ? () => triage.setInReport(focused.key, causeSource, false)
+                  : null
+              }
+              onCopy={() => {
+                Telemetry.featureUsed(Feature.FAILURES_REPORT_COPIED);
+                putOnClipboard(focusedReport);
+              }}
+              onClose={() => setReportOpen(false)}
+            />
           )}
           {triageOpen && focused && openTriage && (
             <ClaudeTriageDialog

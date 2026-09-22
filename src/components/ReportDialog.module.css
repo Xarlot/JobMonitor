@@ -1,0 +1,43 @@
+/*
+  The report at full width, away from the split pane.
+  `--fgColor-default` rather than inheriting: the rich-text branch injects HTML, which carries no
+  colour of its own and would otherwise read as whatever the panel happened to set.
+*/
+.rich {
+  padding: var(--base-size-8) var(--base-size-4);
+  color: var(--fgColor-default);
+  font-size: var(--text-body-size-medium);
+  line-height: 1.6;
+}
+
+.rendered {
+  padding: var(--base-size-4) 0;
+}
+
+/* The literal Markdown the Copy button puts on the clipboard. */
+.mono {
+  margin: 0;
+  padding: var(--base-size-8);
+  background-color: var(--bgColor-muted);
+  border: 1px solid var(--borderColor-muted);
+  border-radius: var(--borderRadius-medium);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.grow {
+  flex: 1;
+}
+
+.note {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+}

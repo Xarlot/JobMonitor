@@ -18,7 +18,6 @@
 import { Button, Label, Spinner, Text } from '@primer/react';
 import {
   AlertFillIcon,
-  CheckIcon,
   CopyIcon,
   PlusIcon,
   SearchIcon,
@@ -158,9 +157,8 @@ export function FailureCauseCard({
   error,
   searched,
   reportHint,
-  inReport,
   onFind,
-  onToggleInReport,
+  onAddToReport,
   onCopy,
 }: {
   cause: FailureCause | null;
@@ -194,9 +192,15 @@ export function FailureCauseCard({
    * reports that it does not know.
    */
   reportHint: TestReportHint | null;
-  inReport: boolean;
   onFind: () => void;
-  onToggleInReport: () => void;
+  /**
+   * Carry the list into the bug report.
+   *
+   * One-way from here: the band unmounts once the list is in the document, since showing the same
+   * list twice on one screen is what made the pane feel like it was repeating itself. Taking it
+   * back out lives in the report window, which is where the list now is — see `ReportDialog`.
+   */
+  onAddToReport: () => void;
   onCopy: () => void;
 }) {
   const headline = cause?.headline ?? (analysis?.problem ? plainLine(analysis.problem) : null);
@@ -303,15 +307,16 @@ export function FailureCauseCard({
               </Button>
               {/*
                 Carrying it into the bug report is the reader's decision, like the blame verdict:
-                every other fact in that document was fetched from the API.
+                every other fact in that document was fetched from the API. There is no "in the
+                report" state to show here, because by then this band is gone.
               */}
               <Button
                 size="small"
-                variant={inReport ? 'default' : 'primary'}
-                leadingVisual={inReport ? CheckIcon : PlusIcon}
-                onClick={onToggleInReport}
+                variant="primary"
+                leadingVisual={PlusIcon}
+                onClick={onAddToReport}
               >
-                {inReport ? 'In the report' : 'Add to the report'}
+                Add to the report
               </Button>
             </>
           )}
