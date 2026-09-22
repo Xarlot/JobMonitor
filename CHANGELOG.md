@@ -4,7 +4,7 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.1.0]
 
 **Two questions a red board raises that the app answered badly: *what actually failed*, and *where in
 this log did it go wrong*.** The first was answered with a workflow annotation — "Gradle Tests Failed",
