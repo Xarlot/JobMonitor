@@ -9,6 +9,7 @@
  */
 
 import type { Annotation } from '../api/types';
+import { failureItemCount, type FailureCause } from './failureCause';
 import type { FailureOrigin } from './failures';
 import { fnv1aHex } from './hash';
 
@@ -128,6 +129,16 @@ export interface FailureReportInput {
    * most actionable line in the document.
    */
   blame?: string | null;
+  /**
+   * What Claude found had actually failed, when the reader chose to include it.
+   *
+   * Opt-in like the blame verdict, and for the same reason: everything else in the "failed
+   * tests" position comes from GitHub's own annotations, and a list assembled by a model has to
+   * be labelled as one rather than blending in. When it *is* included it goes above the
+   * annotations, because it answers the question they usually cannot — a shard reporting
+   * "Gradle Tests Failed" names nothing anybody can go and fix.
+   */
+  failureCause?: FailureCause | null;
 }
 
 function link(text: string, url: string | null): string {
@@ -189,11 +200,68 @@ export function blameVerdict(document: string): string {
   return section.replace(/^#{1,6}\s+Summary\s*\n/i, '').trim();
 }
 
+/**
+ * How many extracted items the report lists before it says "…and N more".
+ *
+ * A cap rather than everything: a sharded suite can fail four hundred tests off one root cause,
+ * and a bug report that opens with four hundred bullet points is one nobody reads.
+ */
+export const REPORT_ITEM_LINES = 40;
+
+/**
+ * The extracted cause as report Markdown.
+ *
+ * Flat, one line per item, rather than grouped and nested: this has to survive a paste into both
+ * a GitHub issue and a Teams message, and Teams renders a nested list as a wall of indented
+ * text. The group therefore rides on the line instead of becoming a heading above it.
+ */
+export function failureCauseSection(cause: FailureCause): string[] {
+  const out: string[] = [];
+  const shown = cause.items.slice(0, REPORT_ITEM_LINES);
+  const counted = failureItemCount(cause);
+
+  out.push(`#### What failed${cause.items.length > 0 ? ` (${counted})` : ''}`);
+  if (cause.headline) {
+    out.push('');
+    out.push(cause.headline);
+    out.push('');
+  }
+  for (const item of shown) {
+    const what = item.group ? `\`${item.group}\` › \`${item.what}\`` : `\`${item.what}\``;
+    out.push(
+      `- ${[
+        `**${item.kind}**`,
+        what,
+        // Backticks inside a backtick span would close it early, and a mangled assertion is
+        // worse than a substituted quote.
+        item.message ? `\`${item.message.replace(/`/g, "'")}\`` : null,
+        item.where ? `(\`${item.where}\`)` : null,
+      ]
+        .filter(Boolean)
+        .join(' — ')}`,
+    );
+  }
+  if (cause.items.length > shown.length) {
+    out.push(`- _…and ${cause.items.length - shown.length} more._`);
+  } else if (counted > cause.items.length) {
+    out.push(`- _…and ${counted - cause.items.length} further failures not listed._`);
+  }
+  // Provenance and a hedge, on one line. Every other fact in this document was fetched from the
+  // API; this was read out of a log or a test report by a model, and whoever is deciding what to
+  // do about it should be able to tell the two apart.
+  out.push(
+    `_Found by Claude${cause.source ? ` in ${cause.source}` : ''} — review before trusting.` +
+      `${cause.note ? ` ${cause.note}.` : ''}_`,
+  );
+  return out;
+}
+
 export function buildFailureReport(input: FailureReportInput): string {
   const {
     jobName, failedStep, origin, headRef, headSha,
     workflowFile, runUrl, runNumber, runAttempt, jobUrl, completedAt,
     annotations, logTail, fingerprint, format, appVersion, generatedAt, analysis, blame,
+    failureCause,
   } = input;
 
   const failures = failureAnnotations(annotations);
@@ -255,11 +323,20 @@ export function buildFailureReport(input: FailureReportInput): string {
   out.push(`**Failed step** ${stepBits.join(' · ')}`);
   out.push('');
 
+  if (failureCause) {
+    out.push(...failureCauseSection(failureCause));
+    out.push('');
+  }
+
   if (failures.length > 0) {
-    out.push(`#### Failed tests (${failures.length})`);
+    // Renamed when the extracted list is present, because then this section is no longer the
+    // answer to "what failed" — it is what the workflow reported, which is usually the step
+    // rather than the thing that broke, and two sections claiming to be the same list would
+    // read as a bug in the report.
+    out.push(`#### ${failureCause ? 'Reported by the workflow' : 'Failed tests'} (${failures.length})`);
     out.push(...failures.map(annotationLine));
     out.push('');
-  } else {
+  } else if (!failureCause) {
     // Say so explicitly rather than leaving a gap: an empty section reads like a
     // bug in the report, whereas "no annotations" is a real and useful fact.
     out.push('#### Failed tests');

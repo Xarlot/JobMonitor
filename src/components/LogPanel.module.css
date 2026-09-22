@@ -50,3 +50,57 @@
 .scrollPane {
   overflow-y: auto;
 }
+
+/* Up / count / down, kept together so they read as one control rather than three buttons. */
+.navGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  padding: 0 var(--base-size-4);
+  border: 1px solid var(--borderColor-muted);
+  border-radius: var(--borderRadius-medium);
+}
+
+.navCount {
+  min-width: 4ch;
+  text-align: center;
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+}
+
+/* What the current mark is, above the log rather than inside it. */
+.markBar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+  padding: var(--base-size-4) var(--base-size-8);
+  background-color: var(--bgColor-attention-muted);
+  border-radius: var(--borderRadius-medium);
+  flex-wrap: wrap;
+}
+
+.markLine {
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  flex-shrink: 0;
+}
+
+.markLabel {
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.markNote {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+}
+
+.unanchored {
+  display: block;
+  margin-bottom: var(--base-size-8);
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+}

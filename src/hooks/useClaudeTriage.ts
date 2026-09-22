@@ -51,6 +51,16 @@ const LOG_FETCH_TIMEOUT_MS = 20 * 60_000;
  */
 const QUICK_LOG_FETCH_TIMEOUT_MS = 45_000;
 
+/**
+ * Tasks that get the short fetch budget rather than the long one.
+ *
+ * `marks` joins the quick read for a different reason: it maps a log the reader is *looking at*,
+ * so the app already has it and the fetch is a cache read. Waiting twenty minutes for a log that
+ * should be in hand would mean something else is wrong, and the honest answer then is to say so
+ * rather than to sit on a spinner beside a log that is visibly on screen.
+ */
+const FAST_LOG_FETCH: ReadonlySet<ClaudeDepth> = new Set(['quick', 'marks']);
+
 /** "45 seconds" / "20 minutes" — whichever reads naturally at that scale. */
 function describeDuration(ms: number): string {
   return ms < 90_000 ? `${Math.round(ms / 1000)} seconds` : `${Math.round(ms / 60_000)} minutes`;
@@ -66,6 +76,7 @@ import {
   buildClaudePrompt,
   CLAUDE_RESUME_PROMPT,
   parseClaudeAnalysis,
+  returnsDocument,
   trimLog,
   type ClaudeAnalysis,
   type ClaudeDepth,
@@ -176,6 +187,8 @@ const AI_FEATURE: Partial<Record<ClaudeDepth, Feature>> = {
   deep: Feature.AI_TRIAGE_DEEP,
   log: Feature.AI_LOG_FETCH,
   blame: Feature.AI_BLAME,
+  cause: Feature.AI_FAILURE_CAUSE,
+  marks: Feature.AI_LOG_MARKS,
 };
 
 /** And which operation times it. Separate from the feature: one says who asked, one says how long. */
@@ -184,6 +197,8 @@ const AI_OPERATION: Partial<Record<ClaudeDepth, Operation>> = {
   deep: Operation.CLAUDE_DEEP,
   log: Operation.CLAUDE_LOG_FETCH,
   blame: Operation.CLAUDE_BLAME,
+  cause: Operation.CLAUDE_FAILURE_CAUSE,
+  marks: Operation.CLAUDE_LOG_MARKS,
 };
 
 /**
@@ -363,6 +378,9 @@ export function useClaudeTriage(): ClaudeTriage {
           checkRunId: failure.checkRunId,
         });
       } else {
+        const fetchBudget = FAST_LOG_FETCH.has(depth)
+          ? QUICK_LOG_FETCH_TIMEOUT_MS
+          : LOG_FETCH_TIMEOUT_MS;
         try {
           // Bounded: this is the quick pass's only log source, so a stalled download
           // would sit on the phase indefinitely with nothing to report — the bridge
@@ -371,15 +389,13 @@ export function useClaudeTriage(): ClaudeTriage {
           fallbackLog = trimLog(
             await withTimeout(
               fetchJobLog(failure.owner, failure.repo, failure.jobId, logTtlMs(true)),
-              depth === 'quick' ? QUICK_LOG_FETCH_TIMEOUT_MS : LOG_FETCH_TIMEOUT_MS,
+              fetchBudget,
             ),
           );
         } catch (err) {
           logProblem =
             err instanceof Error && err.message === 'timed out'
-              ? `the log took longer than ${describeDuration(
-                  depth === 'quick' ? QUICK_LOG_FETCH_TIMEOUT_MS : LOG_FETCH_TIMEOUT_MS,
-                )} to download`
+              ? `the log took longer than ${describeDuration(fetchBudget)} to download`
               : `the log couldn’t be downloaded (${err instanceof Error ? err.message : 'unknown error'})`;
           devWarn('claude', `log fetch failed for job ${failure.jobId}: ${logProblem}`, err);
         }
@@ -406,6 +422,16 @@ export function useClaudeTriage(): ClaudeTriage {
         };
       }
 
+      // The marker pass is different: annotations are no substitute, because what it produces is
+      // positions *in a log*. With no log there is nothing to mark, and spending a call to be told
+      // so would be worse than saying it here.
+      if (!fallbackLog && depth === 'marks') {
+        return {
+          ok: false as const,
+          error: `There is no log to scan — ${logProblem ?? 'none could be read for this job'}.`,
+        };
+      }
+
       // A resumed run already has all of this in its conversation; sending it again would
       // cost context and invite it to start the investigation over.
       // A resumed run already has all of this in its conversation; sending it again would
@@ -428,9 +454,9 @@ export function useClaudeTriage(): ClaudeTriage {
             // brief it to go and find the evidence rather than reason over the annotation.
             canInvestigate: true,
             depth,
-            // The deep pass can still get a log from `gh` after this point; the quick pass
+            // The tool-using passes can still get a log from `gh` after this point; the rest
             // cannot, so an empty fallback there means there will be no log at all.
-            hasLog: depth === 'deep' || fallbackLog.length > 0,
+            hasLog: depth === 'deep' || depth === 'cause' || fallbackLog.length > 0,
             promptOverride: task.prompt,
             extraInstructions: ai.extraInstructions,
           });
@@ -485,12 +511,12 @@ export function useClaudeTriage(): ClaudeTriage {
               : { ...current, running: false, phase: null, requestId: null, error: result.error },
           };
         }
-        // The log and blame tasks return a whole Markdown document rather than the two
-        // marked sections, so their reply is taken verbatim — running it through the
-        // marker parser would reject every one.
-        const returnsDocument = depth === 'log' || depth === 'blame';
-        const rewritten = returnsDocument ? result.reply.trim() : null;
-        const analysis = returnsDocument ? null : parseClaudeAnalysis(result.reply);
+        // Several tasks answer with a whole document — Markdown, or the record lines the two
+        // data tasks return — rather than the two marked sections, so their reply is taken
+        // verbatim; running it through the marker parser would reject every one.
+        const document = returnsDocument(depth);
+        const rewritten = document ? result.reply.trim() : null;
+        const analysis = document ? null : parseClaudeAnalysis(result.reply);
 
         // The trail goes in with the result — see CachedAnalysis.activity.
         if (analysis || rewritten) {
@@ -523,7 +549,7 @@ export function useClaudeTriage(): ClaudeTriage {
             // Only the two-section tasks can fail this way. A document task has no
             // markers to miss, so applying the check there flags every successful run.
             error:
-              returnsDocument || analysis
+              document || analysis
                 ? null
                 : "Claude's reply didn't contain the expected sections.",
           },

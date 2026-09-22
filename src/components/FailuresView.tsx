@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, CounterLabel, Flash, IconButton, Label, SegmentedControl, Spinner, Text, Tooltip } from '@primer/react';
 import {
   AlertIcon,
+  BeakerIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -22,6 +23,7 @@ import {
   FileIcon,
   GitCommitIcon,
   SyncIcon,
+  TelescopeIcon,
   WorkflowIcon,
   ZapIcon,
 } from '@primer/octicons-react';
@@ -29,7 +31,10 @@ import type { NavigationRequest } from '../context/NavigationContext';
 import { useCopy } from '../hooks/useCopy';
 import { useClaudeTriage } from '../hooks/useClaudeTriage';
 import type { ClaudeAnalysis, ClaudeDepth } from '../lib/claudePrompt';
+import { AiProgressNotice } from './AiProgressNotice';
 import { ClaudeTriageDialog } from './ClaudeTriageDialog';
+import { parseFailureCause, type FailureCause } from '../lib/failureCause';
+import { FailureCauseCard } from './FailureCauseCard';
 import { ghLogAvailable } from '../storage/desktopClaude';
 import { analysedFailures } from '../storage/failureCaches';
 import { LogPanel } from './LogPanel';
@@ -43,6 +48,7 @@ import { loadFailuresLayout, saveFailuresLayout } from '../storage/failureGroups
 import {
   blameVerdict,
   buildFailureReport,
+  failureCauseSection,
   failureAnnotations,
   failureFingerprint,
   joinReports,
@@ -72,6 +78,7 @@ function buildReport(
   format: ReportFormat,
   analysis: ClaudeAnalysis | null = null,
   blame: string | null = null,
+  failureCause: FailureCause | null = null,
 ): string {
   const annotations = detail.annotations ?? [];
   return buildFailureReport({
@@ -99,7 +106,18 @@ function buildReport(
     generatedAt: new Date(),
     analysis,
     blame,
+    failureCause,
   });
+}
+
+/**
+ * The cause a stored result carries, or null.
+ *
+ * Parsed at the point of use rather than stored parsed — the week-long cache holds the reply
+ * verbatim, so a result from last Tuesday is read by today's parser. Cheap: a few dozen lines.
+ */
+function causeFrom(state: { document: string | null } | null | undefined): FailureCause | null {
+  return state?.document ? parseFailureCause(state.document) : null;
 }
 
 /** How many failing tests we know about, for the list row. */
@@ -121,7 +139,9 @@ function testCountLabel(detail: FailureDetail): string | null {
 const RESULT_ICONS: { depth: ClaudeDepth; icon: typeof ZapIcon; label: string }[] = [
   { depth: 'quick', icon: ZapIcon, label: 'has a quick read' },
   { depth: 'deep', icon: SparkleFillIcon, label: 'has a deep analysis' },
+  { depth: 'cause', icon: BeakerIcon, label: 'has worked out what failed' },
   { depth: 'log', icon: FileIcon, label: 'has a rewritten log' },
+  { depth: 'marks', icon: TelescopeIcon, label: 'has a mapped log' },
   { depth: 'blame', icon: GitCommitIcon, label: 'has traced who broke it' },
 ];
 
@@ -283,6 +303,14 @@ function FailureGroupBlock({
   );
 }
 
+/**
+ * How long a failure has to stay focused before its analysis starts by itself.
+ *
+ * Long enough that clicking down a list of failures does not start one per row, short enough that
+ * stopping on a row and reading it feels like the answer was already coming.
+ */
+const AUTO_START_DELAY_MS = 1500;
+
 /** Colour the group badge by what it says: PR state, or a run's trigger. */
 const GROUP_BADGE_VARIANT: Record<string, 'success' | 'done' | 'secondary'> = {
   open: 'success',
@@ -422,12 +450,27 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
   const logTriage = focused ? triage.stateFor(focused.key, 'log') : null;
   const blameTriage = focused ? triage.stateFor(focused.key, 'blame') : null;
   const deepTriage = focused ? triage.stateFor(focused.key, 'deep') : null;
+  const causeTriage = focused ? triage.stateFor(focused.key, 'cause') : null;
+  const marksTriage = focused ? triage.stateFor(focused.key, 'marks') : null;
   // The deep read supersedes the quick one in the report when both exist.
   const reportAnalysis = deepTriage?.analysis ?? quickTriage?.analysis ?? null;
   // Only when the reader asked for it: a verdict naming a person does not belong in a bug
   // report by default.
   const reportBlame =
     blameTriage?.inReport && blameTriage.document ? blameVerdict(blameTriage.document) : null;
+  /**
+   * What the cause band shows, and — only when asked for — what the report carries.
+   *
+   * Memoized on the reply text so its identity is stable across renders: it feeds the report memo
+   * below, and a fresh parse every render would rebuild the report on every poll, which restamps
+   * its "generated" footer and leaves the preview disagreeing with the clipboard.
+   */
+  const causeDocument = causeTriage?.document ?? null;
+  const focusedCause = useMemo(
+    () => (causeDocument ? parseFailureCause(causeDocument) : null),
+    [causeDocument],
+  );
+  const reportCause = causeTriage?.inReport ? focusedCause : null;
   // Keyed off the open depth rather than a chain of ternaries, so adding a task cannot
   // leave its dialog silently unopenable — which is exactly what happened when blame was
   // added and this mapping still only knew about quick and deep.
@@ -435,9 +478,11 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
   const focusedReport = useMemo(
     () =>
       focused && focusedDetail
-        ? buildReport(focused, focusedDetail, format, reportAnalysis, reportBlame)
+        ? buildReport(focused, focusedDetail, format, reportAnalysis, reportBlame, reportCause)
         : null,
-    [focused, focusedDetail, format, reportAnalysis],
+    // Every part the report is assembled from, including the opt-in ones: leaving `reportBlame`
+    // out meant ticking "add verdict to report" changed the preview only on the next poll.
+    [focused, focusedDetail, format, reportAnalysis, reportBlame, reportCause],
   );
 
   const startTriage = (depth: ClaudeDepth, options?: { resume?: boolean }) => {
@@ -453,6 +498,58 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
       options,
     );
   };
+
+  /**
+   * Work out what failed as soon as a failure is focused.
+   *
+   * The band at the top of the report pane is the first thing a reader looks at, and an answer
+   * that needs a click is an answer they read after they have already opened the log and searched
+   * it by hand. So it starts itself — with four bounds, because this is a model call nobody asked
+   * for: the AI master switch, a setting of its own, **once per failure** (`autoStarted` is a ref
+   * keyed by failure key), and never after a previous attempt failed, since retrying on every
+   * revisit would spend a call per visit to fail the same way.
+   *
+   * **Debounced.** Clicking down a red board is how this list is used, and firing a call per row
+   * passed through would spend ten to answer one. A second and a half of the row staying focused
+   * is the signal that the reader has actually stopped on it.
+   *
+   * It also waits for the log tail to settle, since that is what carries the failed step's name
+   * into the prompt — and the wait is bounded by the fetch itself rather than by a timer here.
+   */
+  const autoStarted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!config.ai.autoStart || !triage.available) return;
+    if (!focused || !focusedDetail || focusedDetail.loadingLog) return;
+    if (autoStarted.current === focused.key) return;
+    const state = triage.stateFor(focused.key, 'cause');
+    if (state.running || state.document || state.error) return;
+
+    const key = focused.key;
+    const timer = setTimeout(() => {
+      autoStarted.current = key;
+      startTriage('cause');
+    }, AUTO_START_DELAY_MS);
+    return () => clearTimeout(timer);
+    // Deliberately narrow: `startTriage` and `stateFor` are rebuilt on every render and on every
+    // streamed chunk, and depending on them would restart the timer forever. The guards above are
+    // the contract; the focused failure is the only input that should begin a new analysis.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused?.key, focusedDetail?.loadingLog, config.ai.autoStart, triage.available]);
+
+  /**
+   * Which automatic tasks are in flight, for the strip at the top.
+   *
+   * Only these two: the tasks you ask for open their own window, which is where their progress and
+   * their answer both belong. Work that started on its own has no window, so it reports here.
+   */
+  const autoRunning = ([
+    { depth: 'cause' as const, state: causeTriage },
+    { depth: 'marks' as const, state: marksTriage },
+  ] as const)
+    .filter((t): t is { depth: 'cause' | 'marks'; state: NonNullable<typeof t.state> } =>
+      Boolean(t.state?.running),
+    )
+    .map((t) => ({ depth: t.depth as ClaudeDepth, state: t.state }));
 
   /**
    * GitHub's issue editor renders Markdown you paste; Teams does not — it only applies
@@ -480,6 +577,10 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
             (() => {
               const b = triage.stateFor(f.key, 'blame');
               return b.inReport && b.document ? blameVerdict(b.document) : null;
+            })(),
+            (() => {
+              const c = triage.stateFor(f.key, 'cause');
+              return c.inReport ? causeFrom(c) : null;
             })(),
           ),
         ),
@@ -557,6 +658,13 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
           Couldn’t reach the clipboard — select the text below and copy it manually.
         </Flash>
       )}
+
+      {/*
+        At the top of the working area, and above the panes rather than inside one: the cause runs
+        for the report pane and the map for the log pane, and a reader who switches between them
+        mid-analysis should not watch the progress disappear.
+      */}
+      <AiProgressNotice running={autoRunning} onStop={(depth) => focused && triage.cancel(focused.key, depth)} />
 
       <div
         ref={panesRef}
@@ -783,6 +891,29 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                 </Button>
               )}
 
+              {/*
+                Why it is red, before the document that says it. The report is Markdown — headings,
+                metadata, links — and the cause was a sentence somewhere inside it; a reader
+                arriving at a red job wants the sentence first and the paperwork after. Shown on
+                the report pane only, since the log pane has the log's own map for this.
+              */}
+              {pane === 'report' && triage.available && (
+                <FailureCauseCard
+                  cause={focusedCause}
+                  analysis={reportAnalysis}
+                  running={Boolean(causeTriage?.running)}
+                  error={causeTriage?.error ?? null}
+                  inReport={Boolean(causeTriage?.inReport)}
+                  onFind={() => startTriage('cause')}
+                  onToggleInReport={() =>
+                    triage.setInReport(focused.key, 'cause', !causeTriage?.inReport)
+                  }
+                  onCopy={() =>
+                    focusedCause && putOnClipboard(failureCauseSection(focusedCause).join('\n'))
+                  }
+                />
+              )}
+
               {pane === 'log' ? (
                 <LogPanel
                   jobId={focused.jobId}
@@ -792,6 +923,13 @@ export function FailuresView({ focusFailure }: { focusFailure?: NavigationReques
                   repo={focused.repo}
                   rewrittenLog={logTriage?.document ?? null}
                   rewriteRunning={Boolean(logTriage?.running)}
+                  // The map, and the state of the run that produces it. The reply travels as text
+                  // because the panel anchors it against whichever log it is showing.
+                  marksDocument={marksTriage?.document ?? null}
+                  marksRunning={Boolean(marksTriage?.running)}
+                  marksError={marksTriage?.error ?? null}
+                  scanOnOpen={config.ai.autoStart}
+                  onFindMarks={() => startTriage('marks')}
                   // Two different permissions: `gh` can fetch the run log with AI off,
                   // and AI can rewrite a log with no `gh` at all.
                   ghAvailable={ghLogAvailable(triage.tools)}

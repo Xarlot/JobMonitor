@@ -1,0 +1,175 @@
+/* Colours and spacing come from Primer's tokens, so the band follows the light/dark theme. */
+
+/*
+ * A band, not a panel. The red left rule is what makes it read as "the reason" at a glance from
+ * across the pane, before any of the words have been read.
+ */
+.card {
+  margin-bottom: var(--base-size-8);
+  padding: var(--base-size-8);
+  background-color: var(--bgColor-danger-muted);
+  border: 1px solid var(--borderColor-danger-muted);
+  border-left: 3px solid var(--fgColor-danger);
+  border-radius: var(--borderRadius-medium);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.dangerFg {
+  color: var(--fgColor-danger);
+  flex-shrink: 0;
+}
+
+/* The one line the whole band exists for: set above body size and semibold. */
+.headline {
+  font-size: var(--text-title-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  line-height: 1.3;
+  min-width: 0px;
+}
+
+.working {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.invite {
+  color: var(--fgColor-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.error {
+  display: block;
+  margin-top: var(--base-size-4);
+  color: var(--fgColor-danger);
+  font-size: var(--text-body-size-small);
+}
+
+.groups {
+  margin-top: var(--base-size-8);
+  overflow-y: auto;
+  min-height: 0px;
+  background-color: var(--bgColor-default);
+  border: 1px solid var(--borderColor-muted);
+  border-radius: var(--borderRadius-medium);
+}
+
+.group + .group {
+  border-top: 1px solid var(--borderColor-muted);
+}
+
+/* Sticky, so the suite or file a row belongs to is still on screen after scrolling past it. */
+.groupHead {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--base-size-4);
+  padding: var(--base-size-4) var(--base-size-8);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  background-color: var(--bgColor-muted);
+  border-bottom: 1px solid var(--borderColor-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.groupPrefix {
+  color: var(--fgColor-muted);
+}
+
+.groupTail {
+  font-weight: var(--base-text-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groupCount {
+  margin-left: auto;
+  padding-left: var(--base-size-8);
+  color: var(--fgColor-muted);
+}
+
+.row {
+  padding: var(--base-size-6) var(--base-size-8);
+}
+
+.row + .row {
+  border-top: 1px solid var(--borderColor-muted);
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.kind {
+  flex-shrink: 0;
+  text-transform: lowercase;
+}
+
+.what {
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  word-break: break-word;
+}
+
+/* Pushed right and allowed to shrink first: the name identifies it, the path locates it. */
+.where {
+  margin-left: auto;
+  padding-left: var(--base-size-8);
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0px;
+}
+
+.message {
+  margin-top: var(--base-size-4);
+  padding: var(--base-size-4) var(--base-size-8);
+  color: var(--fgColor-default);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--bgColor-inset);
+  border-left: 2px solid var(--borderColor-danger-emphasis);
+  border-radius: var(--borderRadius-small);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-top: var(--base-size-8);
+  flex-wrap: wrap;
+}
+
+.count {
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+}
+
+/* Provenance: which report these came out of decides how much to trust them. */
+.source,
+.note {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 44ch;
+}

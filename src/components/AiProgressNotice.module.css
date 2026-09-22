@@ -1,0 +1,68 @@
+/* Colours from Primer's tokens, so the strip follows the light/dark theme. */
+
+/*
+ * Quiet on purpose. This is a running commentary on work nobody asked for line by line, so it
+ * announces itself once — an accent tint and a rule — and then stays out of the way. Danger
+ * colouring belongs to the failure, not to the fact that something is being read about it.
+ */
+.strip {
+  margin-bottom: var(--base-size-8);
+  background-color: var(--bgColor-accent-muted);
+  border: 1px solid var(--borderColor-muted);
+  border-left: 3px solid var(--fgColor-accent);
+  border-radius: var(--borderRadius-medium);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  padding: var(--base-size-4) var(--base-size-8);
+  min-width: 0px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--borderColor-muted);
+}
+
+.icon {
+  color: var(--fgColor-accent);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  flex-shrink: 0;
+}
+
+.phase {
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+  flex-shrink: 0;
+}
+
+/*
+ * The last thing it ran. Monospace because it is a command, and first to be truncated because it
+ * is the least load-bearing part of the line — the task name and the clock have to survive.
+ */
+.activity {
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0px;
+}
+
+.grow {
+  flex: 1;
+}
+
+.elapsed {
+  color: var(--fgColor-muted);
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  flex-shrink: 0;
+}

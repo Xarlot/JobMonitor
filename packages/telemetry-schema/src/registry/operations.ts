@@ -63,6 +63,8 @@ const defs = {
   CLAUDE_BLAME: { id: 1203, key: 'claude.blame' },
   CLAUDE_LOG_FETCH: { id: 1204, key: 'claude.log_fetch' },
   CLAUDE_PR_COMPOSE: { id: 1205, key: 'claude.pr_compose' },
+  CLAUDE_FAILURE_CAUSE: { id: 1206, key: 'claude.failure_cause' },
+  CLAUDE_LOG_MARKS: { id: 1207, key: 'claude.log_marks' },
 
   // ── 1300 app lifecycle ───────────────────────────────────────────────────────────────────────
   APP_STARTUP: { id: 1300, key: 'app.startup' },

@@ -348,6 +348,16 @@ export const aiSchema = z
      * Additive rather than replacing, so it can't quietly break the output contract.
      */
     extraInstructions: z.string().default(''),
+    /**
+     * Start the two data tasks without being asked: work out what failed when a failure is
+     * focused, and map a log when its view is opened.
+     *
+     * On by default, because an answer you have to request is an answer you read after you have
+     * already done the work by hand — which is the work these exist to remove. Both are still
+     * bounded to one call per failure, and only for a failure or a log you opened deliberately;
+     * this switch turns them back into buttons for anyone who would rather they were.
+     */
+    autoStart: z.boolean().default(true),
     /** The fast read: a single-turn summary of a log already in hand. */
     quick: aiTaskSchema('sonnet', 'medium'),
     /** The investigation: fetches artifacts, the workflow and the diff. */
@@ -363,6 +373,18 @@ export const aiSchema = z
      * medium effort rather than the deep pass's high.
      */
     blame: aiTaskSchema('opus', 'medium'),
+    /**
+     * "What failed": reads the concrete failures — tests, compile errors, a dead runner — out of
+     * the log and, when it points at one, the run's test report. Transcription with a download in
+     * front of it, so a fast model at ordinary effort; the judgement is in finding the evidence.
+     */
+    cause: aiTaskSchema('sonnet', 'medium'),
+    /**
+     * The log map: which of a failed log's lines are the decisive ones, for the viewer's marker
+     * stripe. One turn over a log already in hand, like the quick read, and the same pairing —
+     * the task is a judgement about relevance, not a search.
+     */
+    marks: aiTaskSchema('sonnet', 'medium'),
     /**
      * The pull-request write-up: a title and description for the PR that ships a feature
      * branch into the default branch, from the commit subjects and changed files the app
@@ -468,10 +490,13 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   ai: {
     enabled: true,
     extraInstructions: '',
+    autoStart: true,
     quick: { model: 'sonnet', effort: 'medium', prompt: '' },
     deep: { model: 'opus', effort: 'high', prompt: '' },
     log: { model: 'sonnet', effort: 'low', prompt: '' },
     blame: { model: 'opus', effort: 'medium', prompt: '' },
+    cause: { model: 'sonnet', effort: 'medium', prompt: '' },
+    marks: { model: 'sonnet', effort: 'medium', prompt: '' },
     pr: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,

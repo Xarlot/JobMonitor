@@ -50,7 +50,13 @@ that lives in the tray and pops a notification when something finishes.
   somebody else's decision.
 - **Explain with Claude** (desktop app) — turn a failed job's log into a readable problem statement
   and a suggested fix, using the `gh` and `claude` CLIs already on your machine. Two depths: a
-  **quick read** in about a minute, or a **deep analysis** that goes and investigates. It also
+  **quick read** in about a minute, or a **deep analysis** that goes and investigates. The report
+  pane leads with **what actually failed** — the tests and their assertions, or the compile error,
+  the dead runner, the step that timed out — read out of the run's own evidence rather than out of
+  a workflow annotation that only names the step, and **worked out the moment you focus the
+  failure** rather than on a click. And the **log view maps itself** as you open it: the decisive
+  lines marked on a stripe beside the log, with buttons to walk them. Neither opens a dialog —
+  work that starts on its own reports into a strip at the top. It also
   writes the title and description of a pull request shipping a feature branch — you edit the
   result before anything is published, and a browser falls back to a template.
 - **A Diagnostics tab** (desktop app) — read Job Monitor's own log live, to see why it did
@@ -261,6 +267,31 @@ Prose that merely mentions "error" is left plain on purpose: a log where everyth
 easier to read than one with no colour, and it teaches you to ignore it. Markdown renders properly in
 this pane too, and a log quoted inside Claude's explanation is coloured like the log.
 
+#### The log map
+
+Colour tells you which lines *look* wrong. In a failed run that is forty lines, and one of them is the
+reason. So **opening the Log view starts a scan**, and what comes back is a marker stripe down the
+right edge — one tick per finding, the way an IDE marks compiler errors: red for something that broke,
+amber for something that explains it or follows from it, blue for context worth jumping to.
+
+![The log map](docs/screenshots/log-map.png)
+
+**⌃ / ⌄ walk the findings** and the counter says where you are (`1/4`). Each jump scrolls the line into
+the middle of the pane, holds it highlighted, and shows what Claude said about it above the log —
+including the most useful thing it can say, which is *"a consequence of the failure above"*. Clicking a
+tick goes straight to it, and marked lines carry a rule in the gutter so they're findable without the
+stripe. Nothing scrolls on its own: the map appears, and the jumping waits for you to ask.
+
+It scans **once per job**, only with the AI integration on, and only for a log you opened yourself.
+Progress appears in the strip at the top rather than a dialog, and if you'd rather it were a button,
+untick **Start these two without being asked** under **Settings → AI integration**.
+
+Findings are anchored by the **text of the line**, never by a line number the model counted. That's
+what lets the same findings be re-placed against the whole-run log from `gh`, which numbers its lines
+differently — and a finding whose line isn't in the log you're looking at is declared rather than
+quietly dropped, so a map with holes in it says so. Nothing is invented: a finding that can't be found
+in the text isn't shown at all.
+
 ![Claude's rewrite of the log](docs/screenshots/failures-claude-log.png)
 
 ### Explain with Claude (desktop app)
@@ -274,13 +305,60 @@ the deep one better but isn't required — see below.
 *which* failures are yours; occasionally you want to know *why* one of them broke. One button answered
 both badly — either too slow to run five times, or too shallow to be worth running once.
 
-| | **Quick read** | **Deep analysis** | **Who broke it** |
-|---|---|---|---|
-| Answers | what failed | why it failed | **which commit, and whose** |
-| Time | about a minute | a few minutes | a few minutes |
-| Model | Sonnet, medium | Opus, high | Opus, medium |
-| Reads | the log already fetched | the run's log, artifacts, workflow, diff | the branch's run history |
-| Tools | none | read-only `gh` and file access | read-only `gh` and file access |
+| | **What failed** | **Quick read** | **Deep analysis** | **Who broke it** |
+|---|---|---|---|---|
+| Answers | **which things broke** | what failed | why it failed | **which commit, and whose** |
+| Time | under a minute or two | about a minute | a few minutes | a few minutes |
+| Model | Sonnet, medium | Sonnet, medium | Opus, high | Opus, medium |
+| Reads | the log, then the run's test report | the log already fetched | the run's log, artifacts, workflow, diff | the branch's run history |
+| Tools | read-only `gh` and file access | none | read-only `gh` and file access | read-only `gh` and file access |
+
+#### What failed, at the top of the report
+
+GitHub's answer to "what failed" is usually not one. A sharded Gradle job reports `Gradle Tests Failed
+(drawing-docs)` and `Process completed with exit code 1` — the *step*, not the thing that broke, and
+nothing anybody can go and fix. So the report pane leads with a band that says it in one line, and
+then lists the specifics.
+
+![What failed](docs/screenshots/what-failed.png)
+
+**It is deliberately not "failing tests".** Half of CI reality isn't: a compile error, a dependency
+that wouldn't download, a runner that lost its connection, a step that timed out, an out-of-memory
+kill. Every row says which *kind* of thing it is, because that is the half that decides who picks it
+up — an assertion goes to whoever owns the code, a dead runner goes to nobody.
+
+When the failure *is* tests, the specifics live in the run's own test report — a JUnit XML, a TRX, a
+JSON reporter output, sitting in the artifacts — so the task goes and reads it, and each row carries
+the assertion verbatim with the file and line the report knew. It says which artifact it read, and when
+a shard failed four hundred tests off one root cause it lists the first of them and counts the rest
+rather than implying the list is the whole story.
+
+**It starts by itself.** Focus a failure, and a second and a half later the analysis is already
+running — because an answer you have to ask for is one you read after you have opened the log and
+searched it by hand. The delay is what keeps clicking down a red board from starting a call per row,
+and it runs **once per failure**, never again after it fails.
+
+It is told not to diagnose beyond that one line of cause: *why* is what the quick and deep reads
+answer, and what makes this band useful is that the body stays a list. **Copy** puts it on the
+clipboard as Markdown; **Add to the report** carries it into the bug report, where it leads and the
+workflow's own annotations follow under their real name. That last part is opt-in for the same reason
+the blame verdict is: every other fact in a report was fetched from the API, and the document says
+which is which. Until it has run, the band shows the quick or deep read's own opening sentence, so the
+cause is on top of the pane whenever anything at all is known.
+
+#### No dialog for work you didn't ask for
+
+The analyses you *click* — the quick read, the deep analysis, who broke it — open a window with their
+phases, the commands as they run, the reply as it streams, and **Stop**. The two that start on their
+own must not: a modal that appears unbidden interrupts you, and it covers the very pane where the
+answer is about to land.
+
+![Analysis in progress](docs/screenshots/ai-progress.png)
+
+So they report into a strip at the top of the view instead — which task, which phase, the last thing
+it ran, how long it has been going, and Stop. It appears while they run and is gone when they finish,
+because by then the answer is on screen. Both are switched off together by unticking **Start these
+two without being asked** under **Settings → AI integration**, which turns them back into buttons.
 
 ![Who broke it](docs/screenshots/who-broke-it.png)
 
@@ -346,17 +424,19 @@ Both analyses feed the report, and the deep one wins when you've run both. The b
 `claude` is available; if they're missing, check `claude --version`. A finished analysis is marked ✓
 and reopening it costs nothing — **Re‑analyse** is there when you do want a fresh one.
 
-Each failure row shows what already exists for it — ⚡ a quick read, ✦ a deep analysis, 📄 a rewritten
-log — so you can see which ones have been looked at without opening them. Pull requests and flows carry
-a **✦ analysed** badge when one of their failures already has a stored
-result, so a week-old red board shows at a glance which parts have been looked at. The quick read, deep
-analysis and log rewrite are independent — each shows a spinner in its own button, and all three can run
-at once.
+Each failure row shows what already exists for it — ⚡ a quick read, ✦ a deep analysis, ⚗ what failed,
+📄 a rewritten log, 🔭 a mapped log — so you can see which ones have been looked at without opening
+them. Pull requests and flows carry a **✦ analysed** badge when one of their failures already has a
+stored result, so a week-old red board shows at a glance which parts have been looked at. Every task is
+independent — each shows a spinner in its own control, and they can all be in flight at once.
 
 Analyses are **kept for a week**, so reopening a failure you looked at yesterday doesn't spend another
 call. That's safe because the cache key includes the job id, and re-running failed jobs mints new
-ones: a new attempt can never be shown a previous attempt's verdict — it simply has none yet. The two
-depths are stored separately, so a quick read never overwrites a deep one.
+ones: a new attempt can never be shown a previous attempt's verdict — it simply has none yet. Each task
+is stored separately, so a quick read never overwrites a deep one. The two tasks that answer with data
+rather than prose — what failed, and the log map — are cached as the **reply itself**, so a week-old
+result is read by today's parser, and the map is re-anchored against whichever log you happen to be
+looking at.
 
 **What it's allowed to do.** Read-only, and narrowly: read and search files in a throwaway scratch
 directory, and run a fixed set of commands — `gh run view`, `gh run download`, `gh api`, `gh pr

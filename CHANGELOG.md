@@ -4,6 +4,75 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+**Two questions a red board raises that the app answered badly: *what actually failed*, and *where in
+this log did it go wrong*.** The first was answered with a workflow annotation — "Gradle Tests Failed",
+"Process completed with exit code 1" — which names the step and nothing you can fix. The second was left
+to the reader and a scroll bar. Both are the kind of search a model with `gh` does better than a person.
+
+### Added
+- **The report pane leads with what failed, and works it out on its own.** A band across the top: one
+  line of cause in Claude's own words, then a row per concrete thing that broke — the kind of failure,
+  its name, the decisive line verbatim, and the file and line when the evidence carried them. The cause
+  was previously a sentence somewhere inside a Markdown document, under a heading and above some
+  metadata, which is not where a person arriving at a red job looks. Focusing a failure starts the
+  analysis a second and a half later: an answer you have to ask for is one you read after you have
+  already opened the log and searched it by hand. The delay is what stops a click down a red board
+  from starting a call per row.
+- **Deliberately not "failing tests".** Half of CI reality is not tests: a compile error, a dependency
+  that would not download, a runner that lost its connection, a step that timed out, an out-of-memory
+  kill. Each row says which *kind* of thing it is, because that is the half that decides who picks it
+  up. When the failure *is* tests, the specifics are in the run's own test report — a JUnit XML, a TRX, a
+  JSON reporter output, in the artifacts — so the task downloads it and reads the failures out verbatim,
+  and says which artifact it read them from.
+- **It is told not to diagnose beyond that one line.** *Why* is what the quick and deep reads answer,
+  and what makes this band useful is that the body stays a list — something to group, count, copy and
+  paste. **Copy** puts it on the clipboard as Markdown; **Add to the report** carries it into the bug
+  report, where it leads and the workflow's own annotations follow, renamed to what they actually are
+  ("Reported by the workflow"). Opt-in, for the same reason the blame verdict is: every other fact in
+  that document was fetched from the API. Until the task is run the band shows the quick or deep read's
+  own opening sentence, so the cause is at the top of the pane whenever anything is known at all.
+- **The log view maps itself as it opens.** The local highlighter colours anything that *looks* like a
+  failure, which in a failed run is forty lines, one of which is the reason. Opening the Log view now
+  starts a scan, and the findings become ticks down the right edge of the log — red for something that
+  broke, amber for something that explains it or follows from it, blue for context worth jumping to.
+  `⌃`/`⌄` walk them with a counter, each jump centres the line and holds it highlighted, and what Claude
+  said about it — most usefully *"a consequence of the failure above"* — sits above the log rather than
+  in a tooltip. Clicking a tick goes straight to it. Nothing scrolls on its own: the map appears, and
+  jumping waits to be asked for.
+- **These are the app's first automatic model calls, and they are bounded like it.** Only with the AI
+  integration on, only for a failure or a log the reader opened, once per failure each, and never
+  retried after one fails — and **Start these two without being asked** under Settings → AI integration
+  turns both back into buttons.
+- **Work that starts by itself does not open a dialog.** The analyses you click — the quick read, the
+  deep analysis, who broke it — still open their window, with the phases, the commands as they run and
+  Stop; that window is the one you asked for and it is where their answer is shown. The two automatic
+  tasks report into a strip at the top of the view instead: which task, which phase, the last thing it
+  ran, the elapsed clock, and Stop. A modal that appears unbidden interrupts the reader and covers the
+  pane where the answer is about to appear.
+- **Findings are anchored by the text of the line, never by a line number the model counted.** They
+  could not be: the log handed to the model is trimmed in the middle, and the viewer may be showing the
+  whole-run log from `gh`, which numbers its lines differently. Quoting a line is something a model does
+  reliably, and a quote can be *found* — against whichever log is on screen, which is what lets one scan
+  serve both views. The number is accepted as a tie-breaker for a log that prints the same assertion
+  twice, and nothing else. A finding that cannot be located is **declared and dropped**, never placed
+  approximately: an error marker on an innocent line costs more than a missing one, because the stripe
+  is only worth reading if a tick means something.
+- Both tasks are cached for a week **as the reply itself**, so a stored result is read by today's parser
+  and a stored map is re-anchored against the log you are looking at now. Each has its own model, effort
+  and custom prompt under **Settings → AI integration**; both default to Sonnet, since one is
+  transcription with a download in front of it and the other is a one-turn judgement over a log already
+  in hand.
+
+### Fixed
+- **The failing job in mock mode showed a log where nothing had gone wrong.** The failing lines were
+  keyed to the job id it has inside a flow run, and the Failures tab focuses the same job as a pull
+  request check — a different id. The log viewer, the highlighter and now the log map were all
+  impossible to look at offline because of it.
+- **Ticking "add verdict to report" only reached the preview on the next poll.** The report is memoized
+  on what it is assembled from, and the blame verdict was missing from that list.
+
 ## [3.0.0]
 
 **Nearly everything this app is built on moved a major version at once** — React, Primer, TypeScript

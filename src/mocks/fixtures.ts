@@ -62,10 +62,13 @@ export const MOCK_CONFIG: MonitorConfig = {
   ai: {
     enabled: true,
     extraInstructions: '',
+    autoStart: true,
     quick: { model: 'sonnet', effort: 'medium', prompt: '' },
     deep: { model: 'opus', effort: 'high', prompt: '' },
     log: { model: 'sonnet', effort: 'low', prompt: '' },
     blame: { model: 'opus', effort: 'medium', prompt: '' },
+    cause: { model: 'sonnet', effort: 'medium', prompt: '' },
+    marks: { model: 'sonnet', effort: 'medium', prompt: '' },
     pr: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,
@@ -771,7 +774,12 @@ export function mockJobLog(jobId: number): string {
     `${t(110000)} ##[group]Run ./gradlew test`,
     `${t(110000)} + ./gradlew test`,
   ];
-  if (jobId === 90032) {
+  // Both ids belong to the same fictional job: 90032 is it inside a flow run, 22 is it as the
+  // pull request's check run (see mockSingleJob, where `failing` is exactly `jobId === 22`).
+  // Only 90032 used to get the failing lines, so the one failure the Failures tab focuses by
+  // default showed a log where nothing had gone wrong — which made the log viewer, the
+  // highlighter and the log map all impossible to look at in mock mode.
+  if (jobId === 90032 || jobId === 22) {
     lines.push(
       `${t(100000)} > Task :reporting:compareExportToPdf`,
       `${t(99000)} ExportToPdfTests > compareExportToPdfPdfs FAILED`,

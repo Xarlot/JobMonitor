@@ -1568,6 +1568,31 @@ function AiSection({
             onChange={(patch) => onChange({ log: { ...settings.log, ...patch } })}
           />
           <AiTaskFields
+            title="What failed"
+            blurb="Reads the concrete failures out of the log — and, when the log points at a test report, out of the run's artifacts. Tests, but also compile errors, a dead runner, a step that timed out. Transcription with a download in front of it, so speed over depth."
+            settings={settings.cause}
+            onChange={(patch) => onChange({ cause: { ...settings.cause, ...patch } })}
+          />
+          <AiTaskFields
+            title="Log map"
+            blurb="Marks the decisive lines of a failed log for the viewer's marker stripe, and says which of them are consequences of the others. One turn over a log already fetched — the same shape as the quick read."
+            settings={settings.marks}
+            onChange={(patch) => onChange({ marks: { ...settings.marks, ...patch } })}
+          />
+          <FormControl className={styles.mb4_2}>
+            <Checkbox
+              checked={settings.autoStart}
+              onChange={(e) => onChange({ autoStart: e.target.checked })}
+            />
+            <FormControl.Label>Start these two without being asked</FormControl.Label>
+            <FormControl.Caption>
+              Works out what failed when you focus a failure, and maps a log when you open it — one
+              call per failure each, never for a failure or a log you didn’t open, and never
+              retried after it fails. Progress appears as a strip at the top rather than a dialog.
+              Off makes both of them buttons.
+            </FormControl.Caption>
+          </FormControl>
+          <AiTaskFields
             title="Pull request write-up"
             blurb="Writes the title and description for a pull request shipping a feature branch, from its commit subjects and changed files. One turn on material it is handed, and you get to edit the result before anything is published."
             settings={settings.pr}

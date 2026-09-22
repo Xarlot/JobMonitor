@@ -18,8 +18,10 @@
  */
 
 import type { Annotation } from '../api/types';
+import { FAILURES_MARKER } from './failureCause';
 import { failureAnnotations } from './failureReport';
 import type { FailureOrigin } from './failures';
+import { MARKS_MARKER } from './logMarks';
 
 export const PROBLEM_MARKER = '<<<PROBLEM>>>';
 export const SOLUTION_MARKER = '<<<SOLUTION>>>';
@@ -37,7 +39,25 @@ export const SOLUTION_MARKER = '<<<SOLUTION>>>';
  * and the key it forms means the three results coexist per failure instead of
  * overwriting each other.
  */
-export type ClaudeDepth = 'quick' | 'deep' | 'log' | 'blame';
+export type ClaudeDepth = 'quick' | 'deep' | 'log' | 'blame' | 'cause' | 'marks';
+
+/**
+ * Which tasks answer with a whole document rather than the two marked sections.
+ *
+ * Asked as a function because three places have to agree about it — the prompt builder (a
+ * document task has no marker contract to restate after a custom prompt), the hook (which
+ * would otherwise run the reply through the marker parser and reject every one), and the
+ * dialog. When they disagreed, adding a task produced a run that succeeded and then reported
+ * "Claude's reply didn't contain the expected sections".
+ *
+ * The two data tasks count as documents: their replies are records rather than prose, parsed
+ * by `parseFailureCause` and `parseLogMarks` at the point of use. Storing the reply verbatim is
+ * what lets a week-old cached result be re-parsed by newer code — and re-anchored against a
+ * different log, which is the trick the marker stripe depends on.
+ */
+export function returnsDocument(depth: ClaudeDepth): boolean {
+  return depth === 'log' || depth === 'blame' || depth === 'cause' || depth === 'marks';
+}
 
 /** What the model is allowed to know about the failure. */
 export interface ClaudePromptInput {
@@ -227,6 +247,112 @@ The rule worth repeating outside it: **rule out a flaky test and an infrastructu
 
 Answer in Markdown, using the sections the skill specifies. No preamble — start with the first heading. Never invent a URL, a SHA, an author, a run number or a test name: everything you state comes from output you actually obtained.`;
 
+/**
+ * Name the cause, and list what actually broke.
+ *
+ * The task exists because GitHub's own answer is useless. A check run's failure annotations
+ * describe the *step*: `Gradle Tests Failed (drawing-docs)` and `Process completed with exit
+ * code 1`, which names nothing anyone can fix. The specifics are in the log, or — for tests —
+ * in a JUnit report inside the run's artifacts, a download and a parse away.
+ *
+ * Deliberately **not** "which tests failed". Half of CI failures are not tests at all: a
+ * compile error, a missing dependency, a dead runner, a full disk, a step that timed out. A
+ * brief that asked for tests would either come back empty on those or bend them into the shape
+ * of a test, and both are worse than a list that says what kind of thing each item is.
+ *
+ * One line of cause, then records. It is told not to diagnose *beyond* that line, because the
+ * quick and deep reads already answer "why", and what makes this answer useful is that the
+ * body stays a list — something to group, count and paste. Records rather than prose: see
+ * src/lib/failureCause.ts for why the shape is lines and not JSON.
+ */
+export const CLAUDE_CAUSE_BRIEF = `You are working out **what actually failed** in a GitHub Actions job, so a developer sees it without reading the log.
+
+The failure annotations below almost certainly do not tell you. A workflow reports the *step* that failed — "Gradle Tests Failed", "Process completed with exit code 1" — not the thing that broke inside it. Find the real items.
+
+**It is often not tests.** Look for whatever actually went wrong, and say which kind of thing each one is:
+- failing **tests** — with the assertion, from the log's own failure list (Gradle's \`FAILED\` lines, pytest's short summary, \`dotnet test\`'s \`Failed X [12 ms]\`, Jest's \`● Test\` blocks) or from the run's test-report artifact (\`TEST-*.xml\`, \`*surefire*\`, a TRX, a JSON reporter output), which has the exact names and messages;
+- **compile** and lint errors — file, line and the compiler's message;
+- **infrastructure** — a runner that died, a network or registry timeout, a rate limit, a full disk, an out-of-memory kill;
+- **dependency** failures — a package or image that could not be fetched;
+- a step that **timed out** or a process that **crashed**.
+
+Where to look, cheapest first: the log below; then, if it points at a test report you have not seen, the run's artifacts. Nothing else — do not read the workflow, the diff or another job.
+
+**Do not diagnose beyond the one \`cause:\` line.** No root cause analysis, no suggested fix, no commentary — other tasks do that, and prose here is dropped. Take the names and the messages as the evidence states them.
+
+Reply with **records only**, starting with the marker on its own line and no preamble:
+
+${FAILURES_MARKER}
+cause: three pages differ in the PDF comparison, so ExportToPdfTests fails on a real assertion
+source: JUnit XML from artifact \`test-results-exporttopdf\`
+failed: 3
+note: the report covers the exporttopdf shard only
+
+- kind: assertion
+  what: exportsRotatedPage
+  group: com.example.reporting.ExportToPdfTests
+  where: testing/exporttopdf/ExportToPdfTests.java:88
+  message: Expected 0 diffs but got 3
+
+- kind: infrastructure
+  what: Download artifacts step
+  where: .github/workflows/java.yml:71
+  message: Error: The operation was canceled — the runner lost connection
+
+Rules:
+- \`cause:\` is **one line** naming what broke, in your own words, for someone who has not seen this failure. Lead with the root cause when several things failed. Say plainly when it is infrastructure rather than the code, because that changes who picks it up.
+- One record per concrete item, in the order the evidence gives them. \`what:\` is the only required key.
+- \`kind:\` is one of \`test\`, \`assertion\`, \`error\`, \`compile\`, \`timeout\`, \`crash\`, \`infrastructure\`, \`dependency\`, \`lint\`, \`skipped\`.
+- \`group:\` is the suite, class, file or phase the item belongs to — leave it out when there isn't one.
+- \`message:\` is **one line**: the decisive assertion, exception or runner message, verbatim and trimmed. Not a stack trace, not your summary of it.
+- Leave a key **out** when the evidence does not carry it. Never write "unknown", "n/a" or a placeholder.
+- \`source:\` says where you read them — name the artifact, or say "the job log".
+- \`failed:\` is the true total. List at most 60 records; if there are more, list the first 60 and let \`failed:\` carry the real number.
+- \`note:\` is for what bounds the list — a report covering one shard, a truncated log, a suite that never finished.
+- Never invent a name, a file, a line number or a message. Everything you write must appear in output you actually read.
+- If the evidence genuinely does not say what broke, reply with the marker, a \`cause:\` line saying so, a \`source:\` naming where you looked, and **no records**. That is a real answer.`;
+
+/**
+ * Find the places in the log worth jumping to.
+ *
+ * Not the same job as the highlighter. `src/lib/logHighlight.ts` decides, line by line and
+ * with no context, whether a line *looks* like a failure — which in a failed run is forty
+ * lines, of which one matters. This pass reads the whole log and says which handful to look
+ * at, in order, with a sentence each; the viewer turns them into a marker stripe you can walk
+ * with two buttons. Restraint is therefore the point, and the brief says so: a map with fifty
+ * pins on it is the wall of colour the highlighter exists to avoid.
+ *
+ * Anchoring is by quoted text — see src/lib/logMarks.ts for why a line number the model
+ * counted cannot be trusted even when it is right.
+ */
+export const CLAUDE_MARKS_BRIEF = `You are marking up a failed GitHub Actions log so a developer can jump straight to what matters.
+
+The log is below. Find the places where something actually went wrong, and the few lines that explain them. The app already colours anything that looks like an error, so listing every red line helps nobody — what it cannot do is tell the one decisive line from the thirty consequences of it. That judgement is the whole job.
+
+Reply with **records only**, starting with the marker on its own line and no preamble:
+
+${MARKS_MARKER}
+- text: FAILED com.devexpress.drawing.docs.PdfExportTest > exportsRotatedPage
+  line: 4821
+  severity: error
+  label: PdfExportTest.exportsRotatedPage failed
+  note: The first real failure; the shard summary further down is reporting this same test.
+
+- text: Execution failed for task ':devexpress-drawing-tests:test'
+  line: 5104
+  severity: warning
+  label: Gradle reports the task failed
+  note: A consequence of the test above, not a separate problem.
+
+Rules:
+- \`text:\` is a **verbatim excerpt of one line of the log below**, copied exactly. This is how the app finds the line, so copy enough of it to be unique — a dozen characters or more — and never span two lines. Do not add quotes, ellipses or backticks of your own.
+- \`line:\` is that line's number in the log below, if you can count it. It is only used to tell two identical lines apart, so an approximation is fine and a wrong number costs nothing.
+- \`severity:\` is \`error\` for something that broke, \`warning\` for something that may explain it or is a consequence of it, \`notice\` for context worth jumping to — the start of the failing step, a summary line, the point where output stops.
+- \`label:\` is a few words naming what the line is. It is shown on the marker.
+- \`note:\` is one sentence, and only where the line does not speak for itself. Say when something is a consequence of an earlier failure — that is the most useful thing you can add.
+- **Between one and twenty findings**, in the order they appear in the log. Mark the decisive lines and the lines that explain them; leave the rest alone.
+- Never invent a line. If nothing in the log shows a failure, reply with the marker and no records.`;
+
 export const CLAUDE_OFFLINE_BRIEF = `You are triaging a failed GitHub Actions job so that a developer can act on it without opening the logs themselves.
 
 You have no tools on this run, so work only from the facts and the log below. If they do not determine the cause, say what to check next and which extra output would settle it.
@@ -264,6 +390,45 @@ function commandLines(input: ClaudePromptInput): string[] {
   );
   return lines;
 }
+
+/**
+ * Which tasks the bridge runs with tools, and which therefore get the exact commands.
+ *
+ * Mirrors `USES_TOOLS` in electron/claudeBridge.cjs — the bridge is the authority, since it is
+ * what actually passes `--allowedTools`, and this side only decides whether to spell the
+ * commands out. Listing a task here that has no tools would hand it a recipe it cannot run.
+ */
+const TOOL_TASKS: ReadonlySet<ClaudeDepth> = new Set(['deep', 'blame', 'cause']);
+
+/**
+ * What the log section is called, per task.
+ *
+ * The heading is doing real work: it says what the log *is for* in this run. The same megabyte
+ * is the evidence for the deep pass, the input for the rewrite, mere context for blame, and the
+ * thing being annotated for the marker pass.
+ */
+const LOG_HEADER: Partial<Record<ClaudeDepth, string>> = {
+  deep: '--- LOG OF THE FAILED STEP(S), ALREADY FETCHED (start here, then dig deeper) ---',
+  log: '--- LOG TO REWRITE ---',
+  blame: '--- LOG OF THE RUN YOU WERE ASKED ABOUT (context; the history matters more) ---',
+  cause: '--- LOG OF THE FAILED STEP(S) (read what broke out of this, then the run’s artifacts if it points at a test report) ---',
+  marks: '--- LOG TO MARK UP ---',
+};
+
+/**
+ * The brief per task, as a table.
+ *
+ * A table rather than the ternary chain this used to be: the chain was four deep, and the
+ * failure mode of adding a task to it is silent — the new depth falls through to the
+ * investigation brief and answers a question nobody asked.
+ */
+const BRIEF_BY_DEPTH: Partial<Record<ClaudeDepth, string>> = {
+  quick: CLAUDE_QUICK_BRIEF,
+  log: CLAUDE_LOG_BRIEF,
+  blame: CLAUDE_BLAME_BRIEF,
+  cause: CLAUDE_CAUSE_BRIEF,
+  marks: CLAUDE_MARKS_BRIEF,
+};
 
 /** Assemble the full prompt: instructions, then the verified facts, then the log. */
 /**
@@ -305,24 +470,15 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
       : '(GitHub reported no failure annotations for this job.)';
 
   const builtIn =
-    input.depth === 'log'
-      ? CLAUDE_LOG_BRIEF
-      : input.depth === 'blame'
-        ? CLAUDE_BLAME_BRIEF
-        : input.depth === 'quick'
-          ? CLAUDE_QUICK_BRIEF
-          : input.canInvestigate
-            ? CLAUDE_INVESTIGATION_BRIEF
-            : CLAUDE_OFFLINE_BRIEF;
+    BRIEF_BY_DEPTH[input.depth] ??
+    (input.canInvestigate ? CLAUDE_INVESTIGATION_BRIEF : CLAUDE_OFFLINE_BRIEF);
 
   // A custom brief replaces the wording, never the contract: the markers are re-stated
   // after it so a well-meaning override can't produce a reply that fails to parse. The
-  // log task returns a document instead, so it has no contract to restate.
-  // The log and blame tasks return whole documents, so there is no marker contract to
-  // restate after an override — imposing one would ask for sections they do not produce.
-  const returnsDocument = input.depth === 'log' || input.depth === 'blame';
+  // document tasks return prose or records with their own shape, so there is no marker
+  // contract to restate — imposing one would ask for sections they do not produce.
   const brief = input.promptOverride?.trim()
-    ? returnsDocument
+    ? returnsDocument(input.depth)
       ? input.promptOverride.trim()
       : `${input.promptOverride.trim()}\n\n${OUTPUT_CONTRACT}`
     : builtIn;
@@ -338,7 +494,7 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
     '',
     '--- REPORTED FAILURES (from the check-run annotations) ---',
     annotationBlock,
-    ...((input.depth === 'deep' || input.depth === 'blame') && input.canInvestigate
+    ...(TOOL_TASKS.has(input.depth) && input.canInvestigate
       ? ['', '--- COMMANDS ---', ...commandLines(input)]
       : []),
     '',
@@ -351,13 +507,7 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
           'No log could be read for this job, so there is none below. Work from the reported failures above and say plainly that you had no log — do not describe log contents you were not given.',
         ]
       : [
-          input.depth === 'deep'
-            ? '--- LOG OF THE FAILED STEP(S), ALREADY FETCHED (start here, then dig deeper) ---'
-            : input.depth === 'log'
-              ? '--- LOG TO REWRITE ---'
-              : input.depth === 'blame'
-                ? '--- LOG OF THE RUN YOU WERE ASKED ABOUT (context; the history matters more) ---'
-                : '--- LOG OF THE FAILED STEP(S) ---',
+          LOG_HEADER[input.depth] ?? '--- LOG OF THE FAILED STEP(S) ---',
           trimLog(input.log),
         ]),
   ].join('\n');

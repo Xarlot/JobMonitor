@@ -90,13 +90,18 @@ const defs = {
   AUTOMERGE_ARMED: { id: 503, key: 'automerge.armed' },
 
   // ── 600 AI ───────────────────────────────────────────────────────────────────────────────────
-  // Mirrors the depths claudeBridge.cjs accepts: quick | deep | log | blame, plus compose.
+  // Mirrors the depths claudeBridge.cjs accepts: quick | deep | log | blame | cause | marks,
+  // plus compose.
   AI_TRIAGE_QUICK: { id: 600, key: 'ai.triage_quick' },
   AI_TRIAGE_DEEP: { id: 601, key: 'ai.triage_deep' },
   AI_BLAME: { id: 602, key: 'ai.blame' },
   AI_LOG_FETCH: { id: 603, key: 'ai.log_fetch' },
   AI_PR_COMPOSE: { id: 604, key: 'ai.pr_compose' },
   AI_CANCELLED: { id: 605, key: 'ai.cancelled' },
+  /** Working out what actually failed — the tests, or whatever else broke. */
+  AI_FAILURE_CAUSE: { id: 606, key: 'ai.failure_cause' },
+  /** Marking the decisive lines of a log, for the viewer's marker stripe. */
+  AI_LOG_MARKS: { id: 607, key: 'ai.log_marks' },
 
   // ── 700 artifacts ────────────────────────────────────────────────────────────────────────────
   ARTIFACT_DOWNLOADED: { id: 700, key: 'artifact.downloaded' },

@@ -141,8 +141,10 @@ place rather than trusting each caller to have checked.
 - **Merged PRs** — a bounded list of recently-merged PRs polled alongside the open ones, so a
   failure that landed anyway stays reviewable. Their checks are terminal, so each is fetched once
   and then skipped by `needsChecks` forever.
-- **Explain with Claude** (desktop only, two depths) — shells out to the developer's own `gh` and `claude` CLIs to
-  turn a failed job into a problem statement plus a suggested fix. See
+- **Explain with Claude** (desktop only, six tasks) — shells out to the developer's own `gh` and `claude`
+  CLIs to turn a failed job into a problem statement plus a suggested fix, to name who broke a flow, to
+  rewrite its log, to work out **what actually failed** (tests, or a compile error, or a dead runner),
+  and to mark the decisive lines of a log for the viewer's stripe. See
   [Local CLI integration](#local-cli-integration).
 
 ## Getting started
@@ -470,6 +472,69 @@ everything is tinted reads no better than one with no colour, and it teaches the
 colour. False negatives look plain; false positives make the whole scheme worthless. `dotnet test`'s
 `Failed Name [12 ms]` is anchored at line start for exactly this reason.
 
+### The marker stripe is anchored by text, not by line number
+
+`src/lib/logMarks.ts` reads the `marks` task's reply into findings and then *locates* each one in the log
+on screen. Two functions, memoized apart in `LogPanel`, because they change for different reasons: the
+reply is parsed once per analysis, while the anchoring is redone whenever the reader switches between the
+job's log and the whole run's.
+
+Anchoring is by the **quoted line**, and the model's own line number is only a tie-breaker. It has to be:
+`trimLog` drops the middle of anything over 60,000 characters before the log ever reaches the model, and
+the viewer may be showing the `gh` whole-run log, which numbers its lines differently and prefixes them.
+Neither text shares a numbering with what the model counted. A quote, by contrast, can be searched for —
+against the line as **rendered** (`highlightLogLine`, so timestamps and ANSI are gone the same way they
+are on screen), whitespace-insensitively, with a case-insensitive second pass.
+
+A finding that cannot be located is **counted and dropped**. That count is shown ("2 findings could not
+be located in this log"), because on the whole-run log it is normal for a finding from the job's log to be
+missing, and a stripe with holes in it that says nothing has the reader trusting a map it should not.
+Placing an unlocatable finding approximately would be worse than either: the stripe is only worth reading
+if a tick means something, and an error marker on an innocent line costs more than a missing one.
+
+`MIN_ANCHOR_CHARS` refuses an excerpt too short to identify a line — "at " would anchor to whichever line
+came first — and one mark per line, so two findings about the same line cannot stack into one tick.
+
+### The two automatic model calls
+
+Everywhere else in this app a model call needs a click on the thing it does. These two need a click on the
+*view*: `FailuresView` starts `cause` when a failure is focused, and `LogPanel` starts `marks` on mount.
+Both are gated on `config.ai.autoStart`, which defaults on.
+
+The same four bounds apply to each: the AI master switch, that setting, something the reader opened
+deliberately, and **once per failure** — a ref (`autoStarted` keyed by failure key, `scanned` by job id)
+rather than state, since it must not re-render. An existing reply, a run in flight, or a previous failure
+all suppress a start, because retrying a failed run on every revisit would spend a call per visit to fail
+the same way.
+
+Both effects deliberately do **not** depend on the state they read. Those values change *because* of the
+call, and depending on them is how an automatic call becomes a loop; the guards are the contract, and the
+focused failure (or the job id) is the only input that may begin a new run. `startTriage` and `stateFor`
+are excluded for the same reason — they are rebuilt on every render and on every streamed chunk.
+
+`cause` additionally **debounces** by `AUTO_START_DELAY_MS` (1.5s) and waits for `loadingLog` to settle.
+Clicking down a red board is how the Failures list is used, so firing per row passed through would spend
+ten calls to answer one; and the log tail is what carries the failed step's name into the prompt, so
+starting before it lands costs the prompt a fact it could have had.
+
+Nothing scrolls by itself either. `current` in `LogPanel` starts null rather than 0, so the stripe appears
+without the pane jumping — with the scan landing on its own, a self-scrolling log would move under the
+reader's eyes mid-line.
+
+### Automatic work reports into a strip, not a dialog
+
+`ClaudeTriageDialog` is for the analyses a person **asks** for: it carries their phases, their commands,
+their streamed reply and their result. The two automatic tasks never open it — a modal that appears
+unbidden interrupts the reader and covers the pane where its own answer is about to land — so they report
+into `AiProgressNotice`, one row per running task above the panes: task, phase, newest tool call, elapsed,
+Stop. It is above the split rather than inside a pane because the cause runs for the report pane and the
+map for the log pane, and switching between them mid-run must not make the progress disappear.
+
+The strip shows no result and no completion state: the answers have places of their own (the band at the
+top of the report pane, the stripe beside the log), so a finished run simply leaves the strip. `Stop` is
+here because with no dialog there is nowhere else for it, and an automatic call is exactly the one a
+reader is most likely to want to abandon.
+
 ### Markdown is rendered, not injected
 
 `src/lib/markdownBlocks.ts` parses the subset the app emits and asks Claude for; `MarkdownView` renders
@@ -627,15 +692,61 @@ two-to-four calls) instead of delegating everything.
 
 ### The `log` task
 
-`ClaudeDepth` is `'quick' | 'deep' | 'log'` — no longer strictly a depth, but the same pipeline, and the
-shared key means the three results coexist per failure instead of overwriting each other. `log` runs
-Sonnet at medium effort with one turn and no tools: it is a mechanical rewrite of a large input, not an
-investigation. Its reply is a whole Markdown document, so it bypasses `parseClaudeAnalysis` (which would
-reject every reply for having no markers) and is stored as `CachedAnalysis.rewrittenLog`.
+`ClaudeDepth` is `'quick' | 'deep' | 'log' | 'blame' | 'cause' | 'marks'` — no longer strictly a depth,
+but the same pipeline, and the per-depth key means every result coexists per failure instead of
+overwriting the others. `log` runs Sonnet at low effort with one turn and no tools: it is a mechanical
+rewrite of a large input, not an investigation. Its reply is a whole Markdown document, so it bypasses
+`parseClaudeAnalysis` (which would reject every reply for having no markers) and is stored as
+`CachedAnalysis.document`.
 
 `CLAUDE_LOG_BRIEF` asks for the log *back*, not a report about it — the failure mode being that a model
 asked to "make this readable" writes a summary, and a summary is not a log. It is told to annotate
 sparingly for the same reason the highlighter is conservative.
+
+### The two tasks that answer with data
+
+`cause` and `marks` are the same pipeline again, but their replies are **records**, parsed by
+`src/lib/failureCause.ts` and `src/lib/logMarks.ts`:
+
+| | `cause` | `marks` |
+|---|---|---|
+| Answers | what actually broke | which lines of the log matter |
+| Model / effort | `sonnet` / `medium` | `sonnet` / `medium` |
+| `--max-turns` | 12 | 1 |
+| Tools | `ALLOWED_TOOLS` | none passed |
+| Reads | the log, then the run's test-report artifacts | the log it is handed |
+| Parsed by | `parseFailureCause` | `parseLogMarks` + `anchorLogMarks` |
+| Shown in | the band at the top of the report pane | the marker stripe beside the log |
+| Started by | focusing a failure (debounced) | opening the log view |
+| Progress in | `AiProgressNotice`, never a dialog | `AiProgressNotice` and the button |
+
+`cause` is the only new task with tools, and that is why it exists: when the failure is a test, its name
+is in a JUnit XML inside the artifacts, not in the log. Without tools it could only reword the annotation
+it is meant to replace. Its brief is explicit that **it is often not tests** — a compile error, a dead
+runner, a full disk — because a brief that asked for tests would either come back empty on those or bend
+them into the shape of a test, and the `kind:` on each item is what tells "assign this to whoever owns the
+exporter" from "restart the runner". It is told not to diagnose beyond one `cause:` line: the quick and
+deep reads answer *why*, and the value of this answer is that the body stays a list.
+
+**Lines, not JSON.** The fields are short and single-line (a name, a location, an assertion), and a model
+escaping `expected: <"a\tb">` into JSON loses the whole reply where a `key: value` line survives it
+intact. Both parsers are deliberately forgiving — synonyms for every key, a repeated field ends a record,
+an unrecognised `key: value` line is treated as a wrapped continuation (an assertion diff wraps as
+"but was: <41>", which is exactly the half a reader needs), a fence around the records is ignored, and a
+preamble before the marker is dropped so its punctuation cannot be read as a field. `parseFailureCause`
+returns null only when the reply carries neither a cause nor one item; a cause with **no** items is a real
+answer, since an infrastructure failure has nothing to list.
+
+**The cache stores the reply, not the parse.** `CachedAnalysis.document` holds the record text verbatim,
+which buys two things: a week-old result is read by *today's* parser rather than by whatever shape was
+current when it was written, and a stored map can be re-anchored against a different log — the mechanism
+the marker stripe depends on. Parsing happens at the point of use, memoized on the reply text so the
+report memo does not rebuild (and restamp its "generated" footer) on every poll.
+
+`buildFailureReport` takes the parsed cause as `failureCause` and, when present, leads with it and renames
+the annotation section to "Reported by the workflow" — two sections claiming to be the same list would
+read as a bug in the report, and the annotations are not what failed. Opt-in via the same `inReport` flag
+the blame verdict uses: everything else in that document was fetched from the API.
 
 ## Screenshots
 
@@ -752,7 +863,13 @@ analysis. Desktop only — in a browser `window.desktop.claude` is absent and th
 
 ### Two depths
 
-`ClaudeDepth` is `'quick' | 'deep'`, and it changes the model, the budget, the tools and the brief:
+Six tasks share this pipeline (see *The two tasks that answer with data* above for `cause` and `marks`),
+and every one of them must appear in each per-task table in `claudeBridge.cjs` — `ANALYZE_DEPTHS` is
+checked against those tables by a test, because a missing key reads `undefined` out of them and
+`setTimeout(kill, undefined)` kills the child on spawn, reported as "claude timed out after NaNs".
+
+The original two are the pairing worth understanding, since it changes the model, the budget, the tools
+and the brief:
 
 | | `quick` | `deep` |
 |---|---|---|

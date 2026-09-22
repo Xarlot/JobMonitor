@@ -1,11 +1,15 @@
 /**
- * Progress and result UI for "Explain with Claude".
+ * Progress and result UI for the analyses you **ask** for.
  *
- * A dialog rather than an inline button state because the operation is long (fetching
- * a whole failed log, then a model call that can take a minute or two) and has real
- * phases worth showing. The phases and the streaming reply come from the main process,
- * so nothing here is a decorative spinner: what you see is where the time is actually
- * going, and Stop really kills the local processes.
+ * A dialog rather than an inline button state because the operation is long (fetching a whole
+ * failed log, then a model call that can take a minute or two) and has real phases worth showing.
+ * The phases and the streaming reply come from the main process, so nothing here is a decorative
+ * spinner: what you see is where the time is actually going, and Stop really kills the local
+ * processes.
+ *
+ * The two **automatic** tasks — the cause of a failure, the map of a log — deliberately never open
+ * this. Work that starts by itself must not throw a modal over the pane where its answer is about
+ * to appear; it reports into `AiProgressNotice`, the strip at the top of the view, instead.
  */
 
 import { useEffect, useState } from 'react';
@@ -36,25 +40,32 @@ export function phasesFor(depth: ClaudeDepth, logCached: boolean): { id: ClaudeP
   return [
     {
       id: 'fetching-log',
-      label:
-        depth === 'quick'
-          ? logCached
-            ? 'Reading the log already fetched'
-            : 'Downloading the job’s log'
-          : 'Fetching the failed step’s log',
+      label: READS_FETCHED_LOG.has(depth)
+        ? logCached
+          ? 'Reading the log already fetched'
+          : 'Downloading the job’s log'
+        : 'Fetching the failed step’s log',
     },
-    {
-      id: 'analysing',
-      label:
-        depth === 'quick'
-          ? 'Asking claude'
-          : depth === 'blame'
-            ? 'Reading the run history and diffs'
-            : 'Investigating with claude',
-    },
+    { id: 'analysing', label: ANALYSING_LABEL[depth] ?? 'Investigating with claude' },
     { id: 'done', label: 'Done' },
   ];
 }
+
+/**
+ * Tasks whose only log source is the one the app already has — so the first phase must say which
+ * of the two it is doing, since claiming "already fetched" during a multi-megabyte download makes
+ * a slow but working fetch look like a hang.
+ */
+const READS_FETCHED_LOG: ReadonlySet<ClaudeDepth> = new Set(['quick', 'marks']);
+
+/** What the middle phase is actually doing, per task. */
+const ANALYSING_LABEL: Partial<Record<ClaudeDepth, string>> = {
+  quick: 'Asking claude',
+  blame: 'Reading the run history and diffs',
+  log: 'Rewriting the log',
+  cause: 'Reading what failed out of the evidence',
+  marks: 'Marking up the log',
+};
 
 /**
  * Where the analysed log came from. `app` means something different per depth: for the
@@ -66,7 +77,7 @@ function sourceNote(source: string, depth: ClaudeDepth): string | null {
   // No log at all — worth saying loudly, since it bounds how much the answer can know.
   if (source === 'none') return 'no log was available, so this works from the annotations alone';
   if (source !== 'app') return null;
-  return depth === 'quick'
+  return READS_FETCHED_LOG.has(depth)
     ? 'analysed the log Job Monitor had already fetched'
     : 'gh couldn’t supply a log, so the job’s own log was used instead';
 }
@@ -99,6 +110,8 @@ const DEPTH_BLURB: Record<ClaudeDepth, string> = {
   deep: 'Fetches the run’s artifacts, the workflow file and the PR diff before answering. Runs Opus, and can take a few minutes.',
   log: 'Rewrites the log itself — decisive lines first, noise cut, short notes where a line needs one. Real log text, with the searching already done.',
   blame: 'Names the commit that broke this flow and its author. When several commits landed between runs, it weighs them by what each one changed. Runs Opus.',
+  cause: 'Works out what actually failed — the tests and their assertions, or a compile error, a dead runner, a step that timed out. A workflow’s annotations name the step; the specifics are in the log and in the run’s test report, so this goes and reads them. No diagnosis beyond one line of cause.',
+  marks: 'Marks the decisive lines of the log for the viewer’s stripe, and says which of them are consequences of the others. One turn over the log already fetched.',
 };
 
 const DEPTH_TITLE: Record<ClaudeDepth, string> = {
@@ -106,6 +119,8 @@ const DEPTH_TITLE: Record<ClaudeDepth, string> = {
   deep: 'Deep analysis',
   log: 'Readable log',
   blame: 'Who broke it',
+  cause: 'What failed',
+  marks: 'Log map',
 };
 
 /**

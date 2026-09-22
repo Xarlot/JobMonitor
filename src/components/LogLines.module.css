@@ -33,3 +33,98 @@
   color: var(--fgColor-muted);
   margin-right: var(--base-size-8);
 }
+
+/*
+ * The marker stripe.
+ *
+ * `position: relative` on the wrapper and `absolute` on the stripe means the stripe spans the
+ * log's *visible* box — which is what makes a tick's percentage a position in the log rather
+ * than a position in the page.
+ */
+.wrap {
+  position: relative;
+  min-height: 0px;
+}
+
+/* Room for the stripe, so a long line never runs underneath the ticks. */
+.logStriped {
+  padding-right: var(--base-size-24);
+}
+
+.stripe {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: var(--base-size-16);
+  border-radius: 0 var(--borderRadius-large) var(--borderRadius-large) 0;
+  background-color: var(--bgColor-muted);
+  border-left: 1px solid var(--borderColor-muted);
+  pointer-events: none;
+}
+
+/*
+ * One tick per finding. `pointer-events` back on for the ticks themselves: the stripe is a
+ * thin column over the log's own scroll area, and swallowing clicks across all of it would
+ * cost the reader the ability to select text at the right margin.
+ */
+.tick {
+  position: absolute;
+  right: 2px;
+  left: 2px;
+  height: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  cursor: pointer;
+  pointer-events: auto;
+  /* Centred on its line rather than hanging below it. */
+  transform: translateY(-1px);
+}
+
+.tick:hover {
+  height: 5px;
+}
+
+.tickError {
+  background-color: var(--fgColor-danger);
+}
+
+.tickWarning {
+  background-color: var(--fgColor-attention);
+}
+
+.tickNotice {
+  background-color: var(--fgColor-accent);
+}
+
+/* The one being visited: wider and outlined, so the stripe says where you are. */
+.tickActive {
+  height: 7px;
+  outline: 1px solid var(--fgColor-default);
+}
+
+/*
+ * A found line, marked in the gutter. A left rule rather than a background: the line already
+ * carries the highlighter's colour, and tinting it again would fight with that.
+ */
+.markError {
+  box-shadow: inset 2px 0 0 var(--fgColor-danger);
+  padding-left: var(--base-size-8);
+}
+
+.markWarning {
+  box-shadow: inset 2px 0 0 var(--fgColor-attention);
+  padding-left: var(--base-size-8);
+}
+
+.markNotice {
+  box-shadow: inset 2px 0 0 var(--fgColor-accent);
+  padding-left: var(--base-size-8);
+}
+
+/* Where you have just jumped to. Held rather than flashed, so it survives a glance away. */
+.lineFocused {
+  background-color: var(--bgColor-attention-muted);
+  border-radius: var(--borderRadius-small);
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initRunLog, logEvent, runLogPath } from '../../electron/runLog.cjs';
 import {
+  ANALYZE_DEPTHS,
   claudeVariants,
   createStreamParser,
   describeExit,
@@ -40,6 +41,44 @@ describe('per-task budget tables', () => {
       // And nothing extra: a table with a task the others don't have is the same bug
       // seen from the other side.
       expect(Object.keys(table).sort()).toEqual([...tasks].sort());
+    }
+  });
+
+  /**
+   * The renderer can ask for any of these, so each must be in every table — and only these, since
+   * `pr` arrives through `compose` and has no run to analyse.
+   */
+  it('accepts exactly the depths the tables know about', () => {
+    const tasks = Object.keys(TASK_TABLES.CLAUDE_MODEL).filter((t) => t !== 'pr');
+    expect([...ANALYZE_DEPTHS].sort()).toEqual(tasks.sort());
+    expect(ANALYZE_DEPTHS.has('pr')).toBe(false);
+  });
+
+  /**
+   * "What failed" is the one new task with tools, because when the failure is a test its name is
+   * inside an artifact. Without them it can only repeat the annotation it exists to replace.
+   */
+  it('lets the cause task fetch, and bounds how far', () => {
+    expect(TASK_TABLES.USES_TOOLS.cause).toBe(true);
+    expect(valueOf(claudeVariants('cause')[0].args, '--allowedTools')).toBeTruthy();
+    expect(TASK_TABLES.MAX_TURNS_BY_TASK.cause).toBeLessThan(TASK_TABLES.MAX_TURNS_BY_TASK.deep);
+  });
+
+  /**
+   * The log map judges a log already in the prompt, and — since it now starts on opening the Log
+   * view — the reader is sitting in front of that log waiting. One turn, no tools, shortest clock.
+   */
+  it('gives the log map one turn, no tools and the shortest clock', () => {
+    expect(TASK_TABLES.USES_TOOLS.marks).toBe(false);
+    expect(TASK_TABLES.MAX_TURNS_BY_TASK.marks).toBe(1);
+    expect(valueOf(claudeVariants('marks')[0].args, '--allowedTools')).toBeNull();
+    expect(TASK_TABLES.TIMEOUT_BY_TASK.marks).toBeLessThan(TASK_TABLES.TIMEOUT_BY_TASK.deep);
+  });
+
+  /** Both are transcription or judgement over evidence in hand — Sonnet work, not Opus. */
+  it('runs both data tasks on Sonnet', () => {
+    for (const task of ['cause', 'marks']) {
+      expect(valueOf(claudeVariants(task)[0].args, '--model')).toBe('sonnet');
     }
   });
 

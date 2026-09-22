@@ -7,9 +7,11 @@ import {
   normalizeFailureText,
   blameVerdict,
   signatureFromAnnotations,
+  REPORT_ITEM_LINES,
   TEAMS_LOG_LINES,
   type FailureReportInput,
 } from '../lib/failureReport';
+import type { FailureCause } from '../lib/failureCause';
 import type { Annotation } from '../api/types';
 
 function annotation(over: Partial<Annotation> = {}): Annotation {
@@ -430,5 +432,129 @@ describe('the verdict in a report', () => {
   it('works with a verdict and no analysis', () => {
     const md = buildFailureReport(reportInput({ blame: '**Kind:** infrastructure' }));
     expect(md).toContain('**Kind:** infrastructure');
+  });
+});
+
+describe('what failed, in the report', () => {
+  const cause: FailureCause = {
+    headline: 'three pages differ in the PDF comparison after the font-embedding rewrite',
+    items: [
+      {
+        what: 'exportsRotatedPage',
+        kind: 'assertion',
+        group: 'com.example.reporting.ExportToPdfTests',
+        where: 'testing/exporttopdf/ExportToPdfTests.java:88',
+        message: 'Expected 0 diffs but got 3',
+      },
+      { what: 'keepsFormFields', kind: 'error', group: null, where: null, message: null },
+    ],
+    source: 'JUnit XML from artifact test-results-exporttopdf',
+    total: null,
+    note: null,
+  };
+
+  it('leads with the cause line, then the items', () => {
+    const md = buildFailureReport(reportInput({ failureCause: cause }));
+    expect(md).toContain('#### What failed (2)');
+    expect(md).toContain('three pages differ in the PDF comparison');
+    expect(md.indexOf('three pages differ')).toBeLessThan(md.indexOf('exportsRotatedPage'));
+  });
+
+  /** The kind is the half that says who picks it up, so it survives into the report. */
+  it('names each item with its kind, message and location', () => {
+    const md = buildFailureReport(reportInput({ failureCause: cause }));
+    expect(md).toContain('**assertion**');
+    expect(md).toContain('`com.example.reporting.ExportToPdfTests` › `exportsRotatedPage`');
+    expect(md).toContain('`Expected 0 diffs but got 3`');
+    expect(md).toContain('(`testing/exporttopdf/ExportToPdfTests.java:88`)');
+    // An item with nothing but a name and a kind still gets a line.
+    expect(md).toContain('**error** — `keepsFormFields`');
+  });
+
+  /**
+   * Every other fact in the document was fetched from the API; this was read out of a log or a
+   * test report by a model. Whoever is deciding what to do about it has to be able to tell which
+   * is which.
+   */
+  it('says where it came from and that it is generated', () => {
+    const md = buildFailureReport(reportInput({ failureCause: cause }));
+    expect(md).toMatch(/_Found by Claude in JUnit XML from artifact test-results-exporttopdf/);
+    expect(md).toMatch(/review before trusting/i);
+  });
+
+  /**
+   * Two sections claiming to be the same list would read as a bug in the report. The annotations
+   * are not what failed — for a sharded suite they are "the step failed" — so they are renamed to
+   * what they actually are.
+   */
+  it('renames the annotation section rather than competing with it', () => {
+    const md = buildFailureReport(reportInput({ failureCause: cause }));
+    expect(md).toContain('#### Reported by the workflow (1)');
+    expect(md).not.toContain('#### Failed tests');
+    expect(md.indexOf('#### What failed')).toBeLessThan(md.indexOf('#### Reported by the workflow'));
+  });
+
+  /** Unchanged when nobody asked for it: the report stays entirely GitHub's facts by default. */
+  it('changes nothing when no cause was added', () => {
+    const md = buildFailureReport(reportInput());
+    expect(md).toContain('#### Failed tests (1)');
+    expect(md).not.toContain('Found by Claude');
+    expect(md).not.toContain('Reported by the workflow');
+  });
+
+  /** With a cause in hand, "no annotations were reported" is no longer worth saying. */
+  it('drops the no-annotations note when the cause is there', () => {
+    const md = buildFailureReport(reportInput({ annotations: [], failureCause: cause }));
+    expect(md).not.toContain('No failure annotations were reported');
+    expect(md).toContain('#### What failed (2)');
+  });
+
+  /** An infrastructure failure often has nothing to list, and the cause line is the answer. */
+  it('carries a cause with no items', () => {
+    const md = buildFailureReport(
+      reportInput({
+        failureCause: { ...cause, items: [], headline: 'the runner lost its connection' },
+      }),
+    );
+    expect(md).toContain('#### What failed');
+    expect(md).toContain('the runner lost its connection');
+  });
+
+  /** A sharded suite can fail hundreds off one root cause; a report of hundreds is unread. */
+  it('caps the list and says how much it left out', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      what: `test${i}`,
+      kind: 'failure' as const,
+      group: 'S',
+      where: null,
+      message: null,
+    }));
+    const md = buildFailureReport(
+      reportInput({ failureCause: { ...cause, items: many, total: 400 } }),
+    );
+    expect(md).toContain('#### What failed (400)');
+    expect(md).toContain(`- _…and ${60 - REPORT_ITEM_LINES} more._`);
+    expect(md).not.toContain('test59');
+  });
+
+  it('counts the failures it never listed when it listed all it had', () => {
+    const md = buildFailureReport(reportInput({ failureCause: { ...cause, total: 37 } }));
+    expect(md).toContain('#### What failed (37)');
+    expect(md).toContain('- _…and 35 further failures not listed._');
+  });
+
+  /** A backtick inside a message would close the span early and mangle the assertion. */
+  it('substitutes a backtick inside a message', () => {
+    const md = buildFailureReport(
+      reportInput({
+        failureCause: {
+          ...cause,
+          items: [
+            { what: 't', kind: 'error', group: null, where: null, message: 'run `npm ci`' },
+          ],
+        },
+      }),
+    );
+    expect(md).toContain("`run 'npm ci'`");
   });
 });

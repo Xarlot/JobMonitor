@@ -6,6 +6,9 @@ import {
   CLAUDE_LOG_BRIEF,
   CLAUDE_OFFLINE_BRIEF,
   CLAUDE_QUICK_BRIEF,
+  CLAUDE_CAUSE_BRIEF,
+  CLAUDE_MARKS_BRIEF,
+  returnsDocument,
   splitIntoSentenceLines,
   parseClaudeAnalysis,
   PROBLEM_MARKER,
@@ -13,6 +16,8 @@ import {
   trimLog,
   type ClaudePromptInput,
 } from '../lib/claudePrompt';
+import { FAILURES_MARKER } from '../lib/failureCause';
+import { MARKS_MARKER } from '../lib/logMarks';
 import type { Annotation } from '../api/types';
 
 function annotation(over: Partial<Annotation> = {}): Annotation {
@@ -569,5 +574,121 @@ describe('CLAUDE_RESUME_PROMPT', () => {
   /** Short on purpose: --resume replays the conversation, so re-sending the brief is waste. */
   it('is far shorter than a full prompt', () => {
     expect(CLAUDE_RESUME_PROMPT.length).toBeLessThan(1200);
+  });
+});
+
+describe('the "what failed" brief', () => {
+  /**
+   * Why the task exists at all: a workflow's annotations describe the *step*, so the answer to
+   * "what broke" is in the log and in the run's test report and nowhere else. A brief that did not
+   * send it looking would hand back the annotation, reworded.
+   */
+  it('sends it past the annotations to the real evidence', () => {
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/what actually failed/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/annotations below almost certainly do not tell you/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/artifacts/i);
+  });
+
+  /**
+   * The correction that made this task worth having: a CI failure is often not a test, and a
+   * brief that asked for tests would either come back empty or bend a dead runner into the shape
+   * of one.
+   */
+  it('says plainly that it is often not tests', () => {
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/it is often not tests/i);
+    for (const kind of ['compile', 'infrastructure', 'dependency', 'timed out', 'crashed']) {
+      expect(CLAUDE_CAUSE_BRIEF.toLowerCase()).toContain(kind.toLowerCase());
+    }
+  });
+
+  /** One line of cause, and then a list. The prose belongs to the other tasks. */
+  it('asks for one line of cause and forbids diagnosing beyond it', () => {
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/do not diagnose beyond the one `cause:` line/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/no suggested fix/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/`cause:` is \*\*one line\*\*/i);
+  });
+
+  it('states the record contract, including the marker', () => {
+    expect(CLAUDE_CAUSE_BRIEF).toContain(FAILURES_MARKER);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/one record per concrete item/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/never write "unknown"/i);
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/never invent/i);
+  });
+
+  /** Infrastructure failures have nothing to list; that has to be sayable in the format. */
+  it('says what to reply when the evidence names nothing', () => {
+    expect(CLAUDE_CAUSE_BRIEF).toMatch(/\*\*no records\*\*/i);
+  });
+
+  it('is chosen for the cause depth, with the commands it needs', () => {
+    const p = buildClaudePrompt(input({ depth: 'cause' }));
+    expect(p).toMatch(/what actually failed/i);
+    // It has tools, so it gets the exact gh commands rather than reconstructing them.
+    expect(p).toContain('--- COMMANDS ---');
+    expect(p).toContain('gh run download');
+    expect(p).toMatch(/--- LOG OF THE FAILED STEP\(S\)/);
+  });
+});
+
+describe('the log map brief', () => {
+  /**
+   * The one thing the local highlighter cannot do, and therefore the only reason to spend a call:
+   * telling the decisive line from the thirty consequences of it.
+   */
+  it('asks for the decisive lines rather than every red one', () => {
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/decisive/i);
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/between one and twenty findings/i);
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/consequence/i);
+  });
+
+  /**
+   * Anchoring is by quoted text, so the brief has to say what the quote is *for*. A model that
+   * abbreviates or annotates its excerpt produces a finding the app cannot place.
+   */
+  it('demands a verbatim excerpt and explains why', () => {
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/verbatim excerpt of one line/i);
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/how the app finds the line/i);
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/never span two lines/i);
+  });
+
+  /** …and that the number beside it is a tie-breaker, not the answer. */
+  it('treats the line number as a hint', () => {
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/only used to tell two identical lines apart/i);
+  });
+
+  it('states the record contract, including the marker', () => {
+    expect(CLAUDE_MARKS_BRIEF).toContain(MARKS_MARKER);
+    expect(CLAUDE_MARKS_BRIEF).toMatch(/severity/i);
+  });
+
+  it('is chosen for the marks depth, and gets no commands', () => {
+    const p = buildClaudePrompt(input({ depth: 'marks' }));
+    expect(p).toMatch(/marking up a failed github actions log/i);
+    expect(p).not.toContain('--- COMMANDS ---');
+    expect(p).toContain('--- LOG TO MARK UP ---');
+  });
+});
+
+describe('returnsDocument', () => {
+  /**
+   * Three places have to agree about this, and when they disagreed the symptom was a run that
+   * succeeded and then reported "Claude's reply didn't contain the expected sections".
+   */
+  it('covers every task that answers with something other than the two sections', () => {
+    expect(returnsDocument('log')).toBe(true);
+    expect(returnsDocument('blame')).toBe(true);
+    expect(returnsDocument('cause')).toBe(true);
+    expect(returnsDocument('marks')).toBe(true);
+    expect(returnsDocument('quick')).toBe(false);
+    expect(returnsDocument('deep')).toBe(false);
+  });
+
+  /** So a custom prompt for a data task is not handed a contract it cannot satisfy. */
+  it('keeps the markers off a custom prompt for the data tasks', () => {
+    for (const depth of ['cause', 'marks'] as const) {
+      const p = buildClaudePrompt(input({ depth, promptOverride: 'List them.' }));
+      expect(p).toContain('List them.');
+      expect(p).not.toContain(PROBLEM_MARKER);
+    }
   });
 });

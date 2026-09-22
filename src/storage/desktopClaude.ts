@@ -48,7 +48,7 @@ export interface ClaudeAnalyzeRequest {
    */
   evidenceInPrompt?: boolean;
   /** Which job to do; the main process enforces the per-task budget. */
-  depth: 'quick' | 'deep' | 'log' | 'blame';
+  depth: 'quick' | 'deep' | 'log' | 'blame' | 'cause' | 'marks';
   /**
    * Model alias and reasoning effort from settings. Re-checked against a closed list in
    * the main process — these become `--model` and `--effort` arguments, and nothing the

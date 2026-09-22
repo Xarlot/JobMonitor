@@ -61,3 +61,58 @@ describe('LogLines', () => {
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
   });
 });
+
+describe('the marker stripe', () => {
+  const marks = [
+    { line: 2, severity: 'error' as const, label: 'the test failed', note: 'The first failure.', text: 'boom' },
+    { line: 4, severity: 'warning' as const, label: 'gradle gave up', note: null, text: 'gave up' },
+  ];
+
+  function renderMarked(props: Partial<React.ComponentProps<typeof LogLines>> = {}) {
+    return render(
+      <ThemeProvider>
+        <BaseStyles>
+          <LogLines text={'one\ntwo\nthree\nfour'} marks={marks} {...props} />
+        </BaseStyles>
+      </ThemeProvider>,
+    );
+  }
+
+  /** No findings, no furniture: the stripe is an AI result, not a permanent fixture. */
+  it('draws nothing when there are no findings', () => {
+    const { container } = renderLog('one\ntwo');
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('draws one tick per finding', () => {
+    renderMarked();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+  });
+
+  /**
+   * The tick is how you get to a line without scrolling for it, so it has to be a real
+   * control — labelled, focusable, and reporting which finding it is.
+   */
+  it('reports which finding was clicked', () => {
+    const picked: number[] = [];
+    renderMarked({ onPickMark: (i: number) => picked.push(i) });
+    screen.getByLabelText(/Go to line 4/).click();
+    expect(picked).toEqual([1]);
+  });
+
+  it('names the line and what was found on it', () => {
+    renderMarked();
+    expect(screen.getByLabelText('Go to line 2: the test failed')).toBeTruthy();
+    expect(screen.getByTitle(/Line 2: the test failed — The first failure\./)).toBeTruthy();
+  });
+
+  /** A finding pointing past the end of the text must not take the pane down with it. */
+  it('survives a mark beyond the last line', () => {
+    expect(() =>
+      renderMarked({
+        marks: [{ line: 99, severity: 'error', label: 'off the end', note: null, text: 'x' }],
+        focusLine: 99,
+      }),
+    ).not.toThrow();
+  });
+});

@@ -43,6 +43,12 @@ const crypto = require('node:crypto');
 /** Owner/repo segments as GitHub allows them. */
 const NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
+/**
+ * Which tasks `analyze` will run. Every one of them must appear in each per-task table below;
+ * `pr` is deliberately absent, since it arrives through `compose` and has no run to analyse.
+ */
+const ANALYZE_DEPTHS = new Set(['quick', 'deep', 'log', 'blame', 'cause', 'marks']);
+
 const PROBE_TIMEOUT_MS = 5_000;
 /**
  * `gh run view --log-failed` on a large repository is a blob-storage download of a whole
@@ -108,12 +114,31 @@ const QUICK_MAX_TURNS = 1;
  * calibrate a likelihood, which Opus at medium has done well in practice; raising it would
  * slow a task that already strains its wall clock.
  */
-const CLAUDE_MODEL = { quick: 'sonnet', deep: 'opus', log: 'sonnet', blame: 'opus', pr: 'sonnet' };
+/**
+ * The two data tasks are set from what they are, not from how long they run.
+ *
+ * `cause` uses tools — when the failure is a test, the per-test truth is inside a JUnit XML in
+ * the run's artifacts — but what it does with them is transcription: list the artifacts,
+ * download one, read the failures out of it. That is Sonnet work, and paying Opus for it would
+ * buy latency. `marks` is a single-turn judgement over a log already in hand ("which of these
+ * forty red lines matter"), which is the same shape as the quick read and gets the same pairing.
+ */
+const CLAUDE_MODEL = {
+  quick: 'sonnet',
+  deep: 'opus',
+  log: 'sonnet',
+  blame: 'opus',
+  cause: 'sonnet',
+  marks: 'sonnet',
+  pr: 'sonnet',
+};
 const CLAUDE_EFFORT = {
   quick: 'medium',
   deep: 'high',
   log: 'low',
   blame: 'medium',
+  cause: 'medium',
+  marks: 'medium',
   pr: 'medium',
 };
 
@@ -145,6 +170,13 @@ const TIMEOUT_BY_TASK = {
   log: 5 * 60_000,
   deep: CLAUDE_TIMEOUT_MS,
   blame: 40 * 60_000,
+  // An artifact download and a parse, with a few `gh api` calls in front of it. Generous enough
+  // for a large run's artifact list, far short of an investigation.
+  cause: 10 * 60_000,
+  // One turn over a log that is already in the prompt, and the reader is sitting in front of
+  // that log waiting for the stripe to appear. If this is still going after two minutes the
+  // answer is not going to arrive in a form worth waiting for.
+  marks: 2 * 60_000,
   // Summarising a commit list that is already in the prompt. If this is still going after
   // ninety seconds something is wrong, and the caller has a template to fall back on.
   pr: 90_000,
@@ -157,10 +189,26 @@ const MAX_TURNS_BY_TASK = {
   // evidence across several branches — each its own turn. 24 ran out on a real repo before
   // it could finish, which is a wasted Opus run rather than a slow one.
   blame: 48,
+  // List the artifacts, download the report, read it, and a couple of turns of slack for a
+  // repository that names its artifacts unhelpfully. Deliberately far below the deep pass: a run
+  // that has spent twelve turns looking for a test report has not found one.
+  cause: 12,
+  marks: 1,
   pr: 1,
 };
-/** The two investigating tasks get tools; the rest work from what they are handed. */
-const USES_TOOLS = { quick: false, log: false, deep: true, blame: true, pr: false };
+/** The tasks that go and fetch evidence; the rest work from what they are handed. */
+const USES_TOOLS = {
+  quick: false,
+  log: false,
+  deep: true,
+  blame: true,
+  // When the failure is a test, its name is usually not in the log at all — it is in a JUnit XML
+  // in the run's artifacts, a download away. Without tools this task can only repeat the
+  // annotation that says "the step failed", which is the answer it exists to replace.
+  cause: true,
+  marks: false,
+  pr: false,
+};
 
 /** Thinking budgets used only as the fallback when --effort isn't understood. */
 const THINKING_TOKENS = { medium: '10000', high: '31999' };
@@ -459,7 +507,10 @@ async function analyze(sender, payload) {
   if (typeof fallbackLog !== 'string' || fallbackLog.length > 500_000) {
     return { ok: false, error: 'Invalid fallback log.' };
   }
-  if (depth !== 'quick' && depth !== 'deep' && depth !== 'log' && depth !== 'blame') {
+  // A closed set, checked rather than trusted: `depth` indexes the per-task budget tables, and an
+  // unrecognised key reads `undefined` out of all of them — which reaches
+  // `setTimeout(kill, undefined)` and kills the child the instant it spawns.
+  if (!ANALYZE_DEPTHS.has(depth)) {
     return { ok: false, error: 'Invalid depth.' };
   }
   // A session id becomes a command-line argument, so it is shape-checked like everything
@@ -1059,6 +1110,7 @@ function registerClaudeIpc(ipcMain) {
 // model-per-depth mapping and the block separation both regress silently.
 module.exports = {
   registerClaudeIpc,
+  ANALYZE_DEPTHS,
   claudeVariants,
   createStreamParser,
   installSkill,

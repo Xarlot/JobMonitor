@@ -73,6 +73,62 @@ BUILD SUCCESSFUL in 20s
 ## What this log does not show
 - the baseline images the comparison used`;
 
+/**
+ * The record replies for the two data tasks.
+ *
+ * The marks' quoted lines are real lines of `mockJobLog`, because that is the whole mechanism:
+ * a finding is anchored by finding its text in the log on screen. Invent a line here and the shot
+ * would show an empty stripe — correct behaviour, useless picture.
+ */
+const FAILURE_CAUSE = `<<<FAILURES>>>
+cause: three pages differ in the PDF comparison, so ExportToPdfTests fails on a real assertion
+source: JUnit XML from artifact \`test-results-exporttopdf\`
+failed: 3
+note: the report covers the exporttopdf shard only
+
+- kind: assertion
+  what: compareExportToPdfPdfs
+  group: com.example.reporting.ExportToPdfTests
+  where: testing/exporttopdf/ExportToPdfTests.java:88
+  message: Expected 0 diffs but got 3
+
+- kind: assertion
+  what: exportsInvoiceWithEmbeddedFonts
+  group: com.example.reporting.ExportToPdfTests
+  where: testing/exporttopdf/ExportToPdfTests.java:104
+  message: expected: <0> but was: <3> (page 2, page 5, page 6)
+
+- kind: error
+  what: keepsSubsetForReusedFont
+  group: com.example.reporting.FontCacheTests
+  where: testing/fonts/FontCacheTests.java:51
+  message: NullPointerException: Cannot invoke "Subset.glyphs()" because "subset" is null`;
+
+const LOG_MARKS = `<<<MARKS>>>
+- text: ExportToPdfTests > compareExportToPdfPdfs FAILED
+  line: 8
+  severity: error
+  label: compareExportToPdfPdfs failed
+  note: The first real failure; everything below reports this same test.
+
+- text: Expected 0 diffs but got 3
+  line: 9
+  severity: error
+  label: The comparison found three differing pages
+  note: A real assertion, so this is the code and not the runner.
+
+- text: Task :reporting:compareExportToPdf
+  line: 7
+  severity: notice
+  label: Start of the failing Gradle task
+  note: Everything before this is setup.
+
+- text: Process completed with exit code 1
+  line: 10
+  severity: warning
+  label: The step exited non-zero
+  note: A consequence of the assertion above, not a separate problem.`;
+
 const ANALYSIS =
   '<<<PROBLEM>>>\n' +
   'The `compare-exporttopdf-pdfs` job failed on a **real assertion**, not infrastructure.\n' +
@@ -95,6 +151,7 @@ function installBridge(data) {
         claudeVersion: '2.1.4 (Claude Code)',
       }),
       analyze: async (p) => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
         const send = (phase, extra) =>
           window.dispatchEvent(
             new MessageEvent('message', { data: { __cp: { requestId: p.requestId, phase, ...extra } } }),
@@ -105,9 +162,10 @@ function installBridge(data) {
         send('analysing', { activity: 'read artifacts/test-results/report.trx' });
         send('analysing', { chunk: 'Listing the last 30 runs on main to find where it turned red.' });
         send('analysing', { chunk: '\nComparing the commits in the boundary range against the failing test.' });
+        // Long enough for a shot of the progress strip, short enough not to slow the rest.
+        if (data.slow === p.depth) await wait(20_000);
         send('done', {});
-        const reply =
-          p.depth === 'blame' ? data.blame : p.depth === 'log' ? data.rewritten : data.analysis;
+        const reply = data[p.depth] ?? data.analysis;
         return { ok: true, reply, logTruncated: false, logSource: 'gh' };
       },
       cancel: async () => true,
@@ -132,17 +190,21 @@ function installBridge(data) {
 
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 
-async function newPage({ width = 1400, height = 950 } = {}) {
+async function newPage({ width = 1400, height = 950, slow = null } = {}) {
   const page = await browser.newPage({
     viewport: { width, height },
     deviceScaleFactor: 1,
     colorScheme: 'dark',
   });
   page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
+  // Keyed by depth, so the stand-in answers each task with something that task would produce.
   await page.addInitScript(installBridge, {
     blame: BLAME,
-    rewritten: REWRITTEN_LOG,
+    log: REWRITTEN_LOG,
+    cause: FAILURE_CAUSE,
+    marks: LOG_MARKS,
     analysis: ANALYSIS,
+    slow,
   });
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
@@ -231,6 +293,36 @@ const shots = {
     return page;
   },
 
+  async 'what-failed'(page) {
+    await focusFailure(page);
+    // The analysis starts itself a moment after a failure is focused; there is nothing to click.
+    await page.waitForTimeout(3000);
+    await page.mouse.move(700, 820);
+    await page.waitForTimeout(400);
+    return page;
+  },
+
+  async 'ai-progress'(page) {
+    await focusFailure(page);
+    // Caught mid-run: the strip is what an automatic analysis shows instead of a dialog.
+    await page.waitForTimeout(3200);
+    return page;
+  },
+
+  async 'log-map'(page) {
+    await focusFailure(page);
+    await page.getByRole('button', { name: 'Log', exact: true }).click();
+    // The scan starts on its own now — no button to press, just the wait for it to land.
+    await page.waitForTimeout(2200);
+    // Walk to the first finding, so the shot shows the stripe, the counter and the note together
+    // rather than a stripe nobody has used yet.
+    await page.getByRole('button', { name: 'Next failure in the log' }).click();
+    // Away from the button, or its tooltip sits over the finding the shot is about.
+    await page.mouse.move(700, 820);
+    await page.waitForTimeout(700);
+    return page;
+  },
+
   async 'who-broke-it'(page) {
     await focusFailure(page);
     await page.getByRole('button', { name: /Who broke it/ }).click();
@@ -258,7 +350,8 @@ const shots = {
 
 for (const [name, take] of Object.entries(shots)) {
   if (only.length && !only.includes(name)) continue;
-  const page = await newPage();
+  // One shot exists to catch a run in progress, so its bridge has to be slow on purpose.
+  const page = await newPage(name === 'ai-progress' ? { slow: 'cause' } : {});
   try {
     const target = await take(page);
     await target.screenshot({ path: join(OUT, `${name}.png`) });
