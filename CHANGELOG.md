@@ -103,6 +103,12 @@ to the reader and a scroll bar. Both are the kind of search a model with `gh` do
   keyed to the job id it has inside a flow run, and the Failures tab focuses the same job as a pull
   request check — a different id. The log viewer, the highlighter and now the log map were all
   impossible to look at offline because of it.
+- **"Add to the report" did nothing at all when the result came from the cache.** The click wrote the
+  flag to the week-long cache and told React nothing, so the button did not change, the report did not
+  change, and the press read as ignored — it surfaced on the next unrelated render, up to a poll later,
+  by which time nobody connects it to the button they pressed. It hit exactly the results people are
+  most likely to be looking at, since serving a stored analysis is the whole reason reopening
+  yesterday's failure is free. The same defect reached the blame verdict's own toggle.
 - **Ticking "add verdict to report" only reached the preview on the next poll.** The report is memoized
   on what it is assembled from, and the blame verdict was missing from that list.
 
