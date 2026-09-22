@@ -82,7 +82,11 @@ import {
   type ClaudeDepth,
 } from '../lib/claudePrompt';
 import { failuresBlock } from '../lib/failureCause';
-import { analysisKey, claudeAnalysisCache } from '../storage/failureCaches';
+import {
+  analysisKey,
+  claudeAnalysisCache,
+  type CachedAnalysis,
+} from '../storage/failureCaches';
 import type { Annotation } from '../api/types';
 import type { FailedJobRef } from '../lib/failures';
 import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
@@ -236,6 +240,38 @@ export function newRequestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * A stored result as live state.
+ *
+ * Module scope because two callers need it and they must agree: `stateFor`, which serves a
+ * week-old result as though it had just run, and `setInReport`, which has to be able to *write*
+ * to one. When only the reader knew how to do this, ticking "add to the report" on a restored
+ * analysis updated the cache and told React nothing — see the note there.
+ */
+function restoreState(cached: CachedAnalysis): TriageState {
+  return {
+    ...IDLE_TRIAGE,
+    analysis:
+      cached.problem || cached.solution
+        ? { problem: cached.problem, solution: cached.solution }
+        : null,
+    // `rewrittenLog` is the old name; entries written under it are still in the
+    // week-long cache and should keep working until they expire.
+    document: cached.document ?? cached.rewrittenLog ?? null,
+    failures: cached.failures ?? null,
+    // Restored too, so a reopened analysis still shows what produced it and how far
+    // that evidence reached — and can still be continued if it never finished.
+    activity: cached.activity ?? [],
+    incompleteReason: cached.incompleteReason ?? null,
+    sessionId: cached.sessionId ?? null,
+    inReport: cached.inReport ?? false,
+    partial: cached.narration ?? '',
+    logSource: cached.logSource ?? null,
+    logTruncated: cached.logTruncated ?? false,
+    phase: 'done',
+  };
+}
+
 export function useClaudeTriage(): ClaudeTriage {
   const { config } = useConfig();
   const ai = config.ai;
@@ -300,32 +336,10 @@ export function useClaudeTriage(): ClaudeTriage {
    */
   const stateFor = useCallback(
     (key: string, depth: ClaudeDepth): TriageState => {
-      const slot = slotKey(key, depth);
-      const live = byKey[slot];
+      const live = byKey[slotKey(key, depth)];
       if (live) return live;
       const cached = claudeAnalysisCache.get(analysisKey(key, depth));
-      if (!cached) return IDLE_TRIAGE;
-      return {
-        ...IDLE_TRIAGE,
-        analysis:
-          cached.problem || cached.solution
-            ? { problem: cached.problem, solution: cached.solution }
-            : null,
-        // `rewrittenLog` is the old name; entries written under it are still in the
-        // week-long cache and should keep working until they expire.
-        document: cached.document ?? cached.rewrittenLog ?? null,
-        failures: cached.failures ?? null,
-        // Restored too, so a reopened analysis still shows what produced it and how far
-        // that evidence reached — and can still be continued if it never finished.
-        activity: cached.activity ?? [],
-        incompleteReason: cached.incompleteReason ?? null,
-        sessionId: cached.sessionId ?? null,
-        inReport: cached.inReport ?? false,
-        partial: cached.narration ?? '',
-        logSource: cached.logSource ?? null,
-        logTruncated: cached.logTruncated ?? false,
-        phase: 'done',
-      };
+      return cached ? restoreState(cached) : IDLE_TRIAGE;
     },
     [byKey],
   );
@@ -603,7 +617,18 @@ export function useClaudeTriage(): ClaudeTriage {
 
     const slot = slotKey(key, depth);
     setByKey((prev) => {
-      const current = prev[slot];
+      /*
+       * The restored result needs materialising, and not doing so was a dead button.
+       *
+       * `stateFor` serves an analysis straight from the week-long cache when nothing ran in this
+       * session — which is most of them, since the cache is what makes reopening a failure you
+       * looked at yesterday free. There is then no entry in `byKey`, and returning `prev`
+       * unchanged left React with nothing to re-render: the cache had the new flag, the screen
+       * did not, and the click read as having done nothing at all. It would appear on the next
+       * unrelated render — a poll, a minute later — which is worse than never, because by then
+       * nobody connects it to the button they pressed.
+       */
+      const current = prev[slot] ?? (cached ? restoreState(cached) : null);
       if (!current) return prev;
       return { ...prev, [slot]: { ...current, inReport } };
     });
