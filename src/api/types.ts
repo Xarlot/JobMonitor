@@ -171,6 +171,35 @@ export interface PullRequest {
     ref: string;
     repo: { full_name: string } | null;
   };
+  /**
+   * People whose review is asked for and not yet given. GitHub removes a reviewer from here
+   * as soon as they submit a review, and puts them back on a re-request — so this is "still
+   * owed", not "ever asked". Returned by the list endpoint; optional because older fixtures
+   * and the single-PR callers never needed it.
+   */
+  requested_reviewers?: GitHubUser[];
+  /** Teams asked for a review, with the same "still owed" meaning. */
+  requested_teams?: GitHubTeam[];
+}
+
+export interface GitHubTeam {
+  slug: string;
+  name: string;
+  html_url: string;
+}
+
+/**
+ * One submitted review. `PENDING` is a review the viewer has started and not submitted;
+ * GitHub only ever returns it to its own author.
+ */
+export type ReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+
+export interface PullReview {
+  id: number;
+  user: GitHubUser | null;
+  state: ReviewState;
+  submitted_at?: string | null;
+  html_url: string;
 }
 
 export interface CheckRun {

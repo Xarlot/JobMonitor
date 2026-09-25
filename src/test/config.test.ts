@@ -43,7 +43,7 @@ describe('configStore', () => {
       logTailLines: 80,
       format: 'github',
     });
-    expect(cfg.notifications).toEqual({ pr: false, flow: false, autoRerun: false });
+    expect(cfg.notifications).toEqual({ pr: false, prReview: false, flow: false, autoRerun: false });
   });
 
   it('reads a config stored before these fields existed', () => {
@@ -65,7 +65,12 @@ describe('configStore', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // Existing preferences survive, and each new field arrives at its own default.
-    expect(result.config.notifications).toEqual({ pr: true, flow: false, autoRerun: false });
+    expect(result.config.notifications).toEqual({
+      pr: true,
+      prReview: false,
+      flow: false,
+      autoRerun: false,
+    });
     expect(result.config.prAutoRerun.enabled).toBe(false);
     expect(result.config.mergedPrs.count).toBe(10);
     /*

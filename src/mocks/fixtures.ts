@@ -10,6 +10,7 @@ import type {
   Job,
   JobsResponse,
   PullRequest,
+  PullReview,
   Repository,
   WorkflowRun,
   WorkflowRunsResponse,
@@ -41,7 +42,7 @@ export const MOCK_CONFIG: MonitorConfig = {
   fork: { owner: OWNER, repo: `${REPO}-fork`, branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
-  notifications: { pr: false, flow: false, autoRerun: false },
+  notifications: { pr: false, prReview: false, flow: false, autoRerun: false },
   // Armed for the workflow behind PR #37977's failing check, so mock mode
   // exercises the whole auto-rerun loop offline.
   prAutoRerun: {
@@ -211,6 +212,8 @@ export const MOCK_PULLS: PullRequest[] = [
     auto_merge: AUTO_MERGE,
     merged_at: null,
     updated_at: new Date(BOOT - 3600_000).toISOString(),
+    requested_reviewers: [user('d-orlov')!],
+    requested_teams: [{ slug: 'reporting', name: 'Reporting', html_url: `https://github.com/orgs/${OWNER}/teams/reporting` }],
     head: { sha: SHA_FAIL, ref: 'visualtests-refactoring', label: `${OWNER}:visualtests-refactoring`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
   },
@@ -227,6 +230,7 @@ export const MOCK_PULLS: PullRequest[] = [
     auto_merge: null,
     merged_at: null,
     updated_at: new Date(BOOT - 1800_000).toISOString(),
+    requested_reviewers: [],
     head: { sha: SHA_RUN, ref: 'space-handling', label: `${OWNER}:space-handling`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
   },
@@ -243,10 +247,44 @@ export const MOCK_PULLS: PullRequest[] = [
     auto_merge: null,
     merged_at: null,
     updated_at: new Date(BOOT - 300_000).toISOString(),
+    requested_reviewers: [user('d-orlov')!],
     head: { sha: SHA_OK, ref: 'jbr-combobox-property-grid', label: `${OWNER}:jbr-combobox-property-grid`, user: user(OWNER) },
     base: { ref: BRANCH, repo: { full_name: SLUG } },
   },
 ];
+
+/**
+ * Reviews per open mock PR, covering every reviewer state the PR row can show: a comment
+ * that does not withdraw an approval, changes requested, and a re-request that turns a
+ * past approval back into "awaiting".
+ */
+export function mockReviews(number: number): PullReview[] {
+  let id = number * 10;
+  const review = (login: string, state: PullReview['state'], agoMs: number): PullReview => ({
+    id: ++id,
+    user: user(login),
+    state,
+    submitted_at: new Date(BOOT - agoMs).toISOString(),
+    html_url: `https://github.com/${SLUG}/pull/${number}#pullrequestreview-${id}`,
+  });
+  switch (number) {
+    case 37977:
+      return [review('k-ivanov', 'CHANGES_REQUESTED', 5 * 3600_000)];
+    case 37663:
+      return [
+        review('k-ivanov', 'APPROVED', 4 * 3600_000),
+        review('k-ivanov', 'COMMENTED', 3 * 3600_000),
+        review('m-litvinov', 'COMMENTED', 2 * 3600_000),
+      ];
+    case 37901:
+      return [
+        review('d-orlov', 'APPROVED', 6 * 3600_000),
+        review('s-kuznetsova', 'COMMENTED', 2 * 3600_000),
+      ];
+    default:
+      return [];
+  }
+}
 
 export function mockCheckRuns(sha: string): CheckRunsResponse {
   const base = (over: Partial<CheckRun> & { id: number }) => ({

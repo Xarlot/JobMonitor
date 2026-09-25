@@ -798,7 +798,7 @@ function NotificationsSection({
     if (on && supported) setPerm(await ensureNotificationPermission());
   };
 
-  const anyOn = prefs.pr || prefs.flow || prefs.autoRerun;
+  const anyOn = prefs.pr || prefs.prReview || prefs.flow || prefs.autoRerun;
   const { canRerun } = useTokenCapability();
 
   return (
@@ -819,6 +819,13 @@ function NotificationsSection({
       <FormControl className={styles.mb2} disabled={!supported}>
         <Checkbox checked={prefs.pr} onChange={(e) => void toggle('pr', e.target.checked)} />
         <FormControl.Label>Notify when a PR’s checks finish</FormControl.Label>
+      </FormControl>
+      <FormControl className={styles.mb2} disabled={!supported}>
+        <Checkbox checked={prefs.prReview} onChange={(e) => void toggle('prReview', e.target.checked)} />
+        <FormControl.Label>Notify when a PR gets a new review</FormControl.Label>
+        <FormControl.Caption>
+          An approval, a request for changes or a review comment — not the author’s own.
+        </FormControl.Caption>
       </FormControl>
       <FormControl className={styles.mb2} disabled={!supported}>
         <Checkbox checked={prefs.flow} onChange={(e) => void toggle('flow', e.target.checked)} />

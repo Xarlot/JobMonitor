@@ -129,3 +129,8 @@
 .prHeader:hover {
   background-color: var(--bgColor-muted);
 }
+
+/* Set apart from "updated …": inline with it, the two read as one phrase. */
+.reviewers {
+  margin-left: var(--base-size-16);
+}

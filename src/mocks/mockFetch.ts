@@ -18,6 +18,7 @@ import {
   mockAnnotations,
   mockArtifacts,
   mockCheckRuns,
+  mockReviews,
   mockCombinedStatus,
   mockJobLog,
   mockJobs,
@@ -238,6 +239,9 @@ export async function mockFetch(
      */
     return json([...MOCK_PULLS, ...MOCK_FEATURE_PULLS], inm);
   }
+
+  const reviewsMatch = path.match(/\/pulls\/(\d+)\/reviews$/);
+  if (reviewsMatch) return json(mockReviews(Number(reviewsMatch[1])), inm);
 
   // One pull request — the only source of mergeable/mergeable_state, which is what the
   // feature-branch tab reads to say why a merge is stuck. Must sit above the list route's

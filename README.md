@@ -34,8 +34,8 @@ that lives in the tray and pops a notification when something finishes.
 - **Logs, summaries and timelines** for any job, right inside the app.
 - **Artifact downloads** — grab a run's artifacts as a single `.zip` or bundle several into one
   (in the desktop app, via a downloads panel with progress and a Save button).
-- **Desktop notifications** when a PR’s checks or a flow run finish — and, optionally, when jobs
-  get re‑run for you.
+- **Desktop notifications** when a PR’s checks or a flow run finish, when a PR gets a new review —
+  and, optionally, when jobs get re‑run for you.
 - **A Failures list** with a ready‑to‑paste bug report for every failing job — across open and
   recently‑merged PRs *and* your flows — in collapsible groups.
 - **Auto‑rerun of failed jobs** for PRs waiting on auto‑merge — opt‑in, limited to workflows you
@@ -188,6 +188,11 @@ requests you’ve used in the last hour.
 Every open PR from your fork into upstream, with an overall status. Expand a PR to see all its
 check‑runs and commit statuses. Filter by **All / Active / Failed / Success**, and use **Compact**
 to hide the green noise and show only what needs attention.
+
+Each PR also shows its **reviewers**, the way GitHub's own reviewers box does: an avatar per person or
+team with its verdict on it — approved, changes requested, commented, or still awaited. A comment after
+an approval keeps the approval; a reviewer asked to look again shows as awaited. Hover for the details.
+The Overview's PR tiles show the same reviewers.
 
 If your token can write, each PR also gets a **re‑run** button (the circular arrows). It lists the
 failed workflow runs for that commit and lets you re‑run any one’s failed jobs — no need to go to
@@ -765,6 +770,11 @@ moment a tracked PR’s checks finish, a flow run completes, or failed jobs get 
 PRs and flows you’ll only be notified about things that finish while you’re watching, never about
 items that were already done. The auto‑rerun notification also fires when a re‑run was **refused**,
 so a silent failure can’t slip past.
+
+**New reviews** are a separate opt‑in: an approval, a request for changes or a review comment on one
+of your PRs pings you, naming who it was and what they said, and a click opens the review itself.
+The author’s own replies don’t count, and reviews that were already there when the app started never
+announce themselves. Several arriving at once come as one notification, led by the most pressing.
 
 In the **desktop app**, notifications keep working even when the window is hidden in the tray — and
 so does the auto‑rerun, at the slower background polling rate.

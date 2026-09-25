@@ -4,6 +4,23 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Reviewers on every pull request.** The Pull requests tab showed checks and nothing of the other
+  half of what holds a PR up: whether it is waiting on a person. Each row now carries its reviewers —
+  requested people and teams, and everyone who has reviewed — with the verdict on each avatar, most
+  pressing first. A comment after an approval does not withdraw it, and a re-requested reviewer shows
+  as awaited, as on GitHub. The reviews are read only when a PR's `updated_at` moves, which every
+  review bumps, so an untouched PR costs no requests. The Overview's PR tiles carry the
+  same row.
+- **A notification when a PR gets a new review.** Opt-in under **Settings → Notifications**: who
+  reviewed and what they said — approved, requested changes, commented — and a click opens that
+  review. The first read after startup is taken as the baseline, so reviews you have already seen do
+  not announce themselves; the author's own replies are left out; several at once collapse into one,
+  led by a request for changes if there is one. It rides on the same reads as the reviewer avatars,
+  so it costs no extra requests.
+
 ## [3.1.0]
 
 **Two questions a red board raises that the app answered badly: *what actually failed*, and *where in

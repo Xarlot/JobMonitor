@@ -1,0 +1,60 @@
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+}
+
+.reviewer {
+  position: relative;
+  display: inline-flex;
+  line-height: 0;
+  /* Room for the badge, so neighbouring avatars don't cover it. */
+  margin-right: var(--base-size-8);
+}
+
+.team {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--borderRadius-small);
+  background-color: var(--bgColor-neutral-muted);
+  color: var(--fgColor-muted);
+}
+
+/*
+ * A filled disc in the verdict's colour with the icon knocked out in white, ringed in the page
+ * background so it reads against any avatar. An outline-only glyph at this size vanished.
+ */
+.badge {
+  position: absolute;
+  right: -7px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--bgColor-default);
+  background-color: var(--bgColor-neutral-emphasis);
+  color: var(--fgColor-onEmphasis);
+}
+
+.badgeIcon {
+  width: 10px;
+  height: 10px;
+}
+
+.reviewer[data-state='approved'] .badge {
+  background-color: var(--bgColor-success-emphasis);
+}
+
+.reviewer[data-state='changes_requested'] .badge {
+  background-color: var(--bgColor-danger-emphasis);
+}
+
+.reviewer[data-state='requested'] .badge {
+  background-color: var(--bgColor-attention-emphasis);
+}

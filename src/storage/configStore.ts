@@ -143,6 +143,8 @@ export const notificationsSchema = z
   .object({
     /** Notify when a tracked PR's checks finish (success/failure). */
     pr: z.boolean().default(false),
+    /** Notify when a tracked PR gets a new review (approval, changes requested, comment). */
+    prReview: z.boolean().default(false),
     /** Notify when a tracked flow run completes. */
     flow: z.boolean().default(false),
     /** Notify when failed jobs were re-run automatically (or a re-run failed). */
@@ -474,7 +476,7 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   fork: { owner: '', repo: '', branch: null },
   prAuthor: '',
   polling: { prListSeconds: 180, checksSeconds: 60, flowRunsSeconds: 180, hiddenSeconds: 240 },
-  notifications: { pr: false, flow: false, autoRerun: false },
+  notifications: { pr: false, prReview: false, flow: false, autoRerun: false },
   prAutoRerun: {
     enabled: false,
     workflowFiles: [],

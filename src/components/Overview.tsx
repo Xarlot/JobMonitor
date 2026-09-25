@@ -16,6 +16,7 @@ import {
   WorkflowIcon,
 } from '@primer/octicons-react';
 import { useDashboard } from '../context/DashboardContext';
+import { PrReviewers } from './PrReviewers';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useResolvedFlows } from '../context/ResolvedFlowsContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
@@ -154,7 +155,8 @@ export function Overview({
   } = useFlowGroups();
   const { refresh: refreshPatterns } = useResolvedFlows();
   const { owner: upOwner, repo: upRepo } = config.upstream;
-  const { prs, refreshAll, isFetchingList, isFetchingChecks, invalidateChecks } = useDashboard();
+  const { prs, refreshAll, isFetchingList, isFetchingChecks, invalidateChecks, reviews } =
+    useDashboard();
   const flowStates = useFlowStates();
   const [dlg, setDlg] = useState<Dlg | null>(null);
   const [groupPrompt, setGroupPrompt] = useState<{ mode: 'create' | 'rename'; group?: FlowGroup } | null>(null);
@@ -393,6 +395,8 @@ export function Overview({
                 <Text className={styles.small}>#{entry.pr.number}</Text>
                 <BranchName as="span" className={styles.small}>{entry.pr.head.ref}</BranchName>
               </div>
+              {/* A line of its own: the tiles are narrow, and next to the branch it would wrap. */}
+              <PrReviewers pr={entry.pr} reviews={reviews.get(entry.pr.number)} />
             </Tile>
           ))}
         </div>

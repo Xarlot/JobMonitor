@@ -5,6 +5,8 @@
  *     failures stay reviewable after the PR has left the open list.
  *  3. Polls check-runs + combined status for PRs that still need it (never fetched
  *     or still active) at the fast cadence; completed PRs are skipped.
+ *  4. Reads each open PR's reviews whenever its `updated_at` moves — a review bumps it,
+ *     so an unchanged PR costs nothing.
  * Both cadences slow to `hiddenSeconds` when the tab is hidden.
  */
 
@@ -14,6 +16,7 @@ import {
   checkRunsPath,
   combinedStatusPath,
   headFilter,
+  pullReviewsPath,
   pullsPath,
 } from '../api/endpoints';
 import type {
@@ -22,6 +25,7 @@ import type {
   CombinedStatus,
   OverallStatus,
   PullRequest,
+  PullReview,
 } from '../api/types';
 import {
   effectivePrAuthor,
@@ -29,6 +33,7 @@ import {
   type MonitorConfig,
 } from '../storage/configStore';
 import { combineChecksAndStatus, isActiveStatus } from '../lib/status';
+import { newReviews, reviewNotification } from '../lib/reviewers';
 import { SCAN_WINDOW_MS } from '../lib/failures';
 import { detectNewlyCompleted, prPhase } from '../lib/completion';
 import { sendNotification } from '../lib/notifications';
@@ -79,6 +84,11 @@ export interface DashboardState {
   listUpdatedAt: number | null;
   isFetchingList: boolean;
   isFetchingChecks: boolean;
+  /**
+   * Submitted reviews per open PR number. A PR is missing until its first read lands; the
+   * requested reviewers need no extra request and are on the PR itself.
+   */
+  reviews: ReadonlyMap<number, readonly PullReview[]>;
   enabled: boolean;
   refreshAll: () => void;
   /**
@@ -156,6 +166,16 @@ export function useGitHubDashboard(): DashboardState {
 
   const [prs, setPrs] = useState<PrEntry[]>([]);
   const [mergedPrs, setMergedPrs] = useState<PrEntry[]>([]);
+  const [reviews, setReviews] = useState<ReadonlyMap<number, readonly PullReview[]>>(
+    () => new Map(),
+  );
+  /** PR number → the `updated_at` its reviews were read at (or are being read at). */
+  const reviewsForRef = useRef<Map<number, string>>(new Map());
+  /** The last reviews read per PR, outside React state: what a new read is diffed against. */
+  const reviewsSeenRef = useRef<Map<number, readonly PullReview[]>>(new Map());
+  // A ref so that toggling the setting applies to a read already in flight.
+  const notifyReviewRef = useRef(config.notifications.prReview);
+  notifyReviewRef.current = config.notifications.prReview;
 
   const listIntervalMs =
     (visible ? config.polling.prListSeconds : config.polling.hiddenSeconds) * 1000;
@@ -167,6 +187,9 @@ export function useGitHubDashboard(): DashboardState {
   useEffect(() => {
     setPrs([]);
     setMergedPrs([]);
+    setReviews(new Map());
+    reviewsForRef.current = new Map();
+    reviewsSeenRef.current = new Map();
   }, [scopeKey]);
 
   const fetchList = useCallback(async () => {
@@ -297,6 +320,55 @@ export function useGitHubDashboard(): DashboardState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetSig, enabled]);
 
+  /**
+   * Reviews, read only for a PR whose `updated_at` has moved since the last read.
+   *
+   * Keyed to the list rather than polled on its own: submitting, dismissing or requesting a
+   * review all bump `updated_at`, so the list poll already notices every change that matters,
+   * and a PR nobody has touched is never asked about again. Merged PRs are left out — the
+   * tab that shows reviewers lists open ones only.
+   */
+  const reviewsSig = useMemo(
+    () => prs.map((e) => `${e.pr.number}:${e.pr.updated_at}`).join(','),
+    [prs],
+  );
+  useEffect(() => {
+    if (!enabled) return;
+    const { owner, repo } = config.upstream;
+    const stale = prs.filter((e) => reviewsForRef.current.get(e.pr.number) !== e.pr.updated_at);
+    if (stale.length === 0) return;
+    for (const e of stale) reviewsForRef.current.set(e.pr.number, e.pr.updated_at);
+    void Promise.allSettled(
+      stale.map(async (e) => {
+        const { data } = await ghGet<PullReview[]>(pullReviewsPath(owner, repo, e.pr.number));
+        return [e.pr, data] as const;
+      }),
+    ).then((results) => {
+      const got = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+      // A failed read is forgotten, so the next change to the list tries it again rather
+      // than the PR showing no reviews for as long as nobody touches it.
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') reviewsForRef.current.delete(stale[i].pr.number);
+      });
+      if (got.length === 0) return;
+      // Diffed here, once per read, rather than in the state updater — React may run an
+      // updater twice, and a notification is not something to send twice.
+      for (const [pr, data] of got) {
+        const fresh = newReviews(reviewsSeenRef.current.get(pr.number), data, pr.user?.login);
+        reviewsSeenRef.current.set(pr.number, data);
+        const note = notifyReviewRef.current ? reviewNotification(pr, fresh) : null;
+        if (note) sendNotification(note);
+      }
+      setReviews((prev) => {
+        const next = new Map(prev);
+        for (const [pr, data] of got) next.set(pr.number, data);
+        return next;
+      });
+    });
+    // Driven by the signature: `prs` also changes identity on every checks update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewsSig, enabled]);
+
   // Desktop notification when a PR's checks finish (opt-in via config).
   const prPhaseRef = useRef<Map<number, boolean>>(new Map());
   const notifyPr = config.notifications.pr;
@@ -345,6 +417,7 @@ export function useGitHubDashboard(): DashboardState {
     listUpdatedAt: list.lastUpdated,
     isFetchingList: list.isFetching,
     isFetchingChecks: checks.isFetching,
+    reviews,
     enabled,
     refreshAll,
     invalidateChecks,

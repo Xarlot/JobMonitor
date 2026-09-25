@@ -19,6 +19,7 @@ import { AutoRerunLabel } from './AutoRerunLabel';
 import { AutoMergeButton, AutoMergeLabel } from './AutoMergeButton';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
+import { PrReviewers } from './PrReviewers';
 import { TimelineDialog, type GanttItem } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { ArtifactsButton } from './ArtifactsButton';
@@ -50,7 +51,7 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const { config } = useConfig();
-  const { invalidateChecks, refreshAll } = useDashboard();
+  const { invalidateChecks, refreshAll, reviews } = useDashboard();
   const { owner, repo } = config.upstream;
   const { pr, overall } = entry;
   // Artifacts are per-run; derive the PR's CI run id from its check-run URLs.
@@ -120,6 +121,7 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
             <ChevronRightIcon size={12} />
             <BranchName as="span" className={styles.small}>{pr.base.ref}</BranchName>
             <Text className={styles.small}>updated {formatRelative(pr.updated_at)}</Text>
+            <PrReviewers pr={pr} reviews={reviews.get(pr.number)} className={styles.reviewers} />
           </div>
         </div>
         <div className={styles.flexCenter2}>

@@ -35,6 +35,14 @@ export function pullPath(owner: string, repo: string, number: number): string {
   return `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`;
 }
 
+/**
+ * The reviews submitted on one pull request, oldest first. Only the list endpoint's
+ * `requested_reviewers` says who is still owed a review; *what* the others said is only here.
+ */
+export function pullReviewsPath(owner: string, repo: string, number: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews?per_page=100`;
+}
+
 /** POST target: open a pull request. Both refs are plain branch names within `repo`. */
 export function createPullPath(owner: string, repo: string): string {
   return `/repos/${enc(owner)}/${enc(repo)}/pulls`;
