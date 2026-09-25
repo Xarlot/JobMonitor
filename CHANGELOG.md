@@ -4,7 +4,11 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.2.0]
+
+**Whether a pull request is waiting on CI or on a person.** The dashboard answered the first half and
+left the second to a trip to GitHub. Reviewers now sit next to every PR, and a new review can ping you
+the way finished checks already do.
 
 ### Added
 - **Reviewers on every pull request.** The Pull requests tab showed checks and nothing of the other
