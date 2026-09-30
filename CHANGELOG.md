@@ -24,6 +24,13 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
   *Active* is gone from the status filter (a finished run is never active) and *Cancelled* takes its
   place; *in progress* is gone from the job states for the same reason. With the job filter on, jobs
   are now fetched for one run per flow instead of all of them.
+- **Cancelled, skipped and neutral read the way GitHub reads them.** All three used to land in one
+  grey *neutral* bucket that counted as neither passed nor failed — so a cancelled run left a group's
+  tally, and a PR whose required check was cancelled looked fine here while GitHub refused to merge it.
+  They now follow GitHub's rule for a required check: `neutral` and `skipped` pass, `cancelled` fails,
+  and `stale` (a check GitHub stopped waiting on) is pending. The Failures tab still collects only
+  work that broke: a cancelled job has no failing step to report, and a fail-fast matrix cancels every
+  sibling of the job that failed. Auto-rerun is unchanged and still never retries a cancel.
 
 ### Fixed
 - **Pull requests missing for some people.** The open-PR list was read one page deep — the hundred

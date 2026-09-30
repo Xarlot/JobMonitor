@@ -11,18 +11,26 @@
 import type { Job, WorkflowRun } from '../api/types';
 import type { FlowsFilter, RunStatusFilter } from '../context/FlowsFilterContext';
 import { isJobFilterActive } from '../context/FlowsFilterContext';
+import { statusToOverall } from './status';
 
 const FAILURE_CONCLUSIONS = ['failure', 'timed_out', 'startup_failure', 'action_required'];
 
-/** Does a finished run's conclusion satisfy the status filter? */
+/**
+ * Does a finished run satisfy the status filter?
+ *
+ * *Failed* and *Success* go by {@link statusToOverall}, so they read a run the way the rest of the
+ * app does — a cancel is a failure, a skip a pass, as GitHub has it. *Cancelled* picks out the
+ * cancels on their own, a subset of *Failed*.
+ */
 export function matchesRunStatus(run: WorkflowRun, filter: RunStatusFilter): boolean {
+  const overall = statusToOverall(run.status, run.conclusion);
   switch (filter) {
     case 'all':
       return true;
     case 'failed':
-      return FAILURE_CONCLUSIONS.includes(run.conclusion ?? '');
+      return overall === 'failure';
     case 'success':
-      return run.conclusion === 'success';
+      return overall === 'success';
     case 'cancelled':
       return run.conclusion === 'cancelled';
   }

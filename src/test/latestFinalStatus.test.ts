@@ -45,9 +45,10 @@ describe('latestFinalStatus', () => {
     expect(latestFinalStatus([run('in_progress'), run('completed', 'failure')])).toBe('failure');
   });
 
+  /** Read as GitHub reads a required check: a cancel blocks like a failure, a skip passes. */
   it('counts a cancelled or skipped run as finished', () => {
-    expect(latestFinalStatus([run('completed', 'cancelled')])).toBe('neutral');
-    expect(latestFinalStatus([run('in_progress'), run('completed', 'skipped')])).toBe('neutral');
+    expect(latestFinalStatus([run('completed', 'cancelled')])).toBe('failure');
+    expect(latestFinalStatus([run('in_progress'), run('completed', 'skipped')])).toBe('success');
   });
 
   it('answers unknown when nothing has finished yet', () => {

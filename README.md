@@ -603,7 +603,9 @@ Each flow is a collapsible card. Expand one to see its recent **runs**; expand a
 **jobs**. The filter — **All / Failed / Success / Cancelled**, plus the **Job filter** for a job
 matching a name in a given state — picks *flows*, not runs: each flow is judged by its latest
 **finished** run (a run still queued or building is passed over), and a flow that doesn't match is
-hidden, along with any group left empty. **Compact** hides passed/skipped jobs. Cards behave like an accordion —
+hidden, along with any group left empty. Statuses read the way GitHub reads a required check: a **skipped** or
+neutral run counts as passed, a **cancelled** one as failed (so *Failed* includes it, and *Cancelled*
+picks out just those). **Compact** hides passed/skipped jobs. Cards behave like an accordion —
 expanding one collapses the rest — and you can **drag the grip** on the left to reorder flows or move
 them between groups.
 

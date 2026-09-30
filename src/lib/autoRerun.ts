@@ -23,8 +23,9 @@ import type { RerunRecord } from '../storage/rerunStore';
  * conclusions in ways that are wrong for this decision:
  *  - `action_required` maps to "failure" there, but it means a human must approve
  *    something — re-running it just re-queues the same wait.
- *  - `cancelled` and `stale` map to "neutral"; a cancel is normally deliberate, so
- *    undoing it behind the user's back would be rude.
+ *  - `cancelled` maps to "failure" there too (as GitHub reads a required check), but a
+ *    cancel is normally deliberate, so undoing it behind the user's back would be rude.
+ *  - `stale` maps to "pending"; nothing ran to retry.
  * That leaves the two conclusions that actually mean "the work ran and broke".
  */
 export const RETRYABLE_CONCLUSIONS: ReadonlySet<RunConclusion> = new Set<RunConclusion>([

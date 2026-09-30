@@ -18,7 +18,7 @@
 
 import type { CheckRun, Job, PullRequest, RunConclusion, WorkflowRun } from '../api/types';
 import { checkRunIdFromUrl, jobIdFromUrl, runIdFromUrl } from '../api/endpoints';
-import { statusToOverall } from './status';
+import { BROKEN_CONCLUSIONS } from './status';
 import { workflowBasename } from './workflow';
 
 export type PrFailureState = 'open' | 'merged';
@@ -214,25 +214,30 @@ function byRecency(a: FailedJobRef, b: FailedJobRef): number {
 
 /** True for a check-run that finished badly. */
 function isFailingCheck(check: CheckRun): boolean {
-  return statusToOverall(check.status, check.conclusion) === 'failure';
+  return isBroken(check);
 }
 
 /** True for a job that finished badly. */
 export function isFailingJob(job: Job): boolean {
-  return statusToOverall(job.status, job.conclusion) === 'failure';
+  return isBroken(job);
 }
 
 /** True for a run that finished badly — the gate on fetching its jobs at all. */
 export function isFailingRun(run: WorkflowRun): boolean {
-  return statusToOverall(run.status, run.conclusion) === 'failure';
+  return isBroken(run);
+}
+
+/** Finished and broke. Not `statusToOverall(...) === 'failure'`, which also takes in cancels. */
+function isBroken(x: { status: CheckRun['status']; conclusion: CheckRun['conclusion'] }): boolean {
+  return x.status === 'completed' && BROKEN_CONCLUSIONS.has(x.conclusion);
 }
 
 /**
  * Every failing check-run across the tracked PRs, open ones first, then the flow
  * failures.
  *
- * "Failing" is `statusToOverall(...) === 'failure'`, which covers `failure`,
- * `timed_out`, `startup_failure` and `action_required` — wider than what the
+ * "Failing" is {@link BROKEN_CONCLUSIONS}: `failure`, `timed_out`,
+ * `startup_failure` and `action_required`, but not `cancelled` — wider than what the
  * auto-rerun engine retries, and rightly so: all of them are worth a look even
  * where an unattended retry would be wrong.
  */

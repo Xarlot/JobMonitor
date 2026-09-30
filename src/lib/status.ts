@@ -16,24 +16,44 @@ export function isActiveStatus(status: RunStatus): boolean {
   return status !== 'completed';
 }
 
-/** Map a single run's (status, conclusion) to an OverallStatus. */
+/**
+ * Conclusions where the work ran and broke — narrower than what reads as `failure`, which
+ * also takes in `cancelled`. For decisions about *broken work*, like what the Failures tab
+ * collects: a cancelled job has no failing step or log to show, and a fail-fast matrix
+ * cancels every sibling of the one that failed.
+ */
+export const BROKEN_CONCLUSIONS: ReadonlySet<RunConclusion> = new Set<RunConclusion>([
+  'failure',
+  'timed_out',
+  'startup_failure',
+  'action_required',
+]);
+
+/**
+ * Map a single run's (status, conclusion) to an OverallStatus.
+ *
+ * Finished conclusions are read the way GitHub reads them for a required check: `neutral` and
+ * `skipped` count as passing, and `cancelled` as failing — a cancelled required check blocks the
+ * merge like a failed one. `stale` is a check GitHub gave up waiting on, so it has no verdict yet.
+ * `neutral` is left for a conclusion this app doesn't know (or a completed run with none).
+ */
 export function statusToOverall(status: RunStatus, conclusion: RunConclusion): OverallStatus {
   if (status !== 'completed') {
     return status === 'in_progress' ? 'in_progress' : 'pending';
   }
   switch (conclusion) {
     case 'success':
+    case 'neutral':
+    case 'skipped':
       return 'success';
     case 'failure':
     case 'timed_out':
     case 'startup_failure':
     case 'action_required':
-      return 'failure';
     case 'cancelled':
-    case 'neutral':
-    case 'skipped':
+      return 'failure';
     case 'stale':
-      return 'neutral';
+      return 'pending';
     default:
       return 'neutral';
   }
@@ -66,7 +86,7 @@ const PRECEDENCE: Record<OverallStatus, number> = {
  * are parts of one whole — the check-runs of a commit.)
  *
  * This skips unfinished runs and reports the last verdict there was. A cancelled or skipped run
- * counts: it is finished, and `neutral` is a final state.
+ * counts: it is finished — cancelled reads as failed and skipped as passed, as GitHub reads them.
  *
  * It is not the same as "ignore failures until something passes" — only *unfinished* runs are
  * skipped, so a flow that failed and is now rebuilding still reads as failed until the rebuild

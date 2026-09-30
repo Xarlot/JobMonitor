@@ -44,6 +44,10 @@ describe('matchesRunStatus', () => {
     expect(matchesRunStatus(run({ id: 1, conclusion: 'success' }), 'failed')).toBe(false);
     expect(matchesRunStatus(run({ id: 1, conclusion: 'cancelled' }), 'cancelled')).toBe(true);
     expect(matchesRunStatus(run({ id: 1, conclusion: 'success' }), 'all')).toBe(true);
+    // As GitHub reads them: a cancel is a failure, a skip a pass.
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'cancelled' }), 'failed')).toBe(true);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'skipped' }), 'success')).toBe(true);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'skipped' }), 'cancelled')).toBe(false);
   });
 });
 

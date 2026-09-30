@@ -24,7 +24,7 @@ const COUNT_META: { status: OverallStatus; label: string; variant: LabelVariant 
   { status: 'in_progress', label: 'in progress', variant: 'attention' },
   { status: 'pending', label: 'pending', variant: 'attention' },
   { status: 'success', label: 'passed', variant: 'success' },
-  { status: 'neutral', label: 'skipped', variant: 'secondary' },
+  { status: 'neutral', label: 'other', variant: 'secondary' },
   { status: 'unknown', label: 'unknown', variant: 'secondary' },
 ];
 

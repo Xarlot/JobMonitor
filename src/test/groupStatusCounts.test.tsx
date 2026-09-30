@@ -30,10 +30,15 @@ describe('groupVerdict', () => {
     expect(groupVerdict([run('queued')])).toBeNull();
   });
 
-  /** Cancelled and skipped finish without deciding anything either. */
+  /** Cancelled and skipped carry GitHub's verdicts: a cancel fails, a skip passes. */
+  it('counts a cancel as failed and a skip as passed', () => {
+    expect(groupVerdict([run('completed', 'cancelled')])).toBe('failure');
+    expect(groupVerdict([run('completed', 'skipped')])).toBe('success');
+  });
+
   it('reports nothing for a run that ended without a verdict', () => {
-    expect(groupVerdict([run('completed', 'cancelled')])).toBeNull();
-    expect(groupVerdict([run('completed', 'skipped')])).toBeNull();
+    expect(groupVerdict([run('completed', null)])).toBeNull();
+    expect(groupVerdict([run('completed', 'stale')])).toBeNull();
   });
 
   /**

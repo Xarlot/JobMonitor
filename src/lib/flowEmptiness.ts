@@ -16,7 +16,7 @@
 
 import type { Job, WorkflowRun } from '../api/types';
 import type { EmptyFlowFilter } from '../storage/configStore';
-import { statusToOverall } from './status';
+import { BROKEN_CONCLUSIONS } from './status';
 
 const FAILURE_CONCLUSIONS = ['failure', 'timed_out', 'startup_failure', 'action_required'];
 
@@ -42,6 +42,17 @@ function jobInState(job: Job, state: EmptyFlowFilter['jobState']): boolean {
 }
 
 /**
+ * A finished run that neither passed nor broke — skipped, cancelled, neutral, stale.
+ *
+ * Spelled out rather than read off `statusToOverall`, which follows GitHub's required-check
+ * reading and so calls a skip a pass and a cancel a failure. For "did anything run", both are
+ * the same answer: no.
+ */
+function ranNothing(run: WorkflowRun): boolean {
+  return run.status === 'completed' && run.conclusion !== 'success' && !BROKEN_CONCLUSIONS.has(run.conclusion);
+}
+
+/**
  * Whether the flow matches the "empty" condition.
  * Returns `null` when the answer isn't known yet (data still loading, or the
  * condition isn't configured) so callers can keep the flow visible meanwhile.
@@ -53,7 +64,7 @@ function emptinessSignal(input: FlowEmptinessInput, filter: EmptyFlowFilter): bo
     case 'only_skipped':
       return (
         input.runs.length > 0 &&
-        input.runs.every((r) => statusToOverall(r.status, r.conclusion) === 'neutral')
+        input.runs.every((r) => ranNothing(r))
       );
     case 'no_artifacts':
       if (input.latestArtifactBytes === null) return null; // unknown -> keep visible
