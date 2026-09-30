@@ -4,7 +4,12 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.3.0]
+
+**An empty Pull requests tab, and a board that answered a different question than it was asked.** For
+some people the PR tab showed nothing at all, because only the first hundred PRs of the upstream were
+ever read. The Flows filter thinned rows inside cards instead of saying which flows are red right now.
+And a cancelled run counted as neither passed nor failed, where GitHub calls it a failure.
 
 ### Added
 - **The PR list and the Flows filter in the Diagnostics log.** An empty Pull requests tab could not
