@@ -47,6 +47,14 @@ const defs = {
   PR_OPENED_EXTERNAL: { id: 210, key: 'pr.opened_external' },
   PR_CHECKS_EXPANDED: { id: 211, key: 'pr.checks_expanded' },
   PR_CHECK_RUN_DIALOG: { id: 212, key: 'pr.check_run_dialog' },
+  /**
+   * Not something a person did, but the only way to count how many installs hit it: the PR list
+   * came back from GitHub non-empty and not one PR survived the fork / author filter — the tab
+   * shows nothing. Recorded once per change of that state, not per poll.
+   */
+  PR_LIST_ALL_FILTERED_OUT: { id: 213, key: 'pr.list_all_filtered_out' },
+  /** The open-PR list needed more than one page — the case that used to lose PRs. Once per change. */
+  PR_LIST_PAGED: { id: 214, key: 'pr.list_paged' },
 
   // ── 300 flows ────────────────────────────────────────────────────────────────────────────────
   FLOW_CREATED: { id: 300, key: 'flow.created' },
@@ -61,6 +69,11 @@ const defs = {
   FLOW_WORKFLOW_BROWSER_OPENED: { id: 308, key: 'flow.workflow_browser_opened' },
   FLOW_UNMATCHED_DIALOG_OPENED: { id: 309, key: 'flow.unmatched_dialog_opened' },
   FLOW_RUN_EXPANDED: { id: 310, key: 'flow.run_expanded' },
+  /** The Flows status filter set to something other than All. */
+  FLOW_STATUS_FILTER_USED: { id: 311, key: 'flow.status_filter_used' },
+  /** The Flows job filter turned on — recorded when the name goes from empty to not, not per key. */
+  FLOW_JOB_FILTER_USED: { id: 312, key: 'flow.job_filter_used' },
+  FLOW_FILTER_CLEARED: { id: 313, key: 'flow.filter_cleared' },
 
   // ── 400 failures and logs ────────────────────────────────────────────────────────────────────
   LOGS_JOB_OPENED: { id: 400, key: 'logs.job_opened' },

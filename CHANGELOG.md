@@ -6,6 +6,15 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 
 ## [Unreleased]
 
+### Added
+- **The PR list and the Flows filter in the Diagnostics log.** An empty Pull requests tab could not
+  be told apart from the outside: GitHub returning nothing, the list not being read far enough, or
+  every PR filtered away. Each read of the open-PR list now leaves a `prs` line — how many PRs came
+  back over how many pages, which were kept, how many each rule dropped (head owner, branch, author)
+  and the head owners that were dropped, which is usually the answer. The Flows filter leaves a
+  `flows` line with the flows it hid and why (no finished run, status, job condition) and the groups
+  that went with them. Both are written only when the outcome changes, not on every poll.
+
 ### Changed
 - **The Flows filter picks flows, not runs.** It used to thin out the rows inside each card, so a
   flow that failed once three runs ago still showed up under *Failed*, and every card stayed on screen
@@ -15,6 +24,13 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
   *Active* is gone from the status filter (a finished run is never active) and *Cancelled* takes its
   place; *in progress* is gone from the job states for the same reason. With the job filter on, jobs
   are now fetched for one run per flow instead of all of them.
+
+### Fixed
+- **Pull requests missing for some people.** The open-PR list was read one page deep — the hundred
+  most recently updated PRs of the whole upstream — and only then narrowed to your fork and author.
+  On an upstream with more open PRs than that, anyone whose PRs had not been touched lately got an
+  empty tab. The list is now read to the end (up to 1,000); unchanged pages come back as free 304s.
+  Recently merged PRs had the same limit and now page back to the one-week window.
 
 ## [3.2.0]
 

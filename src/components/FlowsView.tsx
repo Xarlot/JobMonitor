@@ -14,7 +14,8 @@ import {
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
-import { flowMatchesFilter, isFlowsFilterActive } from '../lib/flowFilter';
+import { flowFilterVerdict, isFlowsFilterActive, isShownVerdict } from '../lib/flowFilter';
+import { createVerdictLog } from '../lib/devLog';
 import {
   DEFAULT_FLOWS_FILTER,
   isJobFilterActive,
@@ -47,6 +48,9 @@ const JOB_STATES: { value: JobStateFilter; label: string }[] = [
   { value: 'not_skipped', label: 'not skipped' },
 ];
 
+/** The filter's outcome is logged only when it changes — see {@link createVerdictLog}. */
+const logFilter = createVerdictLog('flows');
+
 const EXPANDED_KEY = 'job-monitor.flows.expanded';
 /** Returns the saved expanded flow id, '' for "all collapsed", or null if unset. */
 function loadExpanded(): string | null {
@@ -75,7 +79,11 @@ function FlowsToolbar() {
           <SegmentedControl.Button
             key={f.value}
             selected={filter.runStatus === f.value}
-            onClick={() => setFilter({ ...filter, runStatus: f.value })}
+            onClick={() => {
+              if (f.value !== 'all' && f.value !== filter.runStatus)
+                Telemetry.featureUsed(Feature.FLOW_STATUS_FILTER_USED);
+              setFilter({ ...filter, runStatus: f.value });
+            }}
           >
             {f.label}
           </SegmentedControl.Button>
@@ -96,7 +104,12 @@ function FlowsToolbar() {
         <TextInput
           leadingVisual={SearchIcon}
           value={filter.jobName}
-          onChange={(e) => setFilter({ ...filter, jobName: e.target.value })}
+          onChange={(e) => {
+            const jobName = e.target.value;
+            if (!isJobFilterActive(filter) && jobName.trim())
+              Telemetry.featureUsed(Feature.FLOW_JOB_FILTER_USED);
+            setFilter({ ...filter, jobName });
+          }}
           placeholder="job name contains…"
           aria-label="Job filter"
           className={styles.width}
@@ -125,7 +138,14 @@ function FlowsToolbar() {
       </div>
 
       {(jobActive || filter.runStatus !== 'all') && (
-        <Button leadingVisual={XIcon} variant="invisible" onClick={() => setFilter(DEFAULT_FLOWS_FILTER)}>
+        <Button
+          leadingVisual={XIcon}
+          variant="invisible"
+          onClick={() => {
+            Telemetry.featureUsed(Feature.FLOW_FILTER_CLEARED);
+            setFilter(DEFAULT_FLOWS_FILTER);
+          }}
+        >
           Clear
         </Button>
       )}
@@ -213,15 +233,48 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
 
   // The toolbar filter judges each flow by its latest finished run; a flow it
   // rules out is hidden outright, and so is a group left with nothing to show.
-  const passesFilter = (flow: ResolvedFlow) => {
+  const filterVerdict = (flow: ResolvedFlow) => {
     const st = states.get(flow.id);
-    return flowMatchesFilter(st?.runs ?? [], filter, (runId) => {
+    return flowFilterVerdict(st?.runs ?? [], filter, (runId) => {
       const cache = st?.jobsByRun[runId];
       return { jobs: cache?.jobs ?? [], loaded: Boolean(cache && !cache.loading) };
     });
   };
+  const passesFilter = (flow: ResolvedFlow) => isShownVerdict(filterVerdict(flow));
 
   const isVisible = (flow: ResolvedFlow) => passesEmptiness(flow) && passesFilter(flow);
+
+  // What the filter did, for the Diagnostics log: which flows it hid and why, and which
+  // groups went with them. Built on every render (it is a few string joins), written only
+  // when it changes — a job filter settling as jobs load is a change worth a line.
+  const hiddenByFilter = filterActive
+    ? flows
+        .filter(passesEmptiness)
+        .map((f) => ({ flow: f.name, verdict: filterVerdict(f) }))
+        .filter((x) => !isShownVerdict(x.verdict))
+    : [];
+  const hiddenGroups = filterActive
+    ? sections
+        .filter((s) => s.group && !s.flows.some(isVisible))
+        .map((s) => s.group!.name)
+    : [];
+  const filterSummary = filterActive
+    ? JSON.stringify({ filter, hiddenByFilter, hiddenGroups })
+    : 'off';
+  useEffect(() => {
+    if (!filterActive) {
+      logFilter('filter', 'off', 'Flows filter off — every flow shown');
+      return;
+    }
+    logFilter(
+      'filter',
+      filterSummary,
+      `Flows filter hides ${hiddenByFilter.length} of ${flows.length} flows and ${hiddenGroups.length} groups`,
+      { filter, hiddenByFilter, hiddenGroups },
+    );
+    // filterSummary carries everything the line says.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSummary]);
 
   // Drop the dragged flow next to the hovered card (within or across groups).
   const dropOnFlow = () => {
@@ -292,9 +345,8 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
     return [];
   });
 
-  const shown = flows.filter(passesEmptiness);
-  const hiddenCount = flows.length - shown.length;
-  const filteredOutCount = shown.length - shown.filter(passesFilter).length;
+  const hiddenCount = flows.length - flows.filter(passesEmptiness).length;
+  const filteredOutCount = hiddenByFilter.length;
 
   return (
     <div>

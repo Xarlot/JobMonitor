@@ -57,6 +57,38 @@ export function latestFinishedRun(runs: readonly WorkflowRun[]): WorkflowRun | u
 }
 
 /**
+ * Why a flow is shown or hidden by the filter — the same decision as {@link flowMatchesFilter},
+ * spelled out for the diagnostics log.
+ *  - `match` / `off`: shown, because it matches or because no filter is on.
+ *  - `loading`: shown for now; the judged run's jobs are still loading.
+ *  - `no_finished_run`: hidden, the flow has never finished a run.
+ *  - `status` / `job`: hidden by the status condition, or by the job condition.
+ */
+export type FlowFilterVerdict = 'off' | 'match' | 'loading' | 'no_finished_run' | 'status' | 'job';
+
+export function flowFilterVerdict(
+  runs: readonly WorkflowRun[],
+  filter: FlowsFilter,
+  jobsFor: (runId: number) => { jobs: Job[]; loaded: boolean },
+): FlowFilterVerdict {
+  if (!isFlowsFilterActive(filter)) return 'off';
+  const run = latestFinishedRun(runs);
+  if (!run) return 'no_finished_run';
+  if (!matchesRunStatus(run, filter.runStatus)) return 'status';
+  if (isJobFilterActive(filter)) {
+    const { jobs, loaded } = jobsFor(run.id);
+    if (!loaded) return 'loading';
+    if (!jobConditionMatches(jobs, filter)) return 'job';
+  }
+  return 'match';
+}
+
+/** Does the verdict leave the flow on screen? */
+export function isShownVerdict(verdict: FlowFilterVerdict): boolean {
+  return verdict === 'off' || verdict === 'match' || verdict === 'loading';
+}
+
+/**
  * Whether the flow passes the filter, judged by its latest finished run. When the job filter is on
  * but that run's jobs aren't loaded yet (`loaded` false), the flow is kept visible to avoid flicker.
  */
@@ -65,14 +97,5 @@ export function flowMatchesFilter(
   filter: FlowsFilter,
   jobsFor: (runId: number) => { jobs: Job[]; loaded: boolean },
 ): boolean {
-  if (!isFlowsFilterActive(filter)) return true;
-  const run = latestFinishedRun(runs);
-  if (!run) return false;
-  if (!matchesRunStatus(run, filter.runStatus)) return false;
-  if (isJobFilterActive(filter)) {
-    const { jobs, loaded } = jobsFor(run.id);
-    if (!loaded) return true;
-    return jobConditionMatches(jobs, filter);
-  }
-  return true;
+  return isShownVerdict(flowFilterVerdict(runs, filter, jobsFor));
 }

@@ -9,7 +9,13 @@ const enc = encodeURIComponent;
 export function pullsPath(
   owner: string,
   repo: string,
-  opts: { head?: string | null; base?: string | null; state?: 'open' | 'closed'; perPage?: number } = {},
+  opts: {
+    head?: string | null;
+    base?: string | null;
+    state?: 'open' | 'closed';
+    perPage?: number;
+    page?: number;
+  } = {},
 ): string {
   const params = new URLSearchParams({
     state: opts.state ?? 'open',
@@ -21,6 +27,8 @@ export function pullsPath(
   // Left out when unset, so every path an earlier version built stays byte-identical —
   // these strings double as ETag cache keys, and a changed key throws the cache away.
   if (opts.base) params.set('base', opts.base);
+  // Page 1 is spelled by leaving `page` out, for the same reason.
+  if (opts.page && opts.page > 1) params.set('page', String(opts.page));
   return `/repos/${enc(owner)}/${enc(repo)}/pulls?${params.toString()}`;
 }
 

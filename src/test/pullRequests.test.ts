@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPull, findOpenPull } from '../api/pullRequests';
+import { createPull, findOpenPull, listPulls, MAX_PULL_PAGES } from '../api/pullRequests';
 import { clearEtagCache, setFetchImpl, setTokenProvider } from '../api/githubClient';
 import { recordPushAccess, recordTokenScopes, resetTokenCapability } from '../api/tokenCapability';
 import type { PullRequest } from '../api/types';
@@ -194,5 +194,45 @@ describe('createPull', () => {
     expect(result.existing).toBe(true);
     expect(result.pr.number).toBe(7);
     expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(false);
+  });
+});
+
+describe('listPulls', () => {
+  const pageOf = (start: number, n: number) =>
+    Array.from({ length: n }, (_, i) => pull({ id: start + i, number: start + i }));
+
+  /** On a busy upstream the user's own PRs can sit past the first hundred. */
+  it('reads past the first page until a short one', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const page = Number(new URL(url).searchParams.get('page') ?? '1');
+      return jsonResponse(page === 1 ? pageOf(1, 100) : pageOf(101, 7));
+    });
+    setFetchImpl(fetchMock as unknown as typeof fetch);
+
+    const { pulls, pages, truncated } = await listPulls('up', 'proj');
+
+    expect(pulls).toHaveLength(107);
+    expect(pages).toBe(2);
+    expect(truncated).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops when the caller has enough', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(pageOf(1, 100)));
+    setFetchImpl(fetchMock as unknown as typeof fetch);
+
+    await listPulls('up', 'proj', {}, (soFar) => soFar.length >= 100);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is bounded', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(pageOf(1, 100)));
+    setFetchImpl(fetchMock as unknown as typeof fetch);
+
+    const { truncated } = await listPulls('up', 'proj');
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_PULL_PAGES);
+    expect(truncated).toBe(true);
   });
 });

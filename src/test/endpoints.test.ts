@@ -18,6 +18,11 @@ describe('pullsPath', () => {
     expect(pullsPath('acme', 'rocket', { head: 'octodev:main' })).toContain('head=octodev%3Amain');
   });
 
+  it('spells page 1 without a page parameter, so its cache key is unchanged', () => {
+    expect(pullsPath('acme', 'rocket', { page: 1 })).toBe(pullsPath('acme', 'rocket'));
+    expect(pullsPath('acme', 'rocket', { page: 3 })).toContain('&page=3');
+  });
+
   it('encodes owner and repo', () => {
     expect(pullsPath('a b', 'r/x')).toContain('/repos/a%20b/r%2Fx/pulls');
   });
@@ -56,6 +61,11 @@ describe('rerunFailedJobsPath', () => {
     expect(rerunFailedJobsPath('acme', 'rocket', 1002)).toBe(
       '/repos/acme/rocket/actions/runs/1002/rerun-failed-jobs',
     );
+  });
+
+  it('spells page 1 without a page parameter, so its cache key is unchanged', () => {
+    expect(pullsPath('acme', 'rocket', { page: 1 })).toBe(pullsPath('acme', 'rocket'));
+    expect(pullsPath('acme', 'rocket', { page: 3 })).toContain('&page=3');
   });
 
   it('encodes owner and repo', () => {

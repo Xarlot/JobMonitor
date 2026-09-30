@@ -17,8 +17,8 @@ import {
   combinedStatusPath,
   headFilter,
   pullReviewsPath,
-  pullsPath,
 } from '../api/endpoints';
+import { listPulls } from '../api/pullRequests';
 import type {
   CheckRun,
   CheckRunsResponse,
@@ -37,11 +37,12 @@ import { newReviews, reviewNotification } from '../lib/reviewers';
 import { SCAN_WINDOW_MS } from '../lib/failures';
 import { detectNewlyCompleted, prPhase } from '../lib/completion';
 import { sendNotification } from '../lib/notifications';
+import { createVerdictLog, devWarn } from '../lib/devLog';
+import { Feature, Operation, Telemetry } from '../lib/telemetry';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
-import { Operation } from '../lib/telemetry';
 
 export interface PrEntry {
   pr: PullRequest;
@@ -101,14 +102,72 @@ export interface DashboardState {
   invalidateChecks: (prNumber: number) => void;
 }
 
-function matchesFork(pr: PullRequest, config: MonitorConfig): boolean {
+/** Why a PR from the upstream list is not one of ours, or null when it is. */
+export type ForkMismatch = 'head_owner' | 'branch' | 'author';
+
+export function forkMismatch(pr: PullRequest, config: MonitorConfig): ForkMismatch | null {
   const headOwner = (pr.head.user?.login ?? '').toLowerCase();
-  if (headOwner !== config.fork.owner.toLowerCase()) return false;
-  if (config.fork.branch && pr.head.ref !== config.fork.branch) return false;
+  if (headOwner !== config.fork.owner.toLowerCase()) return 'head_owner';
+  if (config.fork.branch && pr.head.ref !== config.fork.branch) return 'branch';
   const author = config.prAuthor.trim().toLowerCase();
-  if (author && (pr.user?.login ?? '').toLowerCase() !== author) return false;
-  return true;
+  if (author && (pr.user?.login ?? '').toLowerCase() !== author) return 'author';
+  return null;
 }
+
+function matchesFork(pr: PullRequest, config: MonitorConfig): boolean {
+  return forkMismatch(pr, config) === null;
+}
+
+/**
+ * What one read of the open-PR list found, for the Diagnostics log.
+ *
+ * The question it has to answer is "why is my Pull requests tab empty", which from the UI is
+ * indistinguishable between *GitHub returned nothing*, *we did not read far enough* and *we
+ * read it all and filtered every PR away* — and in the last case, which rule did it. The head
+ * owners that were dropped are the likeliest tell: a PR opened from a branch in the upstream
+ * itself, or from an organisation's fork, shows up here under a login that isn't the fork owner.
+ */
+export function describePrList(
+  pulls: readonly PullRequest[],
+  config: MonitorConfig,
+  pages: number,
+  truncated: boolean,
+) {
+  const dropped: Record<ForkMismatch, number> = { head_owner: 0, branch: 0, author: 0 };
+  const otherOwners = new Map<string, number>();
+  const kept: number[] = [];
+  for (const pr of pulls) {
+    const why = forkMismatch(pr, config);
+    if (why === null) {
+      kept.push(pr.number);
+      continue;
+    }
+    dropped[why]++;
+    if (why === 'head_owner') {
+      const login = pr.head.user?.login ?? '(deleted fork)';
+      otherOwners.set(login, (otherOwners.get(login) ?? 0) + 1);
+    }
+  }
+  return {
+    upstream: `${config.upstream.owner}/${config.upstream.repo}`,
+    forkOwner: config.fork.owner,
+    forkBranch: config.fork.branch,
+    author: config.prAuthor.trim() || null,
+    fetched: pulls.length,
+    pages,
+    truncated,
+    kept,
+    dropped,
+    // The ten most frequent, so a busy upstream doesn't turn one line into a directory.
+    otherHeadOwners: [...otherOwners.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([login, count]) => ({ login, count })),
+  };
+}
+
+/** The list read is logged only when its outcome changes — see {@link createVerdictLog}. */
+const logPrList = createVerdictLog('prs');
 
 /**
  * A PR needs a checks fetch if never fetched, no checks have appeared yet, or any
@@ -158,6 +217,41 @@ function mergeEntries(prev: PrEntry[], incoming: PullRequest[]): PrEntry[] {
   });
 }
 
+/**
+ * The two states counted for telemetry, as last seen. Counted when one turns *on*, so an
+ * install that sits in it all day counts once, not once per poll or per changed PR.
+ */
+const prListState = { allFilteredOut: false, paged: false };
+
+/**
+ * Log and count one read of the open-PR list. The log line is written only when the outcome
+ * changes, so a poll every minute costs a line when something moves and nothing otherwise.
+ */
+function reportPrList(
+  pulls: readonly PullRequest[],
+  ours: readonly PullRequest[],
+  config: MonitorConfig,
+  pages: number,
+  truncated: boolean,
+): void {
+  const info = describePrList(pulls, config, pages, truncated);
+  const allFilteredOut = pulls.length > 0 && ours.length === 0;
+  const verdict = JSON.stringify({ ...info, otherHeadOwners: undefined });
+  const message = allFilteredOut
+    ? `PR list: GitHub returned ${pulls.length} open PRs and none are from ${config.fork.owner} — the tab is empty`
+    : `PR list: ${ours.length} of ${pulls.length} open PRs shown (${pages} ${pages === 1 ? 'page' : 'pages'})`;
+  if (allFilteredOut && !prListState.allFilteredOut)
+    Telemetry.featureUsed(Feature.PR_LIST_ALL_FILTERED_OUT);
+  if (pages > 1 && !prListState.paged) Telemetry.featureUsed(Feature.PR_LIST_PAGED);
+  prListState.allFilteredOut = allFilteredOut;
+  prListState.paged = pages > 1;
+  if (!logPrList('open', verdict, message, info)) return;
+  if (truncated)
+    devWarn('prs', `PR list: stopped after ${pages} pages — some open PRs were not read`, {
+      upstream: info.upstream,
+    });
+}
+
 export function useGitHubDashboard(): DashboardState {
   const { config } = useConfig();
   const { status } = useAuth();
@@ -195,10 +289,10 @@ export function useGitHubDashboard(): DashboardState {
   const fetchList = useCallback(async () => {
     const { upstream, fork } = config;
     const head = headFilter(fork.owner, fork.branch);
-    const { data } = await ghGet<PullRequest[]>(
-      pullsPath(upstream.owner, upstream.repo, { head }),
-    );
-    setPrs((prev) => mergeEntries(prev, data.filter((pr) => matchesFork(pr, config))));
+    const { pulls, pages, truncated } = await listPulls(upstream.owner, upstream.repo, { head });
+    const ours = pulls.filter((pr) => matchesFork(pr, config));
+    setPrs((prev) => mergeEntries(prev, ours));
+    reportPrList(pulls, ours, config, pages, truncated);
 
     const count = config.mergedPrs.count;
     if (count === 0) {
@@ -206,18 +300,20 @@ export function useGitHubDashboard(): DashboardState {
       return;
     }
     try {
-      // `state=closed` also returns PRs closed without merging, so over-fetch a
-      // little and keep the first `count` that actually merged.
-      const { data: closed } = await ghGet<PullRequest[]>(
-        pullsPath(upstream.owner, upstream.repo, {
-          head,
-          state: 'closed',
-          perPage: Math.min(100, Math.max(count * 3, 30)),
-        }),
-      );
+      // `state=closed` holds every PR of the repo closed by anyone, merged or not,
+      // so read pages until one is older than the window (a PR can't have merged
+      // after its last update) and keep the first `count` of ours that merged.
       // Bounded by age as well as by count: the Failures tab only looks back a week,
       // so an older merged PR would cost two check requests to display nothing.
       const cutoff = Date.now() - SCAN_WINDOW_MS;
+      const { pulls: closed } = await listPulls(
+        upstream.owner,
+        upstream.repo,
+        { head, state: 'closed' },
+        (soFar) =>
+          (Date.parse(soFar[soFar.length - 1]?.updated_at ?? '') || 0) < cutoff ||
+          soFar.filter((pr) => pr.merged_at !== null && matchesFork(pr, config)).length >= count,
+      );
       const merged = closed
         .filter(
           (pr) =>

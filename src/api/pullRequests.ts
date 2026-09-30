@@ -147,6 +147,45 @@ export async function fetchPullDetail(
   return data;
 }
 
+/** Pages the PR list is read to, at 100 a page. */
+export const MAX_PULL_PAGES = 10;
+
+/**
+ * Every pull request a list query returns, across pages — not just the first 100.
+ *
+ * The dashboard filters the list by head owner and author on the client (GitHub's `head`
+ * filter wants a branch too), so on an upstream with more than a page of open PRs, one page
+ * held only the most recently updated hundred: whoever's PRs were not among them saw an
+ * empty tab, and whoever was busy saw theirs. Unchanged pages come back as 304s, which cost
+ * no rate limit.
+ *
+ * `enough` sees everything read so far and lets a caller stop early once the list, which is
+ * sorted by `updated` descending, has gone past what it cares about — the merged-PR scan
+ * stops at its age cutoff or once it has its count.
+ */
+export async function listPulls(
+  owner: string,
+  repo: string,
+  opts: Omit<Parameters<typeof pullsPath>[2], 'page' | 'perPage'> = {},
+  enough: (soFar: PullRequest[]) => boolean = () => false,
+): Promise<PullPages> {
+  const pulls: PullRequest[] = [];
+  for (let page = 1; page <= MAX_PULL_PAGES; page++) {
+    const { data } = await ghGet<PullRequest[]>(pullsPath(owner, repo, { ...opts, page }));
+    pulls.push(...data);
+    if (data.length < 100 || enough(pulls)) return { pulls, pages: page, truncated: false };
+  }
+  return { pulls, pages: MAX_PULL_PAGES, truncated: true };
+}
+
+export interface PullPages {
+  pulls: PullRequest[];
+  /** Pages read. */
+  pages: number;
+  /** Stopped at {@link MAX_PULL_PAGES} with the last page still full — there may be more. */
+  truncated: boolean;
+}
+
 /** How long to wait for GitHub to work out mergeability before giving up on knowing. */
 const MERGEABILITY_TRIES = 5;
 const MERGEABILITY_DELAY_MS = 1200;

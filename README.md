@@ -247,7 +247,9 @@ and never the contents of a CI log.
 The main navigation carries a **Diagnostics** tab that follows that log live — newest first, filtered
 by scope, searchable (the search covers the attached details, so a run id or PR number finds its own
 records), and each line expandable into the facts behind it. Handy for “why didn’t auto‑rerun fire?”,
-which is otherwise invisible from the UI. Desktop‑only, and it can be switched off by unticking
+which is otherwise invisible from the UI — and for “why is my Pull requests tab empty?”: the `prs`
+scope says how many open PRs GitHub returned, which were kept, and which head owners were dropped. The
+`flows` scope lists what the Flows filter hid and why. Desktop‑only, and it can be switched off by unticking
 **Read the log in a Diagnostics tab** under **Settings → Diagnostics**.
 
 ### Reading the log

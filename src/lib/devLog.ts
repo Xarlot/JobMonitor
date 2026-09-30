@@ -21,7 +21,9 @@ export type LogScope =
   | 'claude'
   | 'auto-rerun'
   | 'failures'
-  | 'desktop';
+  | 'desktop'
+  | 'prs'
+  | 'flows';
 
 const SCOPE_STYLE: Record<LogScope, string> = {
   api: 'color:#58a6ff',
@@ -30,6 +32,8 @@ const SCOPE_STYLE: Record<LogScope, string> = {
   'auto-rerun': 'color:#d29922',
   failures: 'color:#f85149',
   desktop: 'color:#8b949e',
+  prs: 'color:#db61a2',
+  flows: 'color:#39c5cf',
 };
 
 function readFlag(): boolean {

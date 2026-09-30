@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flowMatchesFilter, jobConditionMatches, matchesRunStatus } from '../lib/flowFilter';
+import { flowFilterVerdict, flowMatchesFilter, jobConditionMatches, matchesRunStatus } from '../lib/flowFilter';
 import { DEFAULT_FLOWS_FILTER } from '../context/FlowsFilterContext';
 import type { Job, WorkflowRun } from '../api/types';
 
@@ -111,5 +111,21 @@ describe('flowMatchesFilter', () => {
     const jobsFor = (id: number) => ({ jobs: id === 2 ? [job('test')] : [job('build')], loaded: true });
     expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'build' }, jobsFor)).toBe(false);
     expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'test' }, jobsFor)).toBe(true);
+  });
+});
+
+describe('flowFilterVerdict', () => {
+  const loaded = (jobs: Job[]) => () => ({ jobs, loaded: true });
+
+  it('says why a flow was hidden', () => {
+    const f = DEFAULT_FLOWS_FILTER;
+    expect(flowFilterVerdict([run({ id: 1 })], f, loaded([]))).toBe('off');
+    expect(flowFilterVerdict([], { ...f, runStatus: 'failed' }, loaded([]))).toBe('no_finished_run');
+    expect(flowFilterVerdict([run({ id: 1 })], { ...f, runStatus: 'failed' }, loaded([]))).toBe('status');
+    expect(flowFilterVerdict([run({ id: 1 })], { ...f, jobName: 'build' }, loaded([job('test')]))).toBe('job');
+    expect(flowFilterVerdict([run({ id: 1 })], { ...f, jobName: 'build' }, loaded([job('build')]))).toBe('match');
+    expect(
+      flowFilterVerdict([run({ id: 1 })], { ...f, jobName: 'build' }, () => ({ jobs: [], loaded: false })),
+    ).toBe('loading');
   });
 });
