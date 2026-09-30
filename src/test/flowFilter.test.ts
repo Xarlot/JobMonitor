@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterRuns, jobConditionMatches, matchesRunStatus } from '../lib/flowFilter';
+import { flowMatchesFilter, jobConditionMatches, matchesRunStatus } from '../lib/flowFilter';
 import { DEFAULT_FLOWS_FILTER } from '../context/FlowsFilterContext';
 import type { Job, WorkflowRun } from '../api/types';
 
@@ -38,11 +38,12 @@ function job(name: string, over: Partial<Job> = {}): Job {
 }
 
 describe('matchesRunStatus', () => {
-  it('classifies overall statuses', () => {
-    expect(matchesRunStatus('failure', 'failed')).toBe(true);
-    expect(matchesRunStatus('success', 'failed')).toBe(false);
-    expect(matchesRunStatus('in_progress', 'active')).toBe(true);
-    expect(matchesRunStatus('success', 'all')).toBe(true);
+  it('classifies a finished run by its conclusion', () => {
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'failure' }), 'failed')).toBe(true);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'timed_out' }), 'failed')).toBe(true);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'success' }), 'failed')).toBe(false);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'cancelled' }), 'cancelled')).toBe(true);
+    expect(matchesRunStatus(run({ id: 1, conclusion: 'success' }), 'all')).toBe(true);
   });
 });
 
@@ -66,34 +67,49 @@ describe('jobConditionMatches', () => {
   });
 });
 
-describe('filterRuns', () => {
-  const runs = [
-    run({ id: 1, conclusion: 'success' }),
-    run({ id: 2, conclusion: 'failure' }),
-  ];
+describe('flowMatchesFilter', () => {
+  const loaded = () => ({ jobs: [] as Job[], loaded: true });
 
-  it('filters by run status', () => {
-    const out = filterRuns(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'failed' }, () => ({
-      jobs: [],
-      loaded: true,
-    }));
-    expect(out.map((r) => r.id)).toEqual([2]);
+  it('judges the flow by its latest run, not by any of its runs', () => {
+    const runs = [run({ id: 2, conclusion: 'success' }), run({ id: 1, conclusion: 'failure' })];
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'failed' }, loaded)).toBe(false);
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'success' }, loaded)).toBe(true);
   });
 
-  it('keeps runs visible while their jobs are still loading', () => {
-    const out = filterRuns(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'build' }, () => ({
+  it('skips unfinished runs and uses the last finished one', () => {
+    const runs = [
+      run({ id: 3, status: 'in_progress', conclusion: null }),
+      run({ id: 2, status: 'queued', conclusion: null }),
+      run({ id: 1, conclusion: 'cancelled' }),
+    ];
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'cancelled' }, loaded)).toBe(true);
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'success' }, loaded)).toBe(false);
+  });
+
+  it('rules out a flow with no finished run once a filter is on', () => {
+    const runs = [run({ id: 1, status: 'in_progress', conclusion: null })];
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, runStatus: 'failed' }, loaded)).toBe(false);
+    expect(flowMatchesFilter([], { ...DEFAULT_FLOWS_FILTER, jobName: 'build' }, loaded)).toBe(false);
+    expect(flowMatchesFilter([], DEFAULT_FLOWS_FILTER, loaded)).toBe(true);
+  });
+
+  it('keeps the flow visible while the judged run\'s jobs are loading', () => {
+    const runs = [run({ id: 1 })];
+    const out = flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'build' }, () => ({
       jobs: [],
       loaded: false,
     }));
-    expect(out).toHaveLength(2);
+    expect(out).toBe(true);
   });
 
-  it('filters by job condition once jobs are loaded', () => {
-    const out = filterRuns(
-      runs,
-      { ...DEFAULT_FLOWS_FILTER, jobName: 'build', jobState: 'any' },
-      (id) => ({ jobs: id === 1 ? [job('build')] : [job('test')], loaded: true }),
-    );
-    expect(out.map((r) => r.id)).toEqual([1]);
+  it('checks the job condition against the latest finished run only', () => {
+    const runs = [
+      run({ id: 3, status: 'in_progress', conclusion: null }),
+      run({ id: 2 }),
+      run({ id: 1 }),
+    ];
+    const jobsFor = (id: number) => ({ jobs: id === 2 ? [job('test')] : [job('build')], loaded: true });
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'build' }, jobsFor)).toBe(false);
+    expect(flowMatchesFilter(runs, { ...DEFAULT_FLOWS_FILTER, jobName: 'test' }, jobsFor)).toBe(true);
   });
 });

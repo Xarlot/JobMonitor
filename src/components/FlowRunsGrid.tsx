@@ -23,9 +23,7 @@ import { RunOverallSummaryDialog } from './OverallSummaryDialog';
 import type { WorkflowRun } from '../api/types';
 import type { ResolvedFlow } from '../lib/flowPatterns';
 import type { FlowState } from '../hooks/useFlows';
-import { useFlowsFilter } from '../context/FlowsFilterContext';
 import { isActiveStatus, statusToOverall } from '../lib/status';
-import { filterRuns } from '../lib/flowFilter';
 import { AnalysedBadge } from './AnalysedBadge';
 import { StatusBadge } from './StatusBadge';
 import { JobsTable } from './JobsTable';
@@ -48,8 +46,8 @@ interface TableMeta {
  *
  * v9 requires features to be declared rather than inferred: sorting, filtering, pagination and the
  * rest are opt-in, and anything not listed here is absent from both the runtime table and its type.
- * This grid renders every run it is given in the order it receives them — filtering happens upstream
- * in `filterRuns` — so the core feature set plus a row model is the whole of it.
+ * This grid renders every run it is given in the order it receives them — the Flows filter decides
+ * whether a flow is shown at all, not which runs — so the core feature set plus a row model is the whole of it.
  */
 const gridFeatures = tableFeatures({
   ...coreFeatures,
@@ -104,8 +102,6 @@ export function FlowRunsGrid({
   /** Drag-and-drop reordering handlers (omitted = not draggable). */
   dnd?: FlowDnd;
 }) {
-  const { filter } = useFlowsFilter();
-
   const runs = state?.runs ?? [];
   const overall = state?.overall ?? 'unknown';
   const jobsByRun = state?.jobsByRun ?? {};
@@ -121,14 +117,6 @@ export function FlowRunsGrid({
   const [timelineRun, setTimelineRun] = useState<WorkflowRun | null>(null);
   const [summaryRun, setSummaryRun] = useState<WorkflowRun | null>(null);
 
-  const visibleRuns = useMemo(
-    () =>
-      filterRuns(runs, filter, (runId) => {
-        const cache = jobsByRun[runId];
-        return { jobs: cache?.jobs ?? [], loaded: Boolean(cache && !cache.loading) };
-      }),
-    [runs, filter, jobsByRun],
-  );
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -262,7 +250,7 @@ export function FlowRunsGrid({
 
   const table = useTable({
     features: gridFeatures,
-    data: visibleRuns,
+    data: runs,
     columns,
     getRowId: (row) => String(row.id),
     meta: {
@@ -281,7 +269,6 @@ export function FlowRunsGrid({
   });
 
   const colSpan = table.getAllLeafColumns().length;
-  const filteredOut = runs.length > 0 && visibleRuns.length === 0;
 
   return (
     <div
@@ -426,12 +413,10 @@ export function FlowRunsGrid({
             ))}
           </thead>
           <tbody>
-            {visibleRuns.length === 0 ? (
+            {runs.length === 0 ? (
               <tr>
                 <td colSpan={colSpan} className={styles.p4TextCenter}>
-                  {filteredOut
-                    ? 'No runs match the current filter.'
-                    : isFetchingRuns
+                  {isFetchingRuns
                       ? 'Loading runs…'
                       : 'No runs found for the configured branches/events.'}
                 </td>

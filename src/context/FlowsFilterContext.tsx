@@ -6,8 +6,9 @@
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-export type RunStatusFilter = 'all' | 'active' | 'failed' | 'success';
-export type JobStateFilter = 'any' | 'success' | 'failure' | 'in_progress' | 'not_skipped';
+/** Judged against a flow's latest finished run, so there is no "active" state to filter by. */
+export type RunStatusFilter = 'all' | 'failed' | 'success' | 'cancelled';
+export type JobStateFilter = 'any' | 'success' | 'failure' | 'not_skipped';
 
 export interface FlowsFilter {
   runStatus: RunStatusFilter;

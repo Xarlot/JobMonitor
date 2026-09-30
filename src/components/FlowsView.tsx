@@ -14,6 +14,7 @@ import {
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useFlowGroups } from '../hooks/useFlowGroups';
 import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
+import { flowMatchesFilter, isFlowsFilterActive } from '../lib/flowFilter';
 import {
   DEFAULT_FLOWS_FILTER,
   isJobFilterActive,
@@ -34,16 +35,15 @@ import { Feature, Telemetry } from '../lib/telemetry';
 
 const RUN_FILTERS: { value: RunStatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'active', label: 'Active' },
   { value: 'failed', label: 'Failed' },
   { value: 'success', label: 'Success' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 const JOB_STATES: { value: JobStateFilter; label: string }[] = [
   { value: 'any', label: 'present (any status)' },
   { value: 'success', label: 'succeeded' },
   { value: 'failure', label: 'failed' },
-  { value: 'in_progress', label: 'in progress' },
   { value: 'not_skipped', label: 'not skipped' },
 ];
 
@@ -70,7 +70,7 @@ function FlowsToolbar() {
   const jobActive = isJobFilterActive(filter);
   return (
     <div className={styles.flexCenter}>
-      <SegmentedControl aria-label="Filter runs by status">
+      <SegmentedControl aria-label="Filter flows by their last finished run">
         {RUN_FILTERS.map((f) => (
           <SegmentedControl.Button
             key={f.value}
@@ -139,6 +139,8 @@ function FlowsToolbar() {
 
 export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
   const states = useFlowStates();
+  const { filter } = useFlowsFilter();
+  const filterActive = isFlowsFilterActive(filter);
   const {
     config,
     flows,
@@ -197,7 +199,7 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
     return () => clearTimeout(t);
   }, [focusFlowId]);
 
-  const isVisible = (flow: ResolvedFlow) => {
+  const passesEmptiness = (flow: ResolvedFlow) => {
     const st = states.get(flow.id);
     return !isFlowHidden(
       {
@@ -208,6 +210,18 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
       flow.emptyFilter,
     );
   };
+
+  // The toolbar filter judges each flow by its latest finished run; a flow it
+  // rules out is hidden outright, and so is a group left with nothing to show.
+  const passesFilter = (flow: ResolvedFlow) => {
+    const st = states.get(flow.id);
+    return flowMatchesFilter(st?.runs ?? [], filter, (runId) => {
+      const cache = st?.jobsByRun[runId];
+      return { jobs: cache?.jobs ?? [], loaded: Boolean(cache && !cache.loading) };
+    });
+  };
+
+  const isVisible = (flow: ResolvedFlow) => passesEmptiness(flow) && passesFilter(flow);
 
   // Drop the dragged flow next to the hovered card (within or across groups).
   const dropOnFlow = () => {
@@ -278,8 +292,9 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
     return [];
   });
 
-  const totalVisible = sections.reduce((n, s) => n + s.flows.filter(isVisible).length, 0);
-  const hiddenCount = flows.length - totalVisible;
+  const shown = flows.filter(passesEmptiness);
+  const hiddenCount = flows.length - shown.length;
+  const filteredOutCount = shown.length - shown.filter(passesFilter).length;
 
   return (
     <div>
@@ -321,10 +336,19 @@ export function FlowsView({ focusFlowId }: { focusFlowId?: string | null }) {
         </Text>
       )}
 
+      {filterActive && filteredOutCount > 0 && (
+        <Text className={styles.blockSmall}>
+          {filteredOutCount} {filteredOutCount === 1 ? 'flow' : 'flows'} hidden by the filter —
+          its last finished run doesn't match.
+        </Text>
+      )}
+
       {sections.map((section) => {
         const group = section.group;
         const groupKey = group ? group.id : '';
         const visible = section.flows.filter(isVisible);
+        // Under an active filter, a group with no matching flow is hidden entirely.
+        if (filterActive && visible.length === 0) return null;
         // Hide an empty ungrouped section only when groups exist (avoid a stray
         // header) — unless it still holds places to clean up.
         if (!group && visible.length === 0 && config.groups.length > 0 && section.pinnedMissing.length === 0)

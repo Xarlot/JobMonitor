@@ -4,6 +4,18 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The Flows filter picks flows, not runs.** It used to thin out the rows inside each card, so a
+  flow that failed once three runs ago still showed up under *Failed*, and every card stayed on screen
+  whether or not anything in it matched. Each flow is now judged by its latest finished run — success,
+  failure, cancelled — with runs still queued or building passed over; a flow that doesn't match is
+  hidden, and so is a group left with nothing to show. The cards that stay show all their runs.
+  *Active* is gone from the status filter (a finished run is never active) and *Cancelled* takes its
+  place; *in progress* is gone from the job states for the same reason. With the job filter on, jobs
+  are now fetched for one run per flow instead of all of them.
+
 ## [3.2.0]
 
 **Whether a pull request is waiting on CI or on a person.** The dashboard answered the first half and

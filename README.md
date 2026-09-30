@@ -598,8 +598,10 @@ once and then left alone.
 ### Flows
 
 Each flow is a collapsible card. Expand one to see its recent **runs**; expand a run to load its
-**jobs**. Filter runs by status, and use the **Job filter** to find runs that contain a job matching
-a name in a given state. **Compact** hides passed/skipped jobs. Cards behave like an accordion —
+**jobs**. The filter — **All / Failed / Success / Cancelled**, plus the **Job filter** for a job
+matching a name in a given state — picks *flows*, not runs: each flow is judged by its latest
+**finished** run (a run still queued or building is passed over), and a flow that doesn't match is
+hidden, along with any group left empty. **Compact** hides passed/skipped jobs. Cards behave like an accordion —
 expanding one collapses the rest — and you can **drag the grip** on the left to reorder flows or move
 them between groups.
 

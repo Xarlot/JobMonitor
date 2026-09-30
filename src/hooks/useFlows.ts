@@ -27,6 +27,7 @@ import { isConfigComplete, type Flow } from '../storage/configStore';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import { isJobFilterActive, useFlowsFilter } from '../context/FlowsFilterContext';
+import { latestFinishedRun } from '../lib/flowFilter';
 import { loadFlowRuns, saveFlowRuns } from '../storage/flowRunsCache';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
@@ -209,15 +210,18 @@ export function useFlow(flow: Flow): FlowState {
     [owner, repo],
   );
 
-  // Refresh jobs for runs we need: expanded runs always; every run when the
-  // interactive job filter is active; and the latest run when the per-flow empty
-  // filter evaluates a job condition.
+  // Refresh jobs for runs we need: expanded runs always; the latest finished run
+  // when the interactive job filter is active (the filter judges the flow by it);
+  // and the latest run when the per-flow empty filter evaluates a job condition.
   const pollJobs = useCallback(async () => {
     const expanded = new Set(expand.expandedRunIds);
     const latestId = runs[0]?.id;
+    const finishedId = latestFinishedRun(runs)?.id;
     const targets = runs.filter((r) => {
       const wanted =
-        jobFilterActive || expanded.has(r.id) || (needLatestJobs && r.id === latestId);
+        expanded.has(r.id) ||
+        (jobFilterActive && r.id === finishedId) ||
+        (needLatestJobs && r.id === latestId);
       if (!wanted) return false;
       const cache = jobsByRun[r.id];
       if (!cache || cache.fetchedFp !== jobFingerprint(r)) return true;
