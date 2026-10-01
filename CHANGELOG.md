@@ -4,7 +4,12 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.3.1]
+
+**Flows that jumped back days, and failures that vanished while a run was building.** GitHub
+sometimes answers a filtered run list with a snapshot days out of date, and the board believed it:
+a flow showed a run from last week, and the Failures tab moved onto it. And a new run starting was
+enough to clear a flow's failures from that tab, long before it had a verdict.
 
 ### Changed
 - **A flow's failures stay in the Failures tab while its next run is building.** The tab read each
