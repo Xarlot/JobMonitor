@@ -4,7 +4,7 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [3.3.1]
+## [3.4.0]
 
 **Flows that jumped back days, and failures that vanished while a run was building.** GitHub
 sometimes answers a filtered run list with a snapshot days out of date, and the board believed it:
