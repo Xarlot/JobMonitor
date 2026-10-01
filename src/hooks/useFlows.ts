@@ -6,8 +6,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ghGet, evictFromCache } from '../api/githubClient';
-import { runArtifactsPath, runJobsPath, workflowRunsPath } from '../api/endpoints';
+import { ghGet, evictFromCache, GitHubApiError } from '../api/githubClient';
+import { runArtifactsPath, runJobsPath, singleRunPath, workflowRunsPath } from '../api/endpoints';
 import { fetchAllRunJobs } from '../api/jobs';
 import { fetchWorkflows } from '../api/workflows';
 import type {
@@ -29,6 +29,8 @@ import { useAuth } from '../context/AuthContext';
 import { isJobFilterActive, useFlowsFilter } from '../context/FlowsFilterContext';
 import { latestFinishedRun } from '../lib/flowFilter';
 import { loadFlowRuns, saveFlowRuns } from '../storage/flowRunsCache';
+import { mergeRunResponses, queryKey } from '../lib/flowRunsMerge';
+import { devLog } from '../lib/devLog';
 import { useVisibility } from './useVisibility';
 import { usePolling } from './usePolling';
 import { Operation } from '../lib/telemetry';
@@ -78,6 +80,14 @@ export function useFlow(flow: Flow): FlowState {
 
   // Hydrate from the persisted cache so the grid shows immediately on reload.
   const [runs, setRuns] = useState<WorkflowRun[]>(() => loadFlowRuns(flow.id) ?? []);
+  // What the next poll merges into, read synchronously — `runs` would be a stale closure there.
+  const runsRef = useRef(runs);
+  /** Stale-answer streak per query, see `mergeRunResponses`. */
+  const staleStreaksRef = useRef(new Map<string, number>());
+  /** Held runs found deleted, so the run list that no longer has them is believed. */
+  const goneRunsRef = useRef(new Set<number>());
+  /** Which repo + workflow `runsRef` holds runs of, so a retargeted flow starts clean. */
+  const heldForRef = useRef<string | null>(null);
   const [jobsByRun, setJobsByRun] = useState<Record<number, JobsCacheEntry>>({});
   const expand = useExpandState(flow.id);
 
@@ -156,20 +166,60 @@ export function useFlow(flow: Flow): FlowState {
     }
     // Keep up to maxRuns *per (branch × event) query*, then merge. A global slice
     // would let a high-frequency event (e.g. push) crowd out rarer events like
-    // workflow_dispatch, hiding their runs entirely.
-    const merged = new Map<number, WorkflowRun>();
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue;
-      for (const run of r.value.data.workflow_runs.slice(0, flow.maxRuns)) {
-        merged.set(run.id, run);
+    // workflow_dispatch, hiding their runs entirely. A response older than what is
+    // already held is ignored — GitHub sometimes answers with a days-old snapshot.
+    // Runs of another repo or workflow say nothing about this one's freshness, so a retargeted
+    // flow starts clean. The hydrated cache was saved under the same flow id, but possibly before
+    // the flow was pointed elsewhere: keep only its runs of this workflow.
+    const target = `${owner}/${repo}/${workflowRef}`;
+    if (heldForRef.current === null && isNumericId(workflowRef)) {
+      runsRef.current = runsRef.current.filter((r) => r.workflow_id === Number(workflowRef));
+    } else if (heldForRef.current !== null && heldForRef.current !== target) {
+      runsRef.current = [];
+      staleStreaksRef.current.clear();
+      goneRunsRef.current.clear();
+    }
+    heldForRef.current = target;
+    const { runs: merged, stale } = mergeRunResponses(
+      runsRef.current,
+      queries.map((query, i) => {
+        const r = results[i];
+        return { query, runs: r.status === 'fulfilled' ? r.value.data.workflow_runs : null };
+      }),
+      flow.maxRuns,
+      staleStreaksRef.current,
+      goneRunsRef.current,
+    );
+    for (const s of stale) {
+      const where = `${s.query.branch}${s.query.event ? `/${s.query.event}` : ''}`;
+      devLog(
+        'flows',
+        s.accepted
+          ? `${flow.name}: run #${s.newestHeld.run_number} was deleted — taking the run list for ${where} that no longer has it`
+          : `${flow.name}: ignored a stale run list for ${where} — newest #${s.newestReceived?.run_number ?? 'none'}, already holding #${s.newestHeld.run_number}`,
+        {
+          heldRunId: s.newestHeld.id,
+          receivedRunId: s.newestReceived?.id ?? null,
+          streak: s.streak,
+        },
+      );
+      if (s.accepted) goneRunsRef.current.delete(s.newestHeld.id);
+      if (!s.needsCheck) continue;
+      // Several stale answers in a row: either the lagging backend keeps answering, or the run
+      // really was deleted. Asking for the run itself tells the two apart.
+      try {
+        await ghGet<WorkflowRun>(singleRunPath(owner, repo, s.newestHeld.id));
+        staleStreaksRef.current.set(queryKey(s.query), 0);
+      } catch (e) {
+        if (e instanceof GitHubApiError && (e.status === 404 || e.status === 410)) {
+          goneRunsRef.current.add(s.newestHeld.id);
+        }
       }
     }
-    const sorted = [...merged.values()].sort(
-      (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-    );
-    setRuns(sorted);
-    saveFlowRuns(flow.id, sorted);
-  }, [queries, owner, repo, flow.id, flow.maxRuns, resolveWorkflowRef]);
+    runsRef.current = merged;
+    setRuns(merged);
+    saveFlowRuns(flow.id, merged);
+  }, [queries, owner, repo, flow.id, flow.name, flow.maxRuns, resolveWorkflowRef]);
 
   const runsPoll = usePolling({
     fn: fetchRuns,

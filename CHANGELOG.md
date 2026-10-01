@@ -13,6 +13,20 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
   reads the flow's latest *finished* run, the same rule as the Flows filter: the failures stay listed
   until the new run finishes, and go only if it passes.
 
+### Fixed
+- **A flow could jump back days.** GitHub serves its *filtered* run lists — by branch or event, per
+  workflow and repo-wide alike — from backends that can lag by days, and the same request answers
+  with the live list one moment and an old snapshot the next. Seen: the newest run #291 from four
+  days earlier while the live list started at #316, and another workflow on a run thirteen days
+  old. The unfiltered list doesn't do this. The answer replaced the flow's runs, was saved to the
+  run cache the next start loads from, and moved the Failures tab onto that old run; the next poll
+  usually put things back, so the board flickered between then and now. A run list whose newest
+  run is older than the one already held for the same branch and event is now ignored, and a run
+  present in both keeps whichever copy GitHub updated last. After three such answers in a row the
+  newer run is fetched by id, and only if it is gone — deleted — is the shorter list believed. A run
+  list whose request failed now keeps that branch and event's runs instead of dropping them. Each
+  ignored answer leaves a `flows` line in the Diagnostics log.
+
 ## [3.3.0]
 
 **An empty Pull requests tab, and a board that answered a different question than it was asked.** For
