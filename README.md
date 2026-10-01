@@ -205,7 +205,9 @@ see it go back to running.
 
 The **Failures** tab collects every failing job across your open pull requests *and* the recently
 merged ones, so a break is visible the moment a check reports it — the tab title carries a count.
-It refreshes on the normal polling cycle; you don’t have to go hunting through PRs.
+It refreshes on the normal polling cycle; you don’t have to go hunting through PRs. A flow is read by
+its latest *finished* run, so while a new run is queued or building the previous run’s failures stay
+listed; they go only once the new run finishes green.
 
 Pick a failure and you get a **Markdown report** for it, one per job (so one per matrix worker):
 the PR and branch, the workflow and run, the step that failed, the **failing tests** with

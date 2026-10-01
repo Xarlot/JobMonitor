@@ -4,6 +4,15 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **A flow's failures stay in the Failures tab while its next run is building.** The tab read each
+  flow's newest run, so the moment a new run started — queued or in progress, with no verdict yet —
+  the previous run's failures vanished, and came back only if the new run failed too. The tab now
+  reads the flow's latest *finished* run, the same rule as the Flows filter: the failures stay listed
+  until the new run finishes, and go only if it passes.
+
 ## [3.3.0]
 
 **An empty Pull requests tab, and a board that answered a different question than it was asked.** For

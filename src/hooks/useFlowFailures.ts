@@ -6,13 +6,15 @@
  *  - A flow's jobs are **lazily loaded** — `useFlow` only fetches them for expanded
  *    runs, an active job filter, or the per-flow empty filter. So the jobs of a
  *    failing run generally aren't in memory, and this hook fetches them itself.
- *  - A flow tracks several recent runs, but only its **latest** run says whether it
- *    needs attention right now (that is what the Overview shows). Listing failures
- *    from older runs would bury today's break under last week's, so only the latest
- *    run is considered.
+ *  - A flow tracks several recent runs, but only its **latest finished** run says
+ *    whether it needs attention right now. Listing failures from older runs would
+ *    bury today's break under last week's, so only that run is considered. A run
+ *    still queued or building has no verdict yet and is passed over, so a new run
+ *    starting doesn't wipe the previous run's failures — they stay listed until the
+ *    new run finishes, and go only if it passes.
  *
- * Cost is therefore one request per flow whose latest run failed, keyed so a run is
- * fetched once per attempt, and capped.
+ * Cost is therefore one request per flow whose latest finished run failed, keyed so
+ * a run is fetched once per attempt, and capped.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,12 +30,13 @@ import { flowRunJobsCache, flowRunJobsKey } from '../storage/failureCaches';
 import { useFlowStates } from '../context/FlowsRuntimeContext';
 import { useResolvedFlows } from '../context/ResolvedFlowsContext';
 import { createVerdictLog } from '../lib/devLog';
+import { latestFinishedRun } from '../lib/flowFilter';
 
 /**
  * Why each flow did or did not contribute failures, recorded once per verdict.
  *
- * The Failures tab showing nothing from a flow has half a dozen legitimate causes — the latest run
- * is green, or still running, or older than the scan window — and from the outside they are
+ * The Failures tab showing nothing from a flow has half a dozen legitimate causes — the latest
+ * finished run is green, or older than the scan window — and from the outside they are
  * indistinguishable from a bug. The auto-rerun engine had the same problem and the same answer: log
  * the decisions *not* to act, not only the actions.
  *
@@ -51,7 +54,7 @@ interface RunJobs {
   fetchedFor: string;
 }
 
-/** What we need about a flow whose latest run failed, before its jobs are known. */
+/** What we need about a flow whose latest finished run failed, before its jobs are known. */
 interface Candidate {
   flowId: string;
   flowName: string;
@@ -84,24 +87,30 @@ export function useFlowFailures(): FlowFailureSource[] {
     [flows],
   );
 
-  /** Flows whose latest run failed — the only ones worth spending a request on. */
+  /** Flows whose latest finished run failed — the only ones worth spending a request on. */
   const candidates = useMemo(() => {
     const now = Date.now();
     const out: Candidate[] = [];
     for (const [flowId, state] of states) {
       const name = nameById.get(flowId) ?? flowId;
-      const run = state.runs[0];
+      // A run still queued or building is passed over: its predecessor's failures stay listed
+      // until it finishes, rather than vanishing the moment it starts.
+      const run = latestFinishedRun(state.runs);
       if (!run) {
-        logVerdict(flowId, 'no-runs', `${name}: no runs loaded yet, so no failures from it`);
+        logVerdict(
+          flowId,
+          state.runs.length === 0 ? 'no-runs' : 'no-finished-run',
+          state.runs.length === 0
+            ? `${name}: no runs loaded yet, so no failures from it`
+            : `${name}: no finished run loaded yet, so no failures from it`,
+        );
         continue;
       }
       if (!isFailingRun(run)) {
-        // The common one, and the one that surprises: a flow whose *previous* run failed
-        // contributes nothing once a newer run starts, because "in progress" is not "failing".
         logVerdict(
           flowId,
           `latest-not-failing:${run.status}:${run.conclusion ?? 'null'}`,
-          `${name}: latest run #${run.run_number} is ${run.conclusion ?? run.status}, not a failure — nothing listed`,
+          `${name}: latest finished run #${run.run_number} is ${run.conclusion ?? run.status}, not a failure — nothing listed`,
           { runId: run.id, status: run.status, conclusion: run.conclusion },
         );
         continue;
@@ -113,7 +122,7 @@ export function useFlowFailures(): FlowFailureSource[] {
         logVerdict(
           flowId,
           `outside-window:${run.id}`,
-          `${name}: latest run #${run.run_number} failed but finished outside the scan window — not listed`,
+          `${name}: latest finished run #${run.run_number} failed but finished outside the scan window — not listed`,
           { runId: run.id, updatedAt: run.updated_at },
         );
         continue;
@@ -121,7 +130,7 @@ export function useFlowFailures(): FlowFailureSource[] {
       logVerdict(
         flowId,
         `candidate:${run.id}:${run.run_attempt}`,
-        `${name}: latest run #${run.run_number} failed — fetching its jobs`,
+        `${name}: latest finished run #${run.run_number} failed — fetching its jobs`,
         { runId: run.id, attempt: run.run_attempt },
       );
       out.push({
@@ -182,7 +191,7 @@ export function useFlowFailures(): FlowFailureSource[] {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateSig, load]);
 
-  // Forget runs that are no longer any flow's failing latest run.
+  // Forget runs that are no longer any flow's failing latest finished run.
   useEffect(() => {
     const live = new Set(candidates.map((c) => c.run.id));
     setJobsByRun((prev) => {
