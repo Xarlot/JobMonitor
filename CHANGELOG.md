@@ -4,7 +4,12 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.5.0]
+
+**Review comments you can close without leaving the board, and a red badge that says what to do.**
+Each pull request now shows its unresolved review conversations, and resolves or answers them — one
+at a time, with Claude's help if you like, or all, only the AI reviewer's, or only the outdated ones
+at once. A red auto-rerun badge opens Diagnostics with an explanation instead of a bare count.
 
 ### Added
 - **Unresolved review comments on each pull request.** Beside a PR's title: how many conversations are
