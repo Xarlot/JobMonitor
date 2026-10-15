@@ -4,6 +4,15 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **A warning in the Diagnostics log said what failed, but not why.** An error passed along with a
+  warning was written to the log file as `"detail":{}` — a JSON-serialised `Error` keeps none of its
+  fields — so lines such as "could not list runs for the head commit" carried no message and no HTTP
+  status. 379 such lines were in one log. The error is now written as its name, message and own
+  fields, `status` included.
+
 ## [3.4.0]
 
 **Flows that jumped back days, and failures that vanished while a run was building.** GitHub

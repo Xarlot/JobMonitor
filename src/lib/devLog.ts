@@ -62,6 +62,19 @@ export function setDevLogEnabled(on: boolean): void {
 }
 
 /**
+ * An `Error` as a plain object, so the file says what went wrong.
+ *
+ * An `Error` keeps none of its fields through `JSON.stringify` — `message` and `name` are not
+ * own enumerable properties — so every warning that passed one landed on disk as `"detail":{}`.
+ * Own fields such as `GitHubApiError`'s `status` are kept; the stack is not, being
+ * minified renderer frames that say less than the message beside them.
+ */
+function persistable(detail: unknown): unknown {
+  if (!(detail instanceof Error)) return detail;
+  return { ...detail, name: detail.name, message: detail.message };
+}
+
+/**
  * The desktop shell's on-disk log, when there is one.
  *
  * Written to **regardless of the console flag**: the console is for whoever is watching
@@ -72,7 +85,7 @@ function persist(scope: LogScope, message: string, detail?: unknown): void {
   const logs = (globalThis as { desktop?: { logs?: { write?: (s: string, m: string, d?: unknown) => void } } })
     .desktop?.logs;
   try {
-    logs?.write?.(scope, message, detail);
+    logs?.write?.(scope, message, persistable(detail));
   } catch {
     /* diagnostics must never break the app */
   }

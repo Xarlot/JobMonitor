@@ -78,6 +78,24 @@ describe('devLog', () => {
     expect(devLogEnabled()).toBe(true);
     expect(api.enabled).toBe(true);
   });
+
+  /** Serialised as-is, an `Error` reached the file as `{}` and the warning said nothing. */
+  it('writes an error to the log file as its name, message and own fields', () => {
+    const write = vi.fn();
+    (globalThis as { desktop?: unknown }).desktop = { logs: { write } };
+    try {
+      const err = Object.assign(new Error('Not Found'), { status: 404 });
+      devWarn('auto-rerun', 'could not list runs', err);
+      expect(JSON.parse(JSON.stringify(write.mock.calls[0][2]))).toEqual({
+        name: 'Error',
+        message: 'Not Found',
+        status: 404,
+      });
+      expect(warn.mock.calls[0].at(-1)).toBe(err);
+    } finally {
+      delete (globalThis as { desktop?: unknown }).desktop;
+    }
+  });
 });
 
 /**
