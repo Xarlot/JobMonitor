@@ -8,20 +8,30 @@
  *
  * Opt-in (Settings → Diagnostics) and desktop-only: a browser tab has no such file, and a
  * window on the app's internals does not belong in everyone's navigation by default.
+ *
+ * The one way in without the opt-in is a PR's auto-rerun badge with bad news on it ("unchecked",
+ * "failed"): that opens this tab with an explanation of each case on top and the log narrowed to
+ * the pull request below it.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, FormControl, Heading, IconButton, Label, Select, Text, TextInput, ToggleSwitch, SegmentedControl } from '@primer/react';
+import { Button, Flash, FormControl, Heading, IconButton, Label, Link, Select, Text, TextInput, ToggleSwitch, SegmentedControl } from '@primer/react';
 import {
   AlertIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
   FileDirectoryIcon,
+  LinkExternalIcon,
   SearchIcon,
   SyncIcon,
+  XIcon,
 } from '@primer/octicons-react';
+import { useAutoRerun } from '../context/AutoRerunContext';
 import { useConfig } from '../context/ConfigContext';
+import type { DiagnosticsFocus } from '../context/NavigationContext';
+import { explainRerunEvent, FAILED_SUMMARY, HELD_SUMMARY } from '../lib/autoRerunExplain';
+import { formatRelative } from '../lib/format';
 import { usePolling } from '../hooks/usePolling';
 import { readTelemetrySpool } from '../storage/desktopTelemetry';
 import { TelemetryPane } from './TelemetryPane';
@@ -133,8 +143,9 @@ function LogRow({ record }: { record: LogRecord }) {
  * **development build only**. The two share this tab because they share an audience, someone checking
  * on the app's behaviour, but only one of them is for the people running a release.
  */
-export function DiagnosticsView() {
+export function DiagnosticsView({ focus = null }: { focus?: DiagnosticsFocus | null } = {}) {
   const [pane, setPane] = useState<'log' | 'telemetry'>('log');
+  const [explaining, setExplaining] = useState(focus !== null);
   const [showTelemetry, setShowTelemetry] = useState(false);
 
   /*
@@ -172,12 +183,99 @@ export function DiagnosticsView() {
           </SegmentedControl>
         </div>
       )}
-      {showTelemetry && pane === 'telemetry' ? <TelemetryPane /> : <DiagnosticsLogView />}
+      {focus && explaining && (
+        <RerunExplanation prNumber={focus.prNumber} onDismiss={() => setExplaining(false)} />
+      )}
+      {showTelemetry && pane === 'telemetry' ? (
+        <TelemetryPane />
+      ) : (
+        // Narrowed to the PR: the engine writes `#123` at the start of every line about one.
+        <DiagnosticsLogView initialQuery={focus ? `#${focus.prNumber}` : ''} />
+      )}
     </div>
   );
 }
 
-function DiagnosticsLogView() {
+/** Why idle, in the words the badge's tooltip uses; repeated here so the card reads alone. */
+const IDLE_NOTE: Record<string, string> = {
+  off: 'Auto-rerun is switched off now, so nothing more will be tried on its own.',
+  'no-workflows': 'No workflows are configured for auto-rerun now, so nothing more will be tried on its own.',
+  'no-permission': 'The token cannot re-run jobs now — that alone stops every automatic re-run.',
+  throttled: 'Auto-rerun is paused for the GitHub rate limit and resumes when it resets.',
+};
+
+/**
+ * What auto-rerun ran into on one pull request, case by case: what happened, what to do, and the
+ * run it happened on. From the session's events — the same ones the badge counted — so it can
+ * explain even where there is no log file to read.
+ */
+function RerunExplanation({ prNumber, onDismiss }: { prNumber: number; onDismiss: () => void }) {
+  const { events, idleReason } = useAutoRerun();
+  const mine = events.filter((e) => e.prNumber === prNumber && e.outcome !== 'requested');
+  const held = mine.some((e) => e.outcome === 'held');
+  const failed = mine.some((e) => e.outcome === 'failed');
+  const title = mine[0]?.prTitle;
+
+  return (
+    <section className={styles.explain} aria-label={`What auto-rerun ran into on #${prNumber}`}>
+      <div className={styles.explainHeader}>
+        <AlertIcon size={16} className={styles.explainIcon} />
+        <Heading as="h2" className={styles.explainTitle}>
+          Auto-rerun on #{prNumber}
+          {title ? ` · ${title}` : ''}
+        </Heading>
+        <span className={styles.grow} />
+        <IconButton icon={XIcon} size="small" variant="invisible" aria-label="Hide the explanation" onClick={onDismiss} />
+      </div>
+      {mine.length === 0 ? (
+        <Text as="p" className={styles.fgMuted}>
+          Nothing went wrong on this pull request in this session — the events behind the badge are
+          kept in memory only, so they were cleared when the app restarted. The log below still has
+          them.
+        </Text>
+      ) : (
+        <>
+          {held && <Text as="p" className={styles.explainSummary}>{HELD_SUMMARY}</Text>}
+          {failed && <Text as="p" className={styles.explainSummary}>{FAILED_SUMMARY}</Text>}
+          <ol className={styles.explainList}>
+            {mine.map((e) => {
+              const x = explainRerunEvent(e);
+              return (
+                <li key={e.id} className={styles.explainItem}>
+                  <div className={styles.explainMeta}>
+                    <Label variant={e.outcome === 'held' ? 'attention' : 'danger'}>
+                      {e.outcome === 'held' ? 'unchecked' : 're-run refused'}
+                    </Label>
+                    <Text className={styles.fgMuted}>
+                      {formatRelative(new Date(e.at).toISOString())} · {e.workflowFile ?? 'workflow'} · attempt {e.attempt}
+                    </Text>
+                    {e.runUrl && (
+                      <Link href={e.runUrl} target="_blank" rel="noreferrer" className={styles.explainRun}>
+                        run {e.runId} <LinkExternalIcon size={12} />
+                      </Link>
+                    )}
+                    {x.transient && <Label variant="secondary">usually clears itself</Label>}
+                  </div>
+                  <Text as="p" className={styles.explainCause}>{x.cause}</Text>
+                  <Text as="p" className={styles.explainFix}>
+                    <strong>What to do:</strong> {x.fix}
+                  </Text>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      )}
+      {idleReason !== 'armed' && IDLE_NOTE[idleReason] && (
+        <Flash variant="warning" className={styles.explainIdle}>
+          {IDLE_NOTE[idleReason]}
+        </Flash>
+      )}
+    </section>
+  );
+}
+
+function DiagnosticsLogView({ initialQuery = '' }: { initialQuery?: string }) {
   const { config } = useConfig();
   const { tailKB, followSeconds } = config.diagnostics;
 
@@ -190,7 +288,7 @@ function DiagnosticsLogView() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [paths, setPaths] = useState<{ file: string; dir: string } | null>(null);
   const [scope, setScope] = useState('');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [warningsOnly, setWarningsOnly] = useState(false);
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);

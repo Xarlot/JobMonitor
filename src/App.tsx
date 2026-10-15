@@ -21,7 +21,7 @@ import { useCapabilityProbe } from './hooks/useCapabilityProbe';
 import { DashboardProvider } from './context/DashboardContext';
 import { AutoRerunProvider } from './context/AutoRerunContext';
 import { FeatureBranchesProvider } from './context/FeatureBranchesContext';
-import { NavigationProvider } from './context/NavigationContext';
+import { NavigationProvider, type DiagnosticsFocus } from './context/NavigationContext';
 import { FailuresProvider, useFailures } from './context/FailuresContext';
 import { FlowsRuntimeProvider } from './context/FlowsRuntimeContext';
 import { ResolvedFlowsProvider } from './context/ResolvedFlowsContext';
@@ -101,12 +101,15 @@ export function App() {
   const [focusFlowId, setFocusFlowId] = useState<string | null>(null);
   const [focusPrNumber, setFocusPrNumber] = useState<number | null>(null);
   const [focusFailureKey, setFocusFailureKey] = useState<string | null>(null);
+  const [focusDiagnostics, setFocusDiagnostics] = useState<DiagnosticsFocus | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Bumped on every navigation request, so repeating one still re-scrolls. */
   const [focusNonce, setFocusNonce] = useState(0);
 
-  // Opt-in, and only where the log exists: a browser tab has no file to read.
-  const showDiagnostics = isDesktop() && config.diagnostics.showLogTab;
+  // Opt-in, and only where the log exists: a browser tab has no file to read — except while it is
+  // open to explain something a badge pointed at, which is worth reading with or without the log.
+  const showDiagnostics =
+    (isDesktop() && config.diagnostics.showLogTab) || (view === 'diagnostics' && focusDiagnostics !== null);
   // Opt-in, and pointless without coordinates: everything on it is a comparison
   // between the fork and the upstream.
   const showBranches = complete && config.featureBranches.enabled;
@@ -153,6 +156,15 @@ export function App() {
     setFocusNonce((n) => n + 1);
     setView('prs');
   };
+  /**
+   * Open Diagnostics at what auto-rerun ran into on one PR — from its "unchecked" badge. Works
+   * with the tab switched off: the tab then shows for as long as you stay on it.
+   */
+  const openDiagnostics = (focus: DiagnosticsFocus) => {
+    setFocusDiagnostics(focus);
+    setFocusNonce((n) => n + 1);
+    setView('diagnostics');
+  };
   /** Open the Failures tab at one failure — from a failing check or job in a run. */
   const openFailure = (failureKey: string) => {
     setFocusFailureKey(failureKey);
@@ -178,7 +190,7 @@ export function App() {
             Inside the data providers, because a control that navigates to a failure first
             has to ask the failure list whether that failure is there to navigate to.
           */}
-          <NavigationProvider value={{ openPr, openFailure }}>
+          <NavigationProvider value={{ openPr, openFailure, openDiagnostics }}>
           {showSettings ? (
             <>
               <div
@@ -209,7 +221,11 @@ export function App() {
                 disabled={navDisabled}
                 showDiagnostics={showDiagnostics}
                 showBranches={showBranches}
-                onSelect={setView}
+                onSelect={(v) => {
+                  // Picking a tab yourself ends the explanation; the badge can bring it back.
+                  setFocusDiagnostics(null);
+                  setView(v);
+                }}
               />
 
               {/*
@@ -242,7 +258,9 @@ export function App() {
                   No `complete` gate: this one reads a local file rather than GitHub, and
                   an unconfigured app is a state you might well be diagnosing.
                 */}
-                {view === 'diagnostics' && showDiagnostics && <DiagnosticsView />}
+                {view === 'diagnostics' && showDiagnostics && (
+                  <DiagnosticsView key={`diag-${focusNonce}`} focus={focusDiagnostics} />
+                )}
               </div>
             </>
           )}

@@ -14,3 +14,15 @@
 .tipWide {
   --tooltip-max: 420px;
 }
+
+/* A badge with bad news opens its explanation in Diagnostics. */
+.centerLink {
+  composes: centerDefault;
+  cursor: pointer;
+}
+
+.centerLink:focus-visible {
+  outline: 2px solid var(--focus-outlineColor);
+  outline-offset: 2px;
+  border-radius: var(--borderRadius-full);
+}

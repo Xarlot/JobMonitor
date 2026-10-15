@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ThemeProvider, BaseStyles } from '@primer/react';
 import type { AutoRerunState } from '../hooks/usePrAutoRerun';
 
@@ -7,6 +7,7 @@ const state: AutoRerunState = { events: [], idleReason: 'armed' };
 vi.mock('../context/AutoRerunContext', () => ({ useAutoRerun: () => state }));
 
 import { AutoRerunLabel } from '../components/AutoRerunLabel';
+import { NavigationProvider } from '../context/NavigationContext';
 
 type Event = AutoRerunState['events'][number];
 
@@ -129,5 +130,37 @@ describe('AutoRerunLabel', () => {
     state.events = [event()];
     renderLabel();
     expect(hint()).not.toContain('Now idle');
+  });
+
+  describe('opening the explanation', () => {
+    function renderWithNav(openDiagnostics = vi.fn()) {
+      render(
+        <ThemeProvider>
+          <BaseStyles>
+            <NavigationProvider value={{ openPr: () => {}, openFailure: () => {}, openDiagnostics }}>
+              <AutoRerunLabel prNumber={41763} />
+            </NavigationProvider>
+          </BaseStyles>
+        </ThemeProvider>,
+      );
+      return openDiagnostics;
+    }
+
+    it('opens Diagnostics at this PR when the badge has bad news', () => {
+      state.events = [event({ outcome: 'held', detail: 'jobs could not be listed' })];
+      const open = renderWithNav();
+      expect(hint()).toContain('Click to see what went wrong');
+      fireEvent.click(screen.getByRole('button'));
+      expect(open).toHaveBeenCalledWith({ prNumber: 41763 });
+    });
+
+    /** Re-runs that went through are not a problem to explain. */
+    it('stays a plain badge when nothing went wrong', () => {
+      state.events = [event()];
+      const open = renderWithNav();
+      fireEvent.click(screen.getByRole('button'));
+      expect(open).not.toHaveBeenCalled();
+      expect(hint()).not.toContain('Click to see');
+    });
   });
 });

@@ -8,12 +8,16 @@
  * detail in a hint rather than spending a row on it.
  *
  * Renders nothing at all when there is nothing to say, so a quiet PR stays quiet.
+ *
+ * When the news is bad — a re-run held off ("unchecked") or refused — the badge is a link: it opens
+ * the Diagnostics tab at an explanation of each case and the log lines behind it.
  */
 
 import { Label } from '@primer/react';
 import { Tooltip } from '@primer/react/next';
 import { AlertIcon, SyncIcon } from '@primer/octicons-react';
 import { useAutoRerun } from '../context/AutoRerunContext';
+import { useNavigation } from '../context/NavigationContext';
 import type { AutoRerunState } from '../hooks/usePrAutoRerun';
 import { formatRelative } from '../lib/format';
 import styles from './AutoRerunLabel.module.css';
@@ -54,6 +58,7 @@ function hintFor(prNumber: number, events: ReturnType<typeof useAutoRerun>['even
 
 export function AutoRerunLabel({ prNumber }: { prNumber: number }) {
   const { events, idleReason } = useAutoRerun();
+  const navigation = useNavigation();
   const mine = events.filter((e) => e.prNumber === prNumber);
   if (mine.length === 0) return null;
 
@@ -72,12 +77,14 @@ export function AutoRerunLabel({ prNumber }: { prNumber: number }) {
       .join(' · ') || 'auto-rerun';
   // A held re-run is a malfunction to look at, so it colours the badge like a failure.
   const bad = failed > 0 || held > 0;
+  const explain = bad && navigation?.openDiagnostics ? navigation.openDiagnostics : null;
 
   const tip = [
     `Auto-rerun · #${prNumber}`,
     hintFor(prNumber, events),
     idleReason === 'armed' ? '' : `Now idle — ${IDLE_LABEL[idleReason]}.`,
     'This session only. The full history is in the diagnostics log.',
+    explain ? 'Click to see what went wrong and what to do.' : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -92,8 +99,11 @@ export function AutoRerunLabel({ prNumber }: { prNumber: number }) {
       <Tooltip text={tip} type="description">
         <button
           type="button"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          className={styles.centerDefault}
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            explain?.({ prNumber });
+          }}
+          className={explain ? styles.centerLink : styles.centerDefault}
         >
           <Label variant={bad ? 'danger' : 'attention'}>
             <Icon icon={bad ? AlertIcon : SyncIcon} size={12} className={styles.mr1} />

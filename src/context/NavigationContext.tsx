@@ -24,6 +24,16 @@ export interface Navigation {
   openPr: (prNumber: number) => void;
   /** Open the Failures tab at one failure, by its `FailedJobRef.key`. */
   openFailure: (failureKey: string) => void;
+  /**
+   * Open the Diagnostics tab explaining what auto-rerun ran into on one pull request. Optional:
+   * a host without that tab (a test, an embedded table) leaves it out and the caller offers no link.
+   */
+  openDiagnostics?: (focus: DiagnosticsFocus) => void;
+}
+
+/** What the Diagnostics tab was opened to explain. */
+export interface DiagnosticsFocus {
+  prNumber: number;
 }
 
 const NavigationContext = createContext<Navigation | null>(null);

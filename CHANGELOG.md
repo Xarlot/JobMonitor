@@ -6,6 +6,13 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 
 ## [Unreleased]
 
+### Added
+- **A red auto-rerun badge explains itself.** Clicking `N unchecked` or `N failed` on a pull request
+  opens Diagnostics with each case spelled out — what happened, the likely cause (a job list GitHub
+  had not filled in yet, a job list that could not be read, a failure with nothing to compare, a
+  refused re-run), whether it usually clears itself, what to do — and a link to the run, above the log
+  filtered to that PR. Works with the Diagnostics tab switched off, and in a browser without the log.
+
 ### Fixed
 - **A warning in the Diagnostics log said what failed, but not why.** An error passed along with a
   warning was written to the log file as `"detail":{}` — a JSON-serialised `Error` keeps none of its

@@ -741,6 +741,13 @@ list. Hover it for the detail: every attempt with its workflow and time, and, if
 gone idle, why. The badge covers the current session; the full history, including every decision *not*
 to re‑run, is in the diagnostics log.
 
+When the badge turns red — `1 unchecked` (the engine wanted to re‑run but could not compare the failure
+with the previous one, so it held off) or `1 failed` (GitHub refused the re‑run) — **click it**. It opens
+**Diagnostics** with an explanation on top: what each case means, its likely cause, whether it usually
+clears itself on the next poll, what to do, and a link to the run. Below, the log is already filtered
+to that pull request. This works even with the Diagnostics tab switched off in Settings; the tab then
+stays only while you are on it.
+
 > The re‑run controls are **hidden** unless your token is verified as able to use them — see
 > [First‑time setup](#1-add-your-github-token-settings--token--login).
 
