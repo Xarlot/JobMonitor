@@ -51,6 +51,16 @@ export function pullReviewsPath(owner: string, repo: string, number: number): st
   return `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews?per_page=100`;
 }
 
+/**
+ * One file as it is at `ref`. Read when Claude writes the note for resolving a review comment,
+ * so it can compare what the reviewer asked for with what the code says now. Each segment is
+ * escaped separately: the slashes between them are part of the route.
+ */
+export function contentsPath(owner: string, repo: string, path: string, ref: string): string {
+  const file = path.split('/').map(enc).join('/');
+  return `/repos/${enc(owner)}/${enc(repo)}/contents/${file}?ref=${enc(ref)}`;
+}
+
 /** POST target: open a pull request. Both refs are plain branch names within `repo`. */
 export function createPullPath(owner: string, repo: string): string {
   return `/repos/${enc(owner)}/${enc(repo)}/pulls`;

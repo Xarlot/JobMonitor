@@ -1,0 +1,332 @@
+.countButton {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.countButton:focus-visible {
+  outline: 2px solid var(--focus-outlineColor);
+  outline-offset: 2px;
+  border-radius: var(--borderRadius-full);
+}
+
+.mr1 {
+  margin-right: var(--base-size-4);
+}
+
+.grow {
+  flex-grow: 1;
+}
+
+.small {
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-muted);
+}
+
+.muted {
+  font-size: var(--text-body-size-medium);
+  color: var(--fgColor-muted);
+  margin: var(--base-size-8) 0;
+}
+
+.mb2 {
+  margin-bottom: var(--base-size-8);
+}
+
+.mt2 {
+  margin-top: var(--base-size-8);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-8);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  width: 100%;
+}
+
+.thread {
+  border: 1px solid var(--borderColor-default);
+  border-radius: var(--borderRadius-medium);
+  padding: var(--base-size-8) var(--base-size-12);
+  margin-bottom: var(--base-size-12);
+}
+
+.threadResolved {
+  composes: thread;
+  opacity: 0.7;
+}
+
+.threadHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  margin-bottom: var(--base-size-4);
+}
+
+.path {
+  font-family: var(--fontStack-monospace);
+  font-size: var(--text-body-size-small);
+  word-break: break-all;
+}
+
+.comment {
+  padding: var(--base-size-4) var(--base-size-8);
+  border-radius: var(--borderRadius-medium);
+  cursor: pointer;
+}
+
+.comment:hover {
+  background-color: var(--bgColor-muted);
+}
+
+.comment:focus-visible {
+  outline: 2px solid var(--focus-outlineColor);
+}
+
+.comment + .comment {
+  border-top: 1px solid var(--borderColor-muted);
+}
+
+.commentMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.author {
+  font-weight: var(--base-text-weight-semibold);
+  font-size: var(--text-body-size-small);
+}
+
+.commentBody {
+  font-size: var(--text-body-size-medium);
+  overflow-wrap: anywhere;
+}
+
+.composer {
+  margin-top: var(--base-size-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-8);
+}
+
+.composerNote {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+/*
+ * Primer portals the menu to the end of <body>, inside a wrapper at `z-index: 1` that is its own
+ * stacking context — so the menu draws under the Modal's backdrop (z-index 1000) whatever z-index
+ * the menu itself has. Lift the wrapper, and only the one holding this menu. `!important`
+ * because Primer sets that z-index as an inline style.
+ */
+:global(div):has(> .menuOverlay) {
+  z-index: 1100 !important;
+}
+
+.threadFocused {
+  composes: thread;
+  border-color: var(--borderColor-accent-emphasis);
+  box-shadow: 0 0 0 1px var(--borderColor-accent-emphasis);
+}
+
+/* The count and the chips, in the width the title leaves on its line. */
+.chipsLine {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  min-width: 0;
+}
+
+/*
+ * One line of chips. They wrap, and the second line is clipped by the fixed height — so a chip
+ * that does not fit disappears whole instead of being cut in half.
+ */
+.chips {
+  flex: 1 1 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--base-size-4);
+  min-width: 0;
+  height: 22px;
+  /* `clip`, not `hidden`: a hidden box can still be scrolled, and focusing a chip on the clipped
+     line would scroll it into view and hide the first line instead. */
+  overflow: clip;
+}
+
+/* The tooltip wrapper around each chip: never wider than the line, so a lone chip truncates. */
+.chips > span {
+  display: flex;
+  max-width: 100%;
+}
+
+.chipCount {
+  all: unset;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  height: 22px;
+  padding: 0 var(--base-size-8);
+  border: 1px solid var(--borderColor-attention-emphasis);
+  border-radius: var(--borderRadius-full);
+  color: var(--fgColor-attention);
+  font-size: var(--text-body-size-small);
+  font-weight: var(--base-text-weight-semibold);
+  cursor: pointer;
+}
+
+.chipCount:focus-visible {
+  outline: 2px solid var(--focus-outlineColor);
+  outline-offset: 1px;
+}
+
+.chip {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-4);
+  max-width: min(200px, 100%);
+  min-width: 0;
+  height: 22px;
+  padding: 0 var(--base-size-8) 0 var(--base-size-4);
+  border: 1px solid var(--borderColor-attention-muted);
+  border-radius: var(--borderRadius-full);
+  background-color: var(--bgColor-attention-muted);
+  font-size: var(--text-body-size-small);
+  color: var(--fgColor-default);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--borderColor-attention-emphasis);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--focus-outlineColor);
+  outline-offset: 1px;
+}
+
+/* The code it was left on has changed: still open, but probably no longer the thing to look at. */
+.chipOutdated {
+  composes: chip;
+  border-color: var(--borderColor-default);
+  background-color: var(--bgColor-muted);
+  color: var(--fgColor-muted);
+}
+
+.chipOutdated .chipText {
+  text-decoration: line-through;
+  text-decoration-color: var(--fgColor-muted);
+}
+
+.chipAvatar {
+  flex-shrink: 0;
+}
+
+.chipAuthor {
+  flex-shrink: 0;
+  max-width: 9em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.chipText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chipReplies {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fgColor-muted);
+}
+
+
+.chipBot {
+  flex-shrink: 0;
+  padding: 0 var(--base-size-4);
+  border-radius: var(--borderRadius-small);
+  background-color: var(--bgColor-neutral-muted);
+  color: var(--fgColor-muted);
+  font-size: 10px;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+/* A speech bubble with the unresolved count on a red badge at its upper right, like an unread count. */
+.resolveIcon {
+  position: relative;
+  display: inline-flex;
+}
+
+.resolveIconBadge {
+  position: absolute;
+  top: -6px;
+  left: 9px;
+  box-sizing: border-box;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--borderRadius-full);
+  background-color: var(--bgColor-danger-emphasis);
+  color: var(--fgColor-onEmphasis);
+  font-size: 9px;
+  font-weight: var(--base-text-weight-semibold);
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  /* A ring in the page colour, so the badge reads as sitting on top of the bubble. */
+  box-shadow: 0 0 0 1.5px var(--bgColor-default);
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.claudeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+/* A checkbox and its words, centred on one line — Primer's FormControl offsets the label. */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--base-size-8);
+  font-size: var(--text-body-size-medium);
+  cursor: pointer;
+  user-select: none;
+}
+
+.check input {
+  margin: 0;
+}

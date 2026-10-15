@@ -95,12 +95,22 @@ const defs = {
   FAILURES_GROUP_CREATED: { id: 406, key: 'failures.group_created' },
 
   // ── 500 writes ───────────────────────────────────────────────────────────────────────────────
-  // The app has exactly two write endpoints; both are represented here.
+  // Every kind of write the app makes is represented here.
   RERUN_MANUAL: { id: 500, key: 'rerun.manual' },
   RERUN_AUTO_FIRED: { id: 501, key: 'rerun.auto_fired' },
   /** Auto-rerun declined by policy. The interesting half of the auto-rerun story. */
   RERUN_AUTO_SUPPRESSED: { id: 502, key: 'rerun.auto_suppressed' },
   AUTOMERGE_ARMED: { id: 503, key: 'automerge.armed' },
+  /** One review conversation resolved from its thread. */
+  REVIEW_THREAD_RESOLVED: { id: 504, key: 'review.thread_resolved' },
+  /** "Resolve all" on a pull request's open review conversations. */
+  REVIEW_THREADS_RESOLVED_ALL: { id: 505, key: 'review.threads_resolved_all' },
+  /** A reply posted to a review conversation, whether typed or drafted by Claude. */
+  REVIEW_THREAD_REPLIED: { id: 506, key: 'review.thread_replied' },
+  /** "Resolve outdated" on a pull request's open review conversations. */
+  REVIEW_THREADS_RESOLVED_OUTDATED: { id: 507, key: 'review.threads_resolved_outdated' },
+  /** "Resolve bot comments": every open conversation a review bot started. */
+  REVIEW_THREADS_RESOLVED_BOTS: { id: 508, key: 'review.threads_resolved_bots' },
 
   // ── 600 AI ───────────────────────────────────────────────────────────────────────────────────
   // Mirrors the depths claudeBridge.cjs accepts: quick | deep | log | blame | cause | marks,
@@ -115,6 +125,12 @@ const defs = {
   AI_FAILURE_CAUSE: { id: 606, key: 'ai.failure_cause' },
   /** Marking the decisive lines of a log, for the viewer's marker stripe. */
   AI_LOG_MARKS: { id: 607, key: 'ai.log_marks' },
+  /** Drafting a reply to a review comment. */
+  AI_REVIEW_REPLY: { id: 608, key: 'ai.review_reply' },
+  /** Drafting the note that explains why a review comment is being resolved. */
+  AI_REVIEW_RESOLVE_NOTE: { id: 609, key: 'ai.review_resolve_note' },
+  /** Rewriting a reply the user typed, on their instruction. */
+  AI_REVIEW_REPLY_IMPROVED: { id: 610, key: 'ai.review_reply_improved' },
 
   // ── 700 artifacts ────────────────────────────────────────────────────────────────────────────
   ARTIFACT_DOWNLOADED: { id: 700, key: 'artifact.downloaded' },

@@ -71,6 +71,8 @@ export const MOCK_CONFIG: MonitorConfig = {
     cause: { model: 'sonnet', effort: 'medium', prompt: '' },
     marks: { model: 'sonnet', effort: 'medium', prompt: '' },
     pr: { model: 'sonnet', effort: 'medium', prompt: '' },
+    reply: { model: 'sonnet', effort: 'medium', prompt: '' },
+    resolve: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,
   rateLimitWarnAt: 50,

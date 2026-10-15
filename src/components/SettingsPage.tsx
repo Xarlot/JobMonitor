@@ -1606,6 +1606,18 @@ function AiSection({
             onChange={(patch) => onChange({ pr: { ...settings.pr, ...patch } })}
           />
           <AiTaskFields
+            title="Review comment reply"
+            blurb="Drafts a reply to a review comment on one of your pull requests, from the comment thread and the code it was left on. One turn on material it is handed; the draft lands in an editable box and nothing is posted until you post it."
+            settings={settings.reply}
+            onChange={(patch) => onChange({ reply: { ...settings.reply, ...patch } })}
+          />
+          <AiTaskFields
+            title="Review comment resolve note"
+            blurb="Writes the note posted when you resolve a review comment: why it can be closed, judged from the thread and the file as it is now at the head of the pull request. Says so when it thinks the comment is not addressed yet. Nothing is posted until you post it."
+            settings={settings.resolve}
+            onChange={(patch) => onChange({ resolve: { ...settings.resolve, ...patch } })}
+          />
+          <AiTaskFields
             title="Who broke it"
             blurb="Reads the branch’s run history and the diffs between runs to name the commit and its author. Judgement across many small facts, so it earns a strong model — but breadth rather than depth, so medium effort."
             settings={settings.blame}

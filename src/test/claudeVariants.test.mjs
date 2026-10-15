@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { initRunLog, logEvent, runLogPath } from '../../electron/runLog.cjs';
 import {
   ANALYZE_DEPTHS,
+  COMPOSE_TASKS,
   claudeVariants,
   createStreamParser,
   describeExit,
@@ -49,9 +50,18 @@ describe('per-task budget tables', () => {
    * `pr` arrives through `compose` and has no run to analyse.
    */
   it('accepts exactly the depths the tables know about', () => {
-    const tasks = Object.keys(TASK_TABLES.CLAUDE_MODEL).filter((t) => t !== 'pr');
+    const tasks = Object.keys(TASK_TABLES.CLAUDE_MODEL).filter((t) => !COMPOSE_TASKS.has(t));
     expect([...ANALYZE_DEPTHS].sort()).toEqual(tasks.sort());
     expect(ANALYZE_DEPTHS.has('pr')).toBe(false);
+    expect(ANALYZE_DEPTHS.has('reply')).toBe(false);
+  });
+
+  /** A draft reply to a review comment is written from the thread in the prompt, like the write-up. */
+  it('gives the review-reply task one turn and no tools', () => {
+    expect(COMPOSE_TASKS.has('reply')).toBe(true);
+    expect(TASK_TABLES.USES_TOOLS.reply).toBe(false);
+    expect(TASK_TABLES.MAX_TURNS_BY_TASK.reply).toBe(1);
+    expect(claudeVariants('reply')[0].args).not.toContain('--allowedTools');
   });
 
   /**

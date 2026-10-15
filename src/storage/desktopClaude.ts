@@ -124,8 +124,11 @@ export interface ClaudeComposeRequest {
   /** The whole brief, including the material to summarise. Sent on stdin. */
   prompt: string;
   requestId: string;
-  /** The only task this channel accepts; re-checked in the main process. */
-  task: 'pr';
+  /**
+   * The pull-request write-up, or a draft reply to a review comment — the only tasks this
+   * channel accepts; re-checked in the main process.
+   */
+  task: 'pr' | 'reply';
   model?: string;
   effort?: string;
 }

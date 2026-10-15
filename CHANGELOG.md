@@ -7,6 +7,25 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 ## [Unreleased]
 
 ### Added
+- **Unresolved review comments on each pull request.** Beside a PR's title: how many conversations are
+  open, then a small chip for each — the avatar and login of whoever started it (bots marked), and how
+  it starts; outdated ones are struck through. Clicking a chip opens the conversations at that one.
+  Clicking a comment there offers **Resolve now**, **Resolve with a comment…**, **Reply…** and, in the
+  desktop app with Claude set up, **Resolve with a note from Claude** and **Reply with Claude**. The
+  comment box takes your own text; a field next to it tells Claude how to **improve** what you wrote;
+  **Write why with Claude** / **Reply with Claude** has Claude write it. Claude's resolve note is
+  written from the thread *and the file as it is now at the PR head*, with a verdict — addressed, no
+  longer applies, settled in the conversation, or **not addressed yet**, which warns before you resolve.
+  Nothing is posted until you press **Post and resolve** / **Post reply**; with the box empty,
+  **Resolve** resolves without a comment.
+- **Resolve all, resolve AI comments, resolve outdated.** Among the PR row's action buttons, a
+  speech bubble with the unresolved count on a red badge offers **All**, **Only AI comments** (the
+  conversations a review bot such as Copilot started) or **Only outdated** (those on code that has
+  changed since), then confirms in a small dialog that shows the progress and the outcome. The
+  review-comments dialog offers the same three, each behind a confirmation.
+  Resolving and replying need a token that can write, like every other write here; a read-only token
+  still sees the chips. The reply and the resolve note each have their own model and prompt in
+  Settings → AI.
 - **A red auto-rerun badge explains itself.** Clicking `N unchecked` or `N failed` on a pull request
   opens Diagnostics with each case spelled out — what happened, the likely cause (a job list GitHub
   had not filled in yet, a job list that could not be read, a failure with nothing to compare, a

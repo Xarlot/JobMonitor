@@ -18,6 +18,8 @@ is listed here, and every one of them is either behind an explicit click or off 
 | `POST .../pulls` | the Feature branches tab | on click |
 | `POST .../git/refs` (the sync branch) | the Feature branches tab | on click |
 | `POST .../merge-upstream` | the Feature branches tab | on click |
+| `POST /graphql` — `resolveReviewThread` | the review-comments dialog (one thread; **Resolve all / outdated / AI comments** after a confirm) and the PR row's resolve menu (All / Only AI comments / Only outdated, then a confirm dialog) | on click |
+| `POST /graphql` — `addPullRequestReviewThreadReply` | the review-comments dialog's **Post reply** / **Post and resolve** | on click |
 
 **Nothing in this app merges a pull request.** Every action arms auto-merge and lets GitHub do it,
 which is why `PUT .../pulls/{n}/merge` is absent from the table — the "Merge now" path it served was
@@ -107,9 +109,24 @@ place rather than trusting each caller to have checked.
   **auto-reruns**. A system notification fires when a tracked PR's checks finish or a flow run
   completes — only on an observed *in-progress → finished* transition, so reloads and already-done
   items never spam you. Uses the browser's Web Notification permission; nothing leaves the browser.
-- **Arm auto-merge** (manual, a write) — clears a PR's description, then enables auto-merge. The one
-  place the app speaks **GraphQL**: `enablePullRequestAutoMerge` has no REST equivalent. See
+- **Arm auto-merge** (manual, a write) — clears a PR's description, then enables auto-merge.
+  `enablePullRequestAutoMerge` has no REST equivalent, so this speaks **GraphQL**. See
   `src/api/autoMerge.ts`.
+- **Review comments** — the count of unresolved review threads on each open PR, and a dialog to resolve
+  them (one, or all) and reply to them (`src/api/reviewThreads.ts`, `src/components/ReviewThreads.tsx`).
+  GraphQL again, for the read too: REST lists review comments but not whether their thread is resolved.
+  That read goes through `ghGraphQlQuery`, which is **ungated** (a read-only token still sees the count)
+  and refuses any document that isn't a `query`, so it can never carry a mutation past the capability
+  gate; the two mutations go through `ghWriteJson` like every other write. Threads are re-read on the
+  reviews trigger (`updated_at` moved) and again whenever the dialog opens or acts, since resolving is
+  not known to bump `updated_at`. Bulk resolves (all, outdated, bot-started — a bot is an author whose
+  GraphQL `__typename` is `Bot`, since GraphQL drops the `[bot]` suffix from the login) run
+  sequentially — a burst of mutations is what GitHub's secondary limit is for — and stop at a
+  permission or rate-limit refusal. Claude's three jobs here — *Reply with Claude*, the *resolve note*,
+  and *Improve with Claude* — all run as the `reply` task on the `compose` channel
+  (`src/lib/reviewReply.ts`): one turn, no tools, and only ever text in the editable box. The resolve
+  note's prompt also carries the file at the PR head (`GET .../contents/{path}?ref={head sha}`, ±40
+  lines around the thread's line), so the verdict rests on the code as it is now, not as it was.
 - **Auto-rerun failed jobs** (opt-in, a write) — for a PR with **auto-merge armed**, when a
   run of a listed workflow file finishes as `failure`/`timed_out`, its failed jobs are re-run.
   Never for `cancelled` (usually deliberate) or `action_required` (needs a human). Two brakes:

@@ -19,6 +19,7 @@ import {
   pullReviewsPath,
 } from '../api/endpoints';
 import { listPulls } from '../api/pullRequests';
+import { fetchReviewThreads, type ReviewThread } from '../api/reviewThreads';
 import type {
   CheckRun,
   CheckRunsResponse,
@@ -90,6 +91,13 @@ export interface DashboardState {
    * requested reviewers need no extra request and are on the PR itself.
    */
   reviews: ReadonlyMap<number, readonly PullReview[]>;
+  /**
+   * Review threads (inline code comments) per open PR number, resolved ones included. Missing
+   * until the first read lands, so "no entry" means "unknown", never "none".
+   */
+  reviewThreads: ReadonlyMap<number, readonly ReviewThread[]>;
+  /** Read one PR's threads again now — after resolving or replying, which may not bump `updated_at`. */
+  refreshReviewThreads: (prNumber: number) => Promise<void>;
   enabled: boolean;
   refreshAll: () => void;
   /**
@@ -263,6 +271,11 @@ export function useGitHubDashboard(): DashboardState {
   const [reviews, setReviews] = useState<ReadonlyMap<number, readonly PullReview[]>>(
     () => new Map(),
   );
+  const [reviewThreads, setReviewThreads] = useState<ReadonlyMap<number, readonly ReviewThread[]>>(
+    () => new Map(),
+  );
+  /** PR number → the `updated_at` its threads were read at (or are being read at). */
+  const threadsForRef = useRef<Map<number, string>>(new Map());
   /** PR number → the `updated_at` its reviews were read at (or are being read at). */
   const reviewsForRef = useRef<Map<number, string>>(new Map());
   /** The last reviews read per PR, outside React state: what a new read is diffed against. */
@@ -282,6 +295,8 @@ export function useGitHubDashboard(): DashboardState {
     setPrs([]);
     setMergedPrs([]);
     setReviews(new Map());
+    setReviewThreads(new Map());
+    threadsForRef.current = new Map();
     reviewsForRef.current = new Map();
     reviewsSeenRef.current = new Map();
   }, [scopeKey]);
@@ -465,6 +480,57 @@ export function useGitHubDashboard(): DashboardState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewsSig, enabled]);
 
+  /**
+   * Review threads, on the same trigger as reviews: a new review comment or reply bumps the PR's
+   * `updated_at`. Resolving a thread is not documented to, which is why the dialog re-reads on
+   * open and after every action rather than trusting this alone.
+   *
+   * A separate effect with its own bookkeeping so a GraphQL failure (an SSO-restricted org, a
+   * token GraphQL refuses) leaves the reviewer avatars alone, and the other way round.
+   */
+  useEffect(() => {
+    if (!enabled) return;
+    const { owner, repo } = config.upstream;
+    const stale = prs.filter((e) => threadsForRef.current.get(e.pr.number) !== e.pr.updated_at);
+    if (stale.length === 0) return;
+    for (const e of stale) threadsForRef.current.set(e.pr.number, e.pr.updated_at);
+    void Promise.allSettled(
+      stale.map(async (e) => {
+        const data = await Telemetry.measure(Operation.GH_REVIEW_THREADS_READ, () =>
+          fetchReviewThreads(owner, repo, e.pr.number),
+        );
+        return [e.pr.number, data] as const;
+      }),
+    ).then((results) => {
+      const got = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          threadsForRef.current.delete(stale[i].pr.number);
+          devWarn('api', `review threads of #${stale[i].pr.number} could not be read`, r.reason);
+        }
+      });
+      if (got.length === 0) return;
+      setReviewThreads((prev) => {
+        const next = new Map(prev);
+        for (const [n, data] of got) next.set(n, data);
+        return next;
+      });
+    });
+    // Driven by the signature, as reviews are.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewsSig, enabled]);
+
+  const refreshReviewThreads = useCallback(
+    async (prNumber: number) => {
+      const { owner, repo } = config.upstream;
+      const data = await Telemetry.measure(Operation.GH_REVIEW_THREADS_READ, () =>
+        fetchReviewThreads(owner, repo, prNumber),
+      );
+      setReviewThreads((prev) => new Map(prev).set(prNumber, data));
+    },
+    [config.upstream],
+  );
+
   // Desktop notification when a PR's checks finish (opt-in via config).
   const prPhaseRef = useRef<Map<number, boolean>>(new Map());
   const notifyPr = config.notifications.pr;
@@ -514,6 +580,8 @@ export function useGitHubDashboard(): DashboardState {
     isFetchingList: list.isFetching,
     isFetchingChecks: checks.isFetching,
     reviews,
+    reviewThreads,
+    refreshReviewThreads,
     enabled,
     refreshAll,
     invalidateChecks,

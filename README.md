@@ -194,6 +194,27 @@ team with its verdict on it — approved, changes requested, commented, or still
 an approval keeps the approval; a reviewer asked to look again shows as awaited. Hover for the details.
 The Overview's PR tiles show the same reviewers.
 
+A PR with **unresolved review comments** shows them beside its title: a count, then a small chip per
+conversation with the avatar and login of whoever started it (bots marked **bot**) and how it starts.
+Outdated ones — the code they were on has changed — are struck through. Click a chip (or the count) to
+read the conversations: the file and line, and every comment in the thread. Click a comment to choose:
+
+- **Resolve now**, or **Resolve with a comment…** — say why in the box, then **Post and resolve**
+  (leave the box empty and the button just **Resolve**s).
+- **Reply…** — the same box, posted with **Post reply**; tick *Resolve the conversation* to do both.
+- In the desktop app with Claude set up: **Resolve with a note from Claude**, which reads the file as it
+  is now at the PR head and writes why the conversation can be closed, with a verdict — *addressed in
+  the code*, *no longer applies*, *settled in the conversation*, or *not addressed yet*, which warns
+  you before resolving. **Reply with Claude** drafts a reply. Under the box, type how you want your own
+  text changed ("shorter", "mention the null check") and press **Improve with Claude**.
+
+Nothing Claude writes is posted until you press the button. To close many at once, the PR row's
+action buttons on the right include a speech bubble with the number of unresolved conversations on a
+red badge: pick **All**, **Only AI comments** — the conversations a review bot such as Copilot
+started — or **Only outdated** — the ones on code that has changed since — and confirm. The
+review-comments dialog offers the same three. Resolving and replying need a token that can write;
+with a read-only token the comments are shown but not offered.
+
 If your token can write, each PR also gets a **re‑run** button (the circular arrows). It lists the
 failed workflow runs for that commit and lets you re‑run any one’s failed jobs — no need to go to
 GitHub and find the run yourself. The PR’s checks start being watched again straight away, so you
@@ -819,11 +840,15 @@ by default, and every one is hidden unless your token is verified as able to per
   dialog that shows you the description it is about to delete.
 - **The Feature branches actions** — create a sync branch, open a pull request, sync your fork from
   its parent. Each confirms first.
+- **Resolving and replying to review comments** on your pull requests — one click per conversation,
+  a confirmation for every bulk resolve (all, AI comments, outdated), and a reply is posted only from
+  the box you can see and edit.
 
 **Job Monitor never merges anything itself.** It opens pull requests and hands them to GitHub, which
 merges them when their required checks pass. It also cannot start a workflow, cancel a run, push
-code, comment, or change a repository setting. Every write goes through one function that refuses to
-run unless the token has been proven capable — `development.md` lists each endpoint.
+code, comment anywhere but in reply to a review comment, or change a repository setting. Every write
+goes through one function that refuses to run unless the token has been proven capable —
+`development.md` lists each endpoint.
 
 ---
 

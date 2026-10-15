@@ -20,6 +20,7 @@ import { AutoMergeButton, AutoMergeLabel } from './AutoMergeButton';
 import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
 import { PrReviewers } from './PrReviewers';
+import { ReviewThreadChips, ReviewThreadsResolveButton } from './ReviewThreads';
 import { TimelineDialog, type GanttItem } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { ArtifactsButton } from './ArtifactsButton';
@@ -106,16 +107,20 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
         <AutoMergeLabel pr={pr} />
         <AutoRerunLabel prNumber={pr.number} />
         <div className={styles.grow}>
-          <Link
-            href={pr.html_url}
-            target="_blank"
-            rel="noreferrer"
-            className={styles.boldFgDefault}
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          >
-            {pr.title}
-          </Link>
-          <div className={styles.flexCenter}>
+          {/* The open review conversations sit beside the title, in the room a short title leaves. */}
+          <div className={styles.titleLine}>
+            <Link
+              href={pr.html_url}
+              target="_blank"
+              rel="noreferrer"
+              className={styles.title}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
+              {pr.title}
+            </Link>
+            <ReviewThreadChips pr={pr} />
+          </div>
+          <div className={styles.metaLine}>
             <Text className={styles.small}>#{pr.number}</Text>
             <BranchName as="span" className={styles.small}>{pr.head.ref}</BranchName>
             <ChevronRightIcon size={12} />
@@ -158,6 +163,7 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
               bundleName={`pr-${pr.number}-artifacts`}
             />
           )}
+          <ReviewThreadsResolveButton pr={pr} />
           <RerunFailedJobsButton
             owner={owner}
             repo={repo}

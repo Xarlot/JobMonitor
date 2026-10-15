@@ -36,12 +36,16 @@ const defs = {
    * it into the dashboard polls would make the app look busier the moment anyone armed a rerun.
    */
   GH_AUTO_RERUN_POLL: { id: 1011, key: 'gh.auto_rerun_poll' },
+  /** A pull request's review threads — the one read that goes through GraphQL. */
+  GH_REVIEW_THREADS_READ: { id: 1012, key: 'gh.review_threads_read' },
 
   // GitHub writes. The only two write endpoints, plus the branch helpers that compose them.
   GH_RERUN_WRITE: { id: 1020, key: 'gh.rerun_write' },
   GH_AUTOMERGE_WRITE: { id: 1021, key: 'gh.automerge_write' },
   GH_BRANCH_ACTION: { id: 1022, key: 'gh.branch_action' },
   GH_FORK_SYNC: { id: 1023, key: 'gh.fork_sync' },
+  /** Resolving or replying to a review thread — GraphQL mutations, like arming auto-merge. */
+  GH_REVIEW_THREAD_WRITE: { id: 1024, key: 'gh.review_thread_write' },
 
   // ── 1100 local computation ───────────────────────────────────────────────────────────────────
   // Cheap individually, but they run on every poll against every flow, so a regression here is
@@ -65,6 +69,9 @@ const defs = {
   CLAUDE_PR_COMPOSE: { id: 1205, key: 'claude.pr_compose' },
   CLAUDE_FAILURE_CAUSE: { id: 1206, key: 'claude.failure_cause' },
   CLAUDE_LOG_MARKS: { id: 1207, key: 'claude.log_marks' },
+  CLAUDE_REVIEW_REPLY: { id: 1208, key: 'claude.review_reply' },
+  CLAUDE_REVIEW_RESOLVE_NOTE: { id: 1209, key: 'claude.review_resolve_note' },
+  CLAUDE_REVIEW_REPLY_IMPROVE: { id: 1210, key: 'claude.review_reply_improve' },
 
   // ── 1300 app lifecycle ───────────────────────────────────────────────────────────────────────
   APP_STARTUP: { id: 1300, key: 'app.startup' },

@@ -94,7 +94,24 @@ export async function mockFetch(
     return json({ message: 'Successfully fetched and fast-forwarded', merge_type: 'fast-forward' }, null);
   }
   if (path === '/graphql') {
-    // enablePullRequestAutoMerge is the app's only GraphQL call. A refusal here would be
+    const gql = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+      query?: string;
+      variables?: Record<string, unknown>;
+    };
+    const query = gql.query ?? '';
+    // Review threads: one PR has open conversations, so the count and the dialog are walkable.
+    if (/^\s*query ReviewThreads/.test(query)) {
+      return json({ data: mockReviewThreads(Number(gql.variables?.number)) }, null);
+    }
+    if (query.includes('resolveReviewThread')) {
+      const id = String(gql.variables?.threadId);
+      mockResolvedThreads.add(id);
+      return json({ data: { resolveReviewThread: { thread: { id, isResolved: true } } } }, null);
+    }
+    if (query.includes('addPullRequestReviewThreadReply')) {
+      return json({ data: { addPullRequestReviewThreadReply: { comment: { id: `reply-${Date.now()}` } } } }, null);
+    }
+    // enablePullRequestAutoMerge is the app's only other GraphQL call. A refusal here would be
     // HTTP 200 with an `errors` array — worth remembering, but success is what the tab
     // needs to be walkable offline.
     return json(
@@ -107,6 +124,12 @@ export async function mockFetch(
       },
       null,
     );
+  }
+
+  // A file at a ref — read for the note Claude writes when resolving a review comment.
+  if (/\/contents\/.+/.test(path)) {
+    const file = MOCK_EXPORTER_SOURCE;
+    return json({ type: 'file', encoding: 'base64', content: btoa(file) }, inm);
   }
 
   const refsMatch = path.match(/^\/repos\/[^/]+\/([^/]+)\/git\/matching-refs\/heads\/(.+)$/);
@@ -266,3 +289,88 @@ export async function mockFetch(
     headers: { 'content-type': 'application/json' },
   });
 }
+
+/** Threads resolved in this session, so resolving one in mock mode visibly lowers the count. */
+const mockResolvedThreads = new Set<string>();
+
+function mockReviewThreads(prNumber: number) {
+  const author = (login: string) => ({ login, avatarUrl: `https://avatars.githubusercontent.com/${login}` });
+  const thread = (
+    id: string,
+    path: string,
+    line: number,
+    comments: [string, string][],
+    resolved = false,
+    outdated = false,
+  ) => ({
+    id,
+    isResolved: resolved || mockResolvedThreads.has(id),
+    isOutdated: outdated,
+    path,
+    line,
+    originalLine: line,
+    viewerCanResolve: true,
+    viewerCanReply: true,
+    comments: {
+      totalCount: comments.length,
+      nodes: comments.map(([login, body], i) => ({
+        id: `${id}-c${i}`,
+        body,
+        createdAt: new Date(Date.now() - (comments.length - i) * 3_600_000).toISOString(),
+        url: `https://github.com/acme/rocket/pull/${prNumber}#discussion_r${i}`,
+        diffHunk: '@@ -10,6 +10,8 @@ public class Exporter {\n     private final Options options;\n+    private int retries = 3;\n+    private Duration backoff;',
+        author: login.endsWith('[bot]')
+          ? { __typename: 'Bot', ...author(login.slice(0, -'[bot]'.length)) }
+          : { __typename: 'User', ...author(login) },
+      })),
+    },
+  });
+  const nodes =
+    prNumber === 37977
+      ? [
+          thread('T_1', 'src/main/java/Exporter.java', 12, [
+            ['reviewer-a', 'Why is `retries` mutable? It is never reassigned.'],
+          ]),
+          thread('T_2', 'src/main/java/Exporter.java', 13, [
+            ['reviewer-b', 'Please give `backoff` a default — a null here NPEs in `retry()`.'],
+            ['octodev', 'Good catch, will do.'],
+          ]),
+          thread('T_3', 'README.md', 4, [['reviewer-a', 'Typo: "recieve".']], true),
+          thread('T_5', 'src/main/java/Exporter.java', 9, [
+            ['copilot-pull-request-reviewer[bot]', 'The constructor does not validate `options`; consider `Objects.requireNonNull`.'],
+          ]),
+          thread('T_6', 'src/main/java/Retry.java', 21, [
+            ['copilot-pull-request-reviewer[bot]', 'Possible off-by-one: the loop runs `retries + 1` times.'],
+          ]),
+          thread(
+            'T_4',
+            'src/main/java/Exporter.java',
+            11,
+            [['reviewer-c', 'Make `options` final and inject it — see the **builder** pattern in `Importer`.']],
+            false,
+            true,
+          ),
+        ]
+      : [];
+  return {
+    repository: {
+      pullRequest: {
+        reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes },
+      },
+    },
+  };
+}
+
+/** The one file the mock review threads sit on, as it is "now" — `backoff` has its default. */
+const MOCK_EXPORTER_SOURCE = `package acme.rocket;
+
+public class Exporter {
+    private final Options options;
+    private final int retries = 3;
+    private Duration backoff = Duration.ofSeconds(1);
+
+    public Exporter(Options options) {
+        this.options = options;
+    }
+}
+`;

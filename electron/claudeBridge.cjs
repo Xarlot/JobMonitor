@@ -45,9 +45,15 @@ const NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
 /**
  * Which tasks `analyze` will run. Every one of them must appear in each per-task table below;
- * `pr` is deliberately absent, since it arrives through `compose` and has no run to analyse.
+ * `pr` and `reply` are deliberately absent, since they arrive through `compose` and have no run to
+ * analyse.
  */
 const ANALYZE_DEPTHS = new Set(['quick', 'deep', 'log', 'blame', 'cause', 'marks']);
+/**
+ * Which tasks `compose` will run: the pull-request write-up and a draft reply to a review
+ * comment. Both are one turn over text the renderer supplies, with no run behind them.
+ */
+const COMPOSE_TASKS = new Set(['pr', 'reply']);
 
 const PROBE_TIMEOUT_MS = 5_000;
 /**
@@ -131,6 +137,7 @@ const CLAUDE_MODEL = {
   cause: 'sonnet',
   marks: 'sonnet',
   pr: 'sonnet',
+  reply: 'sonnet',
 };
 const CLAUDE_EFFORT = {
   quick: 'medium',
@@ -140,6 +147,7 @@ const CLAUDE_EFFORT = {
   cause: 'medium',
   marks: 'medium',
   pr: 'medium',
+  reply: 'medium',
 };
 
 /**
@@ -180,6 +188,9 @@ const TIMEOUT_BY_TASK = {
   // Summarising a commit list that is already in the prompt. If this is still going after
   // ninety seconds something is wrong, and the caller has a template to fall back on.
   pr: 90_000,
+  // A reply to one review comment, from the thread already in the prompt. Same budget as the
+  // write-up, for the same reason: one turn on material it was handed.
+  reply: 90_000,
 };
 const MAX_TURNS_BY_TASK = {
   quick: QUICK_MAX_TURNS,
@@ -195,6 +206,7 @@ const MAX_TURNS_BY_TASK = {
   cause: 12,
   marks: 1,
   pr: 1,
+  reply: 1,
 };
 /** The tasks that go and fetch evidence; the rest work from what they are handed. */
 const USES_TOOLS = {
@@ -208,6 +220,7 @@ const USES_TOOLS = {
   cause: true,
   marks: false,
   pr: false,
+  reply: false,
 };
 
 /** Thinking budgets used only as the fallback when --effort isn't understood. */
@@ -1025,7 +1038,7 @@ async function compose(sender, payload) {
   // A closed set, checked rather than trusted: `task` indexes the per-task budget tables,
   // and an unrecognised key would read `undefined` out of all of them — which reaches
   // `setTimeout(kill, undefined)` and kills the child the instant it spawns.
-  if (task !== 'pr') return { ok: false, error: 'Invalid task.' };
+  if (!COMPOSE_TASKS.has(task)) return { ok: false, error: 'Invalid task.' };
 
   const emit = (phase, detail = {}) => {
     try {
@@ -1111,6 +1124,7 @@ function registerClaudeIpc(ipcMain) {
 module.exports = {
   registerClaudeIpc,
   ANALYZE_DEPTHS,
+  COMPOSE_TASKS,
   claudeVariants,
   createStreamParser,
   installSkill,

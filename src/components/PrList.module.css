@@ -27,6 +27,31 @@
   color: var(--fgColor-muted);
 }
 
+/* The line under the title. Wraps rather than running under the action buttons on a narrow window. */
+.metaLine {
+  composes: flexCenter;
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+/* The title, then the review-comment chips in whatever width it leaves. */
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-12);
+  min-width: 0;
+}
+
+/* Keeps most of a long title; the chips give way first. */
+.title {
+  composes: boldFgDefault;
+  flex: 0 1 auto;
+  min-width: 8em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .small {
   font-size: var(--text-body-size-small);
 }

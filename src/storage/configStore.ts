@@ -394,6 +394,16 @@ export const aiSchema = z
      * investigating anything.
      */
     pr: aiTaskSchema('sonnet', 'medium'),
+    /**
+     * A draft reply to a review comment, from the thread and the diff hunk it sits on. One turn,
+     * no tools, and only ever a draft: the user edits it and posts it themselves.
+     */
+    reply: aiTaskSchema('sonnet', 'medium'),
+    /**
+     * The note posted when resolving a review comment: why it can be closed, judged from the
+     * thread and the file as it is now at the PR head. One turn, no tools, and only a draft.
+     */
+    resolve: aiTaskSchema('sonnet', 'medium'),
   })
   .prefault({});
 
@@ -500,6 +510,8 @@ export const DEFAULT_CONFIG: MonitorConfig = {
     cause: { model: 'sonnet', effort: 'medium', prompt: '' },
     marks: { model: 'sonnet', effort: 'medium', prompt: '' },
     pr: { model: 'sonnet', effort: 'medium', prompt: '' },
+    reply: { model: 'sonnet', effort: 'medium', prompt: '' },
+    resolve: { model: 'sonnet', effort: 'medium', prompt: '' },
   },
   autoUpdate: true,
   rateLimitWarnAt: 50,

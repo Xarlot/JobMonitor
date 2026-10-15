@@ -6,7 +6,8 @@
  *    in-memory ETag cache; a 304 returns the cached body with `notModified: true`
  *    so callers can skip state updates (and 304s don't count against the rate limit).
  *  - `ghPost` and `ghWriteJson` are the write paths — uncached, unconditional, and
- *    used only to re-run failed Actions jobs and to arm auto-merge on a PR. Both
+ *    used for the writes listed in development.md (re-running failed jobs, arming
+ *    auto-merge, resolving and replying to review threads, …). Both
  *    funnel through one internal function that is gated by tokenCapability, so no
  *    write is reachable unless the token is known to permit it.
  *  - Feeds rate-limit headers into the rateLimit store and token scopes into the
@@ -570,6 +571,72 @@ export async function ghWriteJson<T>(
     return (await res.json()) as T;
   } catch {
     throw new GitHubApiError('GitHub returned a response that could not be read.', res.status);
+  }
+}
+
+/**
+ * A GraphQL **query** — a read that happens to travel as a POST.
+ *
+ * Review threads, and whether each is resolved, exist only in GraphQL: the REST review-comment
+ * endpoints carry no resolution state at all. So reading them needs a POST, and the write path
+ * is the wrong home for it — {@link ghWriteRaw} is gated on write capability, and a read-only
+ * token must still be able to *see* how many comments are open.
+ *
+ * Refuses anything that is not a `query` document, so this cannot become an ungated route to a
+ * mutation. Uncached, like every POST: GraphQL answers carry no ETag.
+ */
+export async function ghGraphQlQuery<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  if (!/^\s*query\b/.test(query)) {
+    throw new GitHubApiError('Only GraphQL queries may be sent as a read.', 0);
+  }
+  const token = tokenProvider();
+  if (!token) throw new GitHubApiError('No token available; unlock first.', 401);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}/graphql`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: controller.signal,
+      referrerPolicy: 'no-referrer',
+    });
+  } catch {
+    recordRequest('error');
+    if (controller.signal.aborted) throw new GitHubApiError('Request timed out.', 0);
+    throw new GitHubApiError('Network request to GitHub failed.', 0);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  recordTokenScopes(res.headers);
+  if (res.status === 403 || res.status === 429) {
+    recordRequest('error');
+    if (classifyForbidden(res).isRateLimit) {
+      throw new GitHubApiError('GitHub rate limit reached.', res.status, true);
+    }
+    throw new GitHubApiError('Forbidden — check token scopes.', 403);
+  }
+  if (!res.ok) {
+    recordRequest('error');
+    throw new GitHubApiError(`GitHub API error (HTTP ${res.status}).`, res.status);
+  }
+  try {
+    const body = (await res.json()) as T;
+    recordRequest('fresh');
+    return body;
+  } catch {
+    recordRequest('error');
+    throw new GitHubApiError('The GitHub response body could not be read.', 0);
   }
 }
 
