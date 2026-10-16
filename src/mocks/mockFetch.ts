@@ -111,6 +111,9 @@ export async function mockFetch(
     if (query.includes('addPullRequestReviewThreadReply')) {
       return json({ data: { addPullRequestReviewThreadReply: { comment: { id: `reply-${Date.now()}` } } } }, null);
     }
+    if (query.includes('updatePullRequestBranch')) {
+      return json({ data: { updatePullRequestBranch: { pullRequest: { number: 38100, headRefOid: 'f00dfacecafe0000' } } } }, null);
+    }
     // enablePullRequestAutoMerge is the app's only other GraphQL call. A refusal here would be
     // HTTP 200 with an `errors` array — worth remembering, but success is what the tab
     // needs to be walkable offline.

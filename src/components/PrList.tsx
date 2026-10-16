@@ -25,6 +25,7 @@ import { TimelineDialog, type GanttItem } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { ArtifactsButton } from './ArtifactsButton';
 import { RerunFailedJobsButton } from './RerunFailedJobsButton';
+import { UpdateBranchButton } from './UpdateBranchButton';
 import { runIdFromUrl } from '../api/endpoints';
 import { formatRelative } from '../lib/format';
 import styles from './PrList.module.css';
@@ -171,6 +172,8 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
             subtitle={`${pr.title} · #${pr.number}`}
             onRerun={() => invalidateChecks(pr.number)}
           />
+          {/* refreshAll: the head SHA moves, and the checks are read for the head. */}
+          <UpdateBranchButton owner={owner} repo={repo} pr={pr} onUpdated={refreshAll} />
           {/* refreshAll, not invalidateChecks: arming changes the PR itself (auto_merge
               and the body), and only a re-read of the PR list shows that. */}
           <AutoMergeButton owner={owner} repo={repo} pr={pr} onArmed={refreshAll} />

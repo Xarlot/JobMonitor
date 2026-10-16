@@ -111,6 +111,8 @@ const defs = {
   REVIEW_THREADS_RESOLVED_OUTDATED: { id: 507, key: 'review.threads_resolved_outdated' },
   /** "Resolve bot comments": every open conversation a review bot started. */
   REVIEW_THREADS_RESOLVED_BOTS: { id: 508, key: 'review.threads_resolved_bots' },
+  /** "Update branch" on a pull request — merge or rebase, from the PR row. */
+  PR_BRANCH_UPDATED: { id: 509, key: 'pr.branch_updated' },
 
   // ── 600 AI ───────────────────────────────────────────────────────────────────────────────────
   // Mirrors the depths claudeBridge.cjs accepts: quick | deep | log | blame | cause | marks,

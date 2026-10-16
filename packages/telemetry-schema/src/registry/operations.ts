@@ -46,6 +46,8 @@ const defs = {
   GH_FORK_SYNC: { id: 1023, key: 'gh.fork_sync' },
   /** Resolving or replying to a review thread — GraphQL mutations, like arming auto-merge. */
   GH_REVIEW_THREAD_WRITE: { id: 1024, key: 'gh.review_thread_write' },
+  /** "Update branch" on a pull request — the updatePullRequestBranch mutation. */
+  GH_UPDATE_BRANCH_WRITE: { id: 1025, key: 'gh.update_branch_write' },
 
   // ── 1100 local computation ───────────────────────────────────────────────────────────────────
   // Cheap individually, but they run on every poll against every flow, so a regression here is

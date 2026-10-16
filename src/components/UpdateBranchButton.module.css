@@ -1,0 +1,41 @@
+/* The pull icon with the behind count at its upper right, like the review-comments count. */
+.icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.badge {
+  position: absolute;
+  top: -6px;
+  left: 9px;
+  box-sizing: border-box;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--borderRadius-full);
+  /* Attention, not danger: behind is a state to act on, not a failure. */
+  background-color: var(--bgColor-attention-emphasis);
+  color: var(--fgColor-onEmphasis);
+  font-size: 9px;
+  font-weight: var(--base-text-weight-semibold);
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1.5px var(--bgColor-default);
+}
+
+.footer {
+  display: flex;
+  gap: var(--base-size-8);
+  width: 100%;
+}
+
+.grow {
+  flex: 1;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}

@@ -4,6 +4,17 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Update branch on a pull request.** Beside the re-run button, a pull button (an arrow into a repository) does what GitHub's
+  **Update branch** does. A yellow badge on it shows how many commits the PR is behind its base. Like
+  the review-comments button, it opens a menu — **With a merge commit** or **With a rebase**, each
+  saying what it does — then confirms in a small dialog. The update is pinned to the head shown, so a
+  push in the meantime makes GitHub refuse rather than update a head nobody looked at. The count is
+  re-read when the head moves, when the menu opens, and otherwise every 10 minutes. Hidden when the
+  token can't write.
+
 ## [3.5.0]
 
 **Review comments you can close without leaving the board, and a red badge that says what to do.**
