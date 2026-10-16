@@ -4,7 +4,12 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.6.0]
+
+**Update a PR's branch from the board, and a PR list that costs a fraction of the API it did.**
+Each pull request gets GitHub's **Update branch** — merge or rebase — with how far behind its base
+it is on a badge. The recently merged list is no longer re-read on every poll, which on a busy
+repository had become most of the app's REST usage.
 
 ### Added
 - **Update branch on a pull request.** Beside the re-run button, a pull button (an arrow into a repository) does what GitHub's
