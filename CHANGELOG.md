@@ -15,6 +15,13 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
   re-read when the head moves, when the menu opens, and otherwise every 10 minutes. Hidden when the
   token can't write.
 
+### Fixed
+- **The PR list spent most of the REST budget re-reading merged pull requests.** Every list poll paged
+  back a week through the repository's closed PRs — seven pages of 1.6 MB on a busy upstream — and
+  none came back as a 304: each PR embeds its repository, whose `pushed_at` moves with every push, so
+  the ETag changes between any two polls. The merged list is now re-read when one of your open PRs
+  leaves the open list, on **Refresh**, and otherwise every 30 minutes.
+
 ## [3.5.0]
 
 **Review comments you can close without leaving the board, and a red badge that says what to do.**

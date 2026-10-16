@@ -225,6 +225,34 @@ function mergeEntries(prev: PrEntry[], incoming: PullRequest[]): PrEntry[] {
   });
 }
 
+/** How often the merged-PR scan runs when nothing suggests a PR of ours has merged. */
+export const MERGED_SCAN_INTERVAL_MS = 30 * 60_000;
+
+/**
+ * Whether this list poll should also re-read the recently merged PRs.
+ *
+ * Not on every poll, because that scan pages through `state=closed` a week back — seven pages of
+ * 1.6 MB on DevExpress/dxvcs — and none of it comes back as a 304: every PR in a page embeds the
+ * base repository, whose `pushed_at` moves with any push anywhere in it, so the ETag changes
+ * between any two polls of a busy repository. Read on every poll it was most of the app's REST
+ * budget.
+ *
+ * A PR can only join the merged list by leaving the open one, so the scan runs when that happens,
+ * on the first read (`lastScanAt` null — also after the scope or the count changed), on a manual
+ * refresh, and otherwise on a slow timer that catches a PR merged while the app wasn't watching.
+ */
+export function shouldScanMerged(opts: {
+  lastScanAt: number | null;
+  prevOpen: ReadonlySet<number> | null;
+  nowOpen: ReadonlySet<number>;
+  forced: boolean;
+  now: number;
+}): boolean {
+  if (opts.forced || opts.lastScanAt === null || opts.prevOpen === null) return true;
+  for (const n of opts.prevOpen) if (!opts.nowOpen.has(n)) return true;
+  return opts.now - opts.lastScanAt >= MERGED_SCAN_INTERVAL_MS;
+}
+
 /**
  * The two states counted for telemetry, as last seen. Counted when one turns *on*, so an
  * install that sits in it all day counts once, not once per poll or per changed PR.
@@ -274,6 +302,12 @@ export function useGitHubDashboard(): DashboardState {
   const [reviewThreads, setReviewThreads] = useState<ReadonlyMap<number, readonly ReviewThread[]>>(
     () => new Map(),
   );
+  /** The last finished merged-PR scan, keyed by the scope and count it was made for. */
+  const mergedScanRef = useRef<{ key: string; at: number } | null>(null);
+  /** Our open PR numbers as of the last list read; null until the first. */
+  const openSeenRef = useRef<ReadonlySet<number> | null>(null);
+  /** Set by a manual refresh, so the Refresh button re-reads merged PRs too. */
+  const forceMergedScanRef = useRef(false);
   /** PR number → the `updated_at` its threads were read at (or are being read at). */
   const threadsForRef = useRef<Map<number, string>>(new Map());
   /** PR number → the `updated_at` its reviews were read at (or are being read at). */
@@ -299,6 +333,7 @@ export function useGitHubDashboard(): DashboardState {
     threadsForRef.current = new Map();
     reviewsForRef.current = new Map();
     reviewsSeenRef.current = new Map();
+    openSeenRef.current = null;
   }, [scopeKey]);
 
   const fetchList = useCallback(async () => {
@@ -310,10 +345,18 @@ export function useGitHubDashboard(): DashboardState {
     reportPrList(pulls, ours, config, pages, truncated);
 
     const count = config.mergedPrs.count;
+    const nowOpen = new Set(ours.map((pr) => pr.number));
+    const prevOpen = openSeenRef.current;
+    openSeenRef.current = nowOpen;
     if (count === 0) {
       setMergedPrs((prev) => (prev.length === 0 ? prev : []));
       return;
     }
+    const scanKey = `${scopeKey}|${count}`;
+    const forced = forceMergedScanRef.current;
+    forceMergedScanRef.current = false;
+    const lastScanAt = mergedScanRef.current?.key === scanKey ? mergedScanRef.current.at : null;
+    if (!shouldScanMerged({ lastScanAt, prevOpen, nowOpen, forced, now: Date.now() })) return;
     try {
       // `state=closed` holds every PR of the repo closed by anyone, merged or not,
       // so read pages until one is older than the window (a PR can't have merged
@@ -338,11 +381,13 @@ export function useGitHubDashboard(): DashboardState {
         )
         .slice(0, count);
       setMergedPrs((prev) => mergeEntries(prev, merged));
+      // Only a scan that finished counts, so a failed one is retried on the next poll.
+      mergedScanRef.current = { key: scanKey, at: Date.now() };
     } catch {
       // Merged PRs are supplementary. Failing the whole poll here would also throw
       // away the open-PR update we just made, so keep whatever we had.
     }
-  }, [config]);
+  }, [config, scopeKey]);
 
   const fetchChecks = useCallback(async () => {
     // Merged PRs are terminal, so each is fetched once and then skipped forever.
@@ -554,6 +599,7 @@ export function useGitHubDashboard(): DashboardState {
   }, [prs, enabled, notifyPr]);
 
   const refreshAll = useCallback(() => {
+    forceMergedScanRef.current = true;
     void list.refresh();
     void checks.refresh();
   }, [list, checks]);
