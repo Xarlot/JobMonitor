@@ -702,7 +702,14 @@ Every job (and every PR check) has three quick actions:
 
 There’s also a **Timeline** (Gantt) button on each PR and flow run: bars positioned by start time
 and sized by duration, splitting **runner allocation** (queue + “Set up job”) from the actual
-**work** — so it’s obvious whether time went to waiting or running.
+**work** — so it’s obvious whether time went to waiting or running. On a PR this applies to the
+checks that are GitHub Actions jobs: the timeline opens with plain bars and fills in each job’s queue
+time a moment later. Checks from other apps and commit statuses have no queue time to show and stay
+plain. The **Wait** column gives each bar's wait as a number, and hovering a bar splits it into
+*queued* and *set-up*.
+
+A flow run's **Summary** has a **Timing** section with the same numbers per job — queued, set up,
+work, longest wait first — under a line with the longest wait for a runner and the total.
 
 ![Timeline](docs/screenshots/timeline.png)
 

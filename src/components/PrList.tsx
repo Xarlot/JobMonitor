@@ -21,7 +21,7 @@ import { StatusBadge } from './StatusBadge';
 import { CheckRunsTable } from './CheckRunsTable';
 import { PrReviewers } from './PrReviewers';
 import { ReviewThreadChips, ReviewThreadsResolveButton } from './ReviewThreads';
-import { TimelineDialog, type GanttItem } from './TimelineDialog';
+import { PrChecksTimelineDialog } from './TimelineDialog';
 import { OverallSummaryDialog } from './OverallSummaryDialog';
 import { ArtifactsButton } from './ArtifactsButton';
 import { RerunFailedJobsButton } from './RerunFailedJobsButton';
@@ -66,13 +66,6 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
         .find((id) => id != null) ?? null,
     [entry.checkRuns],
   );
-  const timelineItems: GanttItem[] = entry.checkRuns.map((c) => ({
-    id: c.id,
-    label: c.name,
-    status: statusToOverall(c.status, c.conclusion),
-    started_at: c.started_at,
-    completed_at: c.completed_at,
-  }));
   /**
    * Open and highlight the row that was navigated to.
    *
@@ -191,10 +184,12 @@ function PrRow({ entry, focused }: { entry: PrEntry; focused?: boolean }) {
         </div>
       </div>
       {timelineOpen && (
-        <TimelineDialog
+        <PrChecksTimelineDialog
+          owner={owner}
+          repo={repo}
           title={pr.title}
           subtitle={`#${pr.number} · check timeline`}
-          items={timelineItems}
+          checkRuns={entry.checkRuns}
           onClose={() => setTimelineOpen(false)}
         />
       )}

@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Flash, Label, Spinner, Text } from '@primer/react';
 import { AlertIcon, InfoIcon, LinkExternalIcon, XCircleFillIcon } from '@primer/octicons-react';
-import type { Annotation, OverallStatus, WorkflowRun } from '../api/types';
+import type { Annotation, Job, OverallStatus, WorkflowRun } from '../api/types';
 import { checkRunIdFromUrl } from '../api/endpoints';
 import { fetchAnnotationsOrEmpty } from '../api/annotations';
 import { fetchAllRunJobs } from '../api/jobs';
 import { statusToOverall } from '../lib/status';
+import { formatMs, summarizeTiming, type TimingSummary } from '../lib/jobTiming';
 import { StatusBadge } from './StatusBadge';
 import { Modal } from './Modal';
 import styles from './OverallSummaryDialog.module.css';
@@ -40,8 +41,73 @@ function isAttention(s: OverallStatus): boolean {
   return s === 'failure' || s === 'in_progress' || s === 'pending';
 }
 
+/** Jobs shown in the timing table before "Show all". */
+const TIMING_ROWS = 10;
+
+/**
+ * Where the run's time went: the wait for runners in one line, then each job's queue, set-up and
+ * work — longest wait first, since that is what the section is for.
+ */
+function TimingSection({ timing }: { timing: TimingSummary }) {
+  const [showAll, setShowAll] = useState(false);
+  const { longestQueue, totalQueuedMs, stillQueued } = timing;
+  if (!longestQueue) return null;
+  const rows = [...timing.jobs].sort((a, b) => (b.queuedMs ?? -1) - (a.queuedMs ?? -1));
+  const shown = showAll ? rows : rows.slice(0, TIMING_ROWS);
+  return (
+    <div className={styles.timing}>
+      <Text as="h3" className={styles.bodyBold}>
+        Timing
+      </Text>
+      <Text as="p" className={styles.timingHeadline}>
+        Longest wait for a runner: <strong>{formatMs(longestQueue.queuedMs)}</strong> ({longestQueue.name}
+        {longestQueue.stillQueued ? ', still waiting' : ''}) · all jobs together waited{' '}
+        <strong>{formatMs(totalQueuedMs)}</strong>
+        {stillQueued > 0 && ` · ${stillQueued} ${stillQueued === 1 ? 'job has' : 'jobs have'} no runner yet`}
+      </Text>
+      <table className={styles.timingTable}>
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Queued</th>
+            <th>Set up</th>
+            <th>Work</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((t) => (
+            <tr key={t.id}>
+              <td className={styles.timingName} title={t.name}>
+                {t.name}
+              </td>
+              <td>{t.stillQueued ? `${formatMs(t.queuedMs)}…` : formatMs(t.queuedMs)}</td>
+              <td>{formatMs(t.setupMs)}</td>
+              <td>{formatMs(t.workMs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > TIMING_ROWS && (
+        <Button size="small" variant="invisible" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? 'Show fewer' : `Show all ${rows.length} jobs`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** Fetches annotations for attention items and renders the actual content per item. */
-function SummaryBody({ owner, repo, items }: { owner: string; repo: string; items: SummaryItem[] }) {
+function SummaryBody({
+  owner,
+  repo,
+  items,
+  timing,
+}: {
+  owner: string;
+  repo: string;
+  items: SummaryItem[];
+  timing?: TimingSummary | null;
+}) {
   const [annByItem, setAnnByItem] = useState<Record<string, Annotation[]>>({});
   const [annLoading, setAnnLoading] = useState(true);
 
@@ -94,6 +160,8 @@ function SummaryBody({ owner, repo, items }: { owner: string; repo: string; item
           </Label>
         ))}
       </div>
+
+      {timing && <TimingSection timing={timing} />}
 
       <Text as="h3" className={styles.bodyBold}>
         Needs attention ({attention.length})
@@ -159,6 +227,7 @@ export function OverallSummaryDialog({
   loading,
   error,
   htmlUrl,
+  timing,
   onClose,
 }: {
   title: string;
@@ -169,6 +238,8 @@ export function OverallSummaryDialog({
   loading?: boolean;
   error?: string | null;
   htmlUrl?: string | null;
+  /** Queue / set-up / work per job — only a flow run has the jobs to say. */
+  timing?: TimingSummary | null;
   onClose: () => void;
 }) {
   return (
@@ -197,7 +268,7 @@ export function OverallSummaryDialog({
       ) : error ? (
         <Flash variant="danger" className={styles.small}>{error}</Flash>
       ) : (
-        <SummaryBody owner={owner} repo={repo} items={items} />
+        <SummaryBody owner={owner} repo={repo} items={items} timing={timing} />
       )}
     </Modal>
   );
@@ -215,7 +286,7 @@ export function RunOverallSummaryDialog({
   run: WorkflowRun;
   onClose: () => void;
 }) {
-  const [items, setItems] = useState<SummaryItem[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -226,14 +297,7 @@ export function RunOverallSummaryDialog({
     fetchAllRunJobs(owner, repo, run.id)
       .then((jobs) => {
         if (!active) return;
-        setItems(
-          jobs.map((j) => ({
-            id: j.id,
-            label: j.name,
-            status: statusToOverall(j.status, j.conclusion),
-            checkRunId: checkRunIdFromUrl(j.check_run_url),
-          })),
-        );
+        setJobs(jobs);
       })
       .catch((e) => active && setError(e instanceof Error ? e.message : String(e)))
       .finally(() => active && setLoading(false));
@@ -241,6 +305,18 @@ export function RunOverallSummaryDialog({
       active = false;
     };
   }, [owner, repo, run.id]);
+
+  const items = useMemo<SummaryItem[]>(
+    () =>
+      jobs.map((j) => ({
+        id: j.id,
+        label: j.name,
+        status: statusToOverall(j.status, j.conclusion),
+        checkRunId: checkRunIdFromUrl(j.check_run_url),
+      })),
+    [jobs],
+  );
+  const timing = useMemo(() => summarizeTiming(jobs), [jobs]);
 
   return (
     <OverallSummaryDialog
@@ -252,6 +328,7 @@ export function RunOverallSummaryDialog({
       loading={loading}
       error={error}
       htmlUrl={run.html_url}
+      timing={timing}
       onClose={onClose}
     />
   );

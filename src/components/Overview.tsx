@@ -29,7 +29,7 @@ import { isFlowHidden, latestRunJobs } from '../lib/flowEmptiness';
 import { StatusBadge } from './StatusBadge';
 import { formatRelative } from '../lib/format';
 import { OverallSummaryDialog, RunOverallSummaryDialog } from './OverallSummaryDialog';
-import { FlowRunTimelineDialog, TimelineDialog, type GanttItem } from './TimelineDialog';
+import { FlowRunTimelineDialog, PrChecksTimelineDialog } from './TimelineDialog';
 import { GroupStatusCounts, groupVerdict } from './GroupStatusCounts';
 import { ArtifactsButton } from './ArtifactsButton';
 import { RerunFailedJobsButton } from './RerunFailedJobsButton';
@@ -224,15 +224,6 @@ export function Overview({
     (f) => latestFinalStatus(flowStates.get(f.id)?.runs ?? []) === 'failure',
   ).length;
   const totalFailing = failingPrs + failingFlows;
-
-  const checkItems = (entry: PrEntry): GanttItem[] =>
-    entry.checkRuns.map((c) => ({
-      id: c.id,
-      label: c.name,
-      status: statusToOverall(c.status, c.conclusion),
-      started_at: c.started_at,
-      completed_at: c.completed_at,
-    }));
 
   // Artifacts are per-run; the Actions run id lives in a check-run's details_url.
   const prRunId = (entry: PrEntry): number | null =>
@@ -554,10 +545,12 @@ export function Overview({
         />
       )}
       {dlg?.kind === 'prTimeline' && (
-        <TimelineDialog
+        <PrChecksTimelineDialog
+          owner={upOwner}
+          repo={upRepo}
           title={dlg.entry.pr.title}
           subtitle={`#${dlg.entry.pr.number} · check timeline`}
-          items={checkItems(dlg.entry)}
+          checkRuns={dlg.entry.checkRuns}
           onClose={() => setDlg(null)}
         />
       )}

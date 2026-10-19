@@ -4,6 +4,20 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Queue time in a pull request's check timeline.** Like a flow run's timeline, each check that is a
+  GitHub Actions job now shows how long it waited for a runner — the queue plus “Set up job”, hatched
+  — before the work itself. The timeline opens at once with plain bars and fills this in when the
+  jobs are read. Checks from other apps and commit statuses stay plain: GitHub records no queue time
+  for them.
+- **The wait, in numbers.** The timeline gets a **Wait** column beside **Work** whenever a bar has a
+  wait, and the bar's tooltip splits it into queued and set-up. A flow run's **summary** gets a
+  **Timing** section: the longest wait for a runner and which job it was, the waits of all jobs added
+  up, how many jobs still have no runner, and a table of each job's queue, set-up and work — longest
+  wait first.
+
 ## [3.7.0]
 
 **Re-run a flow, or start one, without leaving the board.** Every flow run gets a re-run menu — all

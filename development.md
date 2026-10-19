@@ -66,7 +66,11 @@ place rather than trusting each caller to have checked.
 - **Timeline (Gantt)** — a button on each PR and flow run opens a Gantt-style timeline: bars
   positioned by start offset and sized by duration. For flow-run jobs, each bar is split into
   **runner allocation** (queue + “Set up job”) and **payload** (actual work) so slow setup vs
-  slow work is obvious.
+  slow work is obvious. PR checks get the same split for the ones backed by an Actions job: a
+  check-run has no queue time, so `PrChecksTimelineDialog` reads the jobs of every run named in
+  the checks' `details_url` (one ETag-cached `fetchAllRunJobs` per run) and swaps each check's bar
+  for its job's — matched by the job id in `details_url`, or the job's own check-run id. Other
+  checks keep their plain bar.
 - **Overall summary** — a button on each flow run and PR opens a summary: a status roll-up plus
   the **actual annotation content** (errors/warnings with file:line + message) of every job/check
   that needs attention. (Per-job/check Summary shows that one's annotations; the run/PR summary

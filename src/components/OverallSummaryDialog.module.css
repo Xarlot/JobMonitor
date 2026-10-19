@@ -95,3 +95,37 @@
   composes: annHeader;
   margin-bottom: var(--base-size-8);
 }
+
+.timing {
+  margin-bottom: var(--base-size-16);
+}
+
+.timingHeadline {
+  margin: 0 0 var(--base-size-8);
+  font-size: var(--text-body-size-small);
+}
+
+.timingTable {
+  border-collapse: collapse;
+  font-size: var(--text-body-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.timingTable th {
+  text-align: left;
+  font-weight: var(--base-text-weight-semibold);
+  color: var(--fgColor-muted);
+  padding: var(--base-size-4) var(--base-size-16) var(--base-size-4) 0;
+}
+
+.timingTable td {
+  padding: var(--base-size-4) var(--base-size-16) var(--base-size-4) 0;
+  border-top: 1px solid var(--borderColor-muted);
+  white-space: nowrap;
+}
+
+.timingName {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
