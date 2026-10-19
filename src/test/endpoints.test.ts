@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { pullsPath, repoPath, repoRunsPath, rerunFailedJobsPath } from '../api/endpoints';
+import {
+  pullsPath,
+  repoPath,
+  repoRunsPath,
+  rerunFailedJobsPath,
+  rerunRunPath,
+  workflowDispatchPath,
+} from '../api/endpoints';
 
 describe('pullsPath', () => {
   it('defaults to the open list', () => {
@@ -71,6 +78,23 @@ describe('rerunFailedJobsPath', () => {
   it('encodes owner and repo', () => {
     expect(rerunFailedJobsPath('a b', 'r', 1)).toBe(
       '/repos/a%20b/r/actions/runs/1/rerun-failed-jobs',
+    );
+  });
+});
+
+describe('rerunRunPath', () => {
+  it('builds the POST target for re-running every job', () => {
+    expect(rerunRunPath('acme', 'rocket', 1002)).toBe('/repos/acme/rocket/actions/runs/1002/rerun');
+  });
+});
+
+describe('workflowDispatchPath', () => {
+  it('addresses a workflow by id or by file name', () => {
+    expect(workflowDispatchPath('acme', 'rocket', '42')).toBe(
+      '/repos/acme/rocket/actions/workflows/42/dispatches',
+    );
+    expect(workflowDispatchPath('acme', 'rocket', 'ci build.yml')).toBe(
+      '/repos/acme/rocket/actions/workflows/ci%20build.yml/dispatches',
     );
   });
 });

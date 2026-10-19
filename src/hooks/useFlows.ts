@@ -57,6 +57,8 @@ export interface FlowState {
   runsError: Error | null;
   runsUpdatedAt: number | null;
   refresh: () => void;
+  /** The workflow's id (or file name) to address it by — what a dispatch needs. */
+  workflowRef: () => Promise<string>;
   /** Total non-expired artifact bytes of the latest run; null if unknown/not fetched. */
   latestArtifactBytes: number | null;
 }
@@ -390,6 +392,7 @@ export function useFlow(flow: Flow): FlowState {
     runsError: runsPoll.lastError,
     runsUpdatedAt: runsPoll.lastUpdated,
     refresh: runsPoll.refresh,
+    workflowRef: resolveWorkflowRef,
     latestArtifactBytes,
   };
 }

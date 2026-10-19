@@ -113,6 +113,10 @@ const defs = {
   REVIEW_THREADS_RESOLVED_BOTS: { id: 508, key: 'review.threads_resolved_bots' },
   /** "Update branch" on a pull request — merge or rebase, from the PR row. */
   PR_BRANCH_UPDATED: { id: 509, key: 'pr.branch_updated' },
+  /** A flow run re-run from its row — all jobs or only the failed ones. */
+  FLOW_RUN_RERUN: { id: 510, key: 'flow.run_rerun' },
+  /** A flow's workflow started by `workflow_dispatch` from its card. */
+  FLOW_WORKFLOW_DISPATCHED: { id: 511, key: 'flow.workflow_dispatched' },
 
   // ── 600 AI ───────────────────────────────────────────────────────────────────────────────────
   // Mirrors the depths claudeBridge.cjs accepts: quick | deep | log | blame | cause | marks,

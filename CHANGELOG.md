@@ -4,6 +4,15 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Re-run a flow run, or start a flow, from its card.** Each run row gets a re-run button with a menu
+  — **Re-run all jobs** or **Re-run failed jobs** — that confirms before it sends. The card header gets
+  **Run**, which starts the workflow by `workflow_dispatch` on a branch you pick (the flow's branches
+  are suggested), with optional `name=value` inputs; the card re-polls so the new run shows up. Hidden
+  when the token can't write, and on flows that watch a repository other than the configured one.
+
 ## [3.6.0]
 
 **Update a PR's branch from the board, and a PR list that costs a fraction of the API it did.**

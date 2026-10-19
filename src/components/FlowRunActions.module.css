@@ -1,0 +1,31 @@
+.footer {
+  display: flex;
+  gap: var(--base-size-8);
+  width: 100%;
+}
+
+.grow {
+  flex: 1;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--base-size-8);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--base-size-16);
+}
+
+.mono {
+  font-family: var(--fontStack-monospace);
+}
+
+.note {
+  margin: 0;
+  color: var(--fgColor-muted);
+  font-size: var(--text-body-size-small);
+}

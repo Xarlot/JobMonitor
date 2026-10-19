@@ -12,7 +12,9 @@ is listed here, and every one of them is either behind an explicit click or off 
 
 | Write | Reached by | Default |
 | --- | --- | --- |
-| `POST .../actions/runs/{id}/rerun-failed-jobs` | the re-run button, or the auto-rerun engine | engine off |
+| `POST .../actions/runs/{id}/rerun-failed-jobs` | the re-run button (PR or flow run), or the auto-rerun engine | engine off |
+| `POST .../actions/runs/{id}/rerun` | a flow run's re-run menu (**Re-run all jobs**) | on click |
+| `POST .../actions/workflows/{id}/dispatches` | a flow card's **Run** button | on click |
 | `PATCH .../pulls/{n}` (clears the body) | the arm-auto-merge dialog only | on click |
 | `POST /graphql` — `enablePullRequestAutoMerge` | arming auto-merge, either tab | on click |
 | `POST .../pulls` | the Feature branches tab | on click |

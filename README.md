@@ -638,6 +638,15 @@ A failing job carries a 🐛 button that opens **that same failure in the Failur
 log is coloured, its annotations are listed and its report can be copied. It appears only when the
 failure is in that tab's list, so it never lands you somewhere empty.
 
+**Re-run and start a flow by hand.** Each run row has a re-run button (the circular arrows) with a
+menu — **Re-run all jobs** or **Re-run failed jobs** — and a confirmation before anything is sent. The
+card header has **Run**, which starts the flow's workflow by `workflow_dispatch`: pick a branch (the
+flow's branches are suggested) and, if the workflow takes any, inputs as `name=value` lines. The new
+run appears on the card a few seconds later. Both need the workflow to allow it — **Run** only works
+for a workflow with a `workflow_dispatch` trigger, and GitHub says so if it doesn't. Like every write,
+they are hidden unless the token can write, and on a flow pointed at a repository other than the
+one in Settings → **Repository**, since that is the only repository whose write access is checked.
+
 A **regex flow** shows up as one card per matching workflow — each with its own runs, filters and
 place in a group. The `· regex` suffix next to the workflow file marks a card that came from a
 pattern (hover it to see which one):

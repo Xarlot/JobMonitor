@@ -1,7 +1,14 @@
-/** The repo's workflow list, its push permission, and the one write: re-running jobs. */
+/** The repo's workflow list, its push permission, and the Actions writes: re-running and dispatching. */
 
-import { repoPath, repoRunsPath, rerunFailedJobsPath, workflowsPath } from './endpoints';
-import { ghGet, ghPost, GitHubApiError } from './githubClient';
+import {
+  repoPath,
+  repoRunsPath,
+  rerunFailedJobsPath,
+  rerunRunPath,
+  workflowDispatchPath,
+  workflowsPath,
+} from './endpoints';
+import { ghGet, ghPost, GitHubApiError, type WriteSubject } from './githubClient';
 import { recordPushAccess, recordWriteRefused } from './tokenCapability';
 import { Operation, Telemetry } from '../lib/telemetry';
 import type {
@@ -84,21 +91,51 @@ export async function fetchRunsForHead(
 }
 
 /**
- * Ask GitHub to re-run a run's failed jobs — the app's only write.
+ * An Actions write, with the "GitHub says this token can't write after all" latch.
  *
- * The "GitHub says this token can't write after all" latch lives here rather than
- * in each caller: it is a security-relevant policy, and a future third caller
- * would otherwise have to remember it from scratch.
+ * The latch lives here rather than in each caller: it is a security-relevant policy,
+ * and the next caller would otherwise have to remember it from scratch.
  */
+async function actionsWrite(path: string, body?: unknown, subject?: WriteSubject): Promise<void> {
+  try {
+    await ghPost(path, body, subject);
+  } catch (e) {
+    if (e instanceof GitHubApiError && e.refusal === 'permission') recordWriteRefused();
+    throw e;
+  }
+}
+
+/** Ask GitHub to re-run a run's failed jobs (and the jobs that depend on them). */
 export async function rerunFailedJobs(
   owner: string,
   repo: string,
   runId: number,
 ): Promise<void> {
-  try {
-    await ghPost(rerunFailedJobsPath(owner, repo, runId));
-  } catch (e) {
-    if (e instanceof GitHubApiError && e.refusal === 'permission') recordWriteRefused();
-    throw e;
-  }
+  await actionsWrite(rerunFailedJobsPath(owner, repo, runId));
+}
+
+/** Ask GitHub to re-run every job of a run, as its next attempt. */
+export async function rerunRun(owner: string, repo: string, runId: number): Promise<void> {
+  await actionsWrite(rerunRunPath(owner, repo, runId), undefined, {
+    action: 're-run the workflow',
+    noun: 'Run',
+  });
+}
+
+/**
+ * Start a workflow by `workflow_dispatch` on `ref`. GitHub answers without the new run's id,
+ * so the caller re-polls to find it.
+ */
+export async function dispatchWorkflow(
+  owner: string,
+  repo: string,
+  workflowRef: string,
+  ref: string,
+  inputs: Record<string, string> = {},
+): Promise<void> {
+  await actionsWrite(
+    workflowDispatchPath(owner, repo, workflowRef),
+    Object.keys(inputs).length > 0 ? { ref, inputs } : { ref },
+    { action: 'run this workflow', noun: 'Workflow' },
+  );
 }

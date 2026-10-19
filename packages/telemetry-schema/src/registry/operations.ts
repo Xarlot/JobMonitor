@@ -48,6 +48,10 @@ const defs = {
   GH_REVIEW_THREAD_WRITE: { id: 1024, key: 'gh.review_thread_write' },
   /** "Update branch" on a pull request — the updatePullRequestBranch mutation. */
   GH_UPDATE_BRANCH_WRITE: { id: 1025, key: 'gh.update_branch_write' },
+  /** Starting a workflow by `workflow_dispatch`. */
+  GH_DISPATCH_WRITE: { id: 1026, key: 'gh.dispatch_write' },
+  /** Re-running a flow run from its row — all jobs or the failed ones. */
+  GH_FLOW_RERUN_WRITE: { id: 1027, key: 'gh.flow_rerun_write' },
 
   // ── 1100 local computation ───────────────────────────────────────────────────────────────────
   // Cheap individually, but they run on every poll against every flow, so a regression here is

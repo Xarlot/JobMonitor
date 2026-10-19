@@ -28,6 +28,7 @@ import { AnalysedBadge } from './AnalysedBadge';
 import { StatusBadge } from './StatusBadge';
 import { JobsTable } from './JobsTable';
 import { ArtifactsButton } from './ArtifactsButton';
+import { RerunFlowRunButton, RunWorkflowButton } from './FlowRunActions';
 import { formatDuration, formatRelative } from '../lib/format';
 import styles from './FlowRunsGrid.module.css';
 import { Icon } from './Icon';
@@ -39,6 +40,8 @@ interface TableMeta {
   onSummary: (run: WorkflowRun) => void;
   owner: string;
   repo: string;
+  /** Re-polls the flow's runs — after a re-run, so the new attempt shows. */
+  refresh: () => void;
 }
 
 /**
@@ -222,6 +225,12 @@ export function FlowRunsGrid({
                   meta.onTimeline(r);
                 }}
               />
+              <RerunFlowRunButton
+                owner={meta.owner}
+                repo={meta.repo}
+                run={r}
+                onDone={meta.refresh}
+              />
               <ArtifactsButton
                 owner={meta.owner}
                 repo={meta.repo}
@@ -265,6 +274,7 @@ export function FlowRunsGrid({
       },
       owner,
       repo,
+      refresh,
     } satisfies TableMeta,
   });
 
@@ -378,6 +388,18 @@ export function FlowRunsGrid({
           </Text>
         )}
         {isFetchingRuns && <Spinner size="small" />}
+        {state && (
+          <RunWorkflowButton
+            owner={owner}
+            repo={repo}
+            title={flow.name}
+            branches={[
+              ...new Set([...flow.branches, ...runs.map((r) => r.head_branch ?? '')].filter(Boolean)),
+            ]}
+            workflowRef={state.workflowRef}
+            onDone={refresh}
+          />
+        )}
         <Button
           leadingVisual={SyncIcon}
           size="small"

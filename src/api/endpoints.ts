@@ -197,6 +197,23 @@ export function rerunFailedJobsPath(owner: string, repo: string, runId: number):
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/rerun-failed-jobs`;
 }
 
+/**
+ * POST target: re-run every job of a run, as a new attempt. Answers 201 with an empty body.
+ * Same permission as {@link rerunFailedJobsPath}.
+ */
+export function rerunRunPath(owner: string, repo: string, runId: number): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/rerun`;
+}
+
+/**
+ * POST target: start a workflow with `workflow_dispatch` (body `{ ref, inputs }`). `workflowRef`
+ * is the workflow's numeric id or its file name. Answers 204, or 422 when the workflow has no
+ * `workflow_dispatch` trigger. Same permission as the re-runs.
+ */
+export function workflowDispatchPath(owner: string, repo: string, workflowRef: string): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/workflows/${enc(workflowRef)}/dispatches`;
+}
+
 /** A single workflow run — the authoritative source of its workflow file + attempt. */
 export function singleRunPath(owner: string, repo: string, runId: number): string {
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}`;
