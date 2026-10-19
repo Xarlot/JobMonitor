@@ -711,6 +711,8 @@ plain. The **Wait** column gives each bar's wait as a number, and hovering a bar
 A flow run's **Summary** has a **Timing** section with the same numbers per job — queued, set up,
 work, longest wait first — under a line with the longest wait for a runner and the total.
 
+![A flow run's summary with its Timing section](docs/screenshots/run-timing.png)
+
 ![Timeline](docs/screenshots/timeline.png)
 
 ### Artifacts
