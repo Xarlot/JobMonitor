@@ -4,7 +4,11 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.7.0]
+
+**Re-run a flow, or start one, without leaving the board.** Every flow run gets a re-run menu — all
+jobs or only the failed ones — and every flow card a **Run** button that starts its workflow by
+`workflow_dispatch`.
 
 ### Added
 - **Re-run a flow run, or start a flow, from its card.** Each run row gets a re-run button with a menu
