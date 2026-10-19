@@ -4,7 +4,11 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.8.0]
+
+**See how long CI waited for runners.** A pull request's check timeline now shows each Actions job's
+queue time, as a flow run's did, and the wait is written out in numbers — in a **Wait** column on
+every timeline and a **Timing** section in a flow run's summary.
 
 ### Added
 - **Queue time in a pull request's check timeline.** Like a flow run's timeline, each check that is a
