@@ -258,9 +258,22 @@ failing tests, the log and the required output sections are still added — so i
 the app fails to read. Turning the switch off hides every AI control; fetching the whole run's log with
 `gh` is not an AI feature and keeps working.
 
-**Check AI integration** on that page reports whether `claude` and `gh` are on PATH, their versions and
-whether `gh` is signed in — with what each is for and what to do when it's missing. `claude` is
-required; `gh` is optional, and without it an analysis uses the log Job Monitor fetched itself.
+**Check AI integration** on that page reports whether `claude`, `codex` and `gh` are on PATH, their
+versions and whether `gh` is signed in — with what each is for and what to do when it's missing. The
+CLI of the chosen **AI backend** is required; `gh` is optional, and without it an analysis uses the
+log Job Monitor fetched itself.
+
+**AI backend.** Every AI task runs through [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
+by default; switch to **Codex** on the same page to run the same briefs through `codex exec` (one
+Codex model for every task, effort following each task's own setting unless you pick one).
+
+**MCP servers.** The investigating tasks — deep analysis, **Who broke it** and **What failed** — can be
+given MCP servers, and are then told to get their metadata there first: run history and timings, jobs
+and logs, parsed test results, flaky-or-regression history, commits, pull requests and who touched a
+path, with `gh` as the fallback for whatever the index does not hold yet. The list comes prefilled
+with the [dxvcs MCP server](https://github.com/DevExpress/dxvcs-mcp#mcp-tools) for DevExpress/dxvcs —
+`dxvcs-local` over stdio and `dxvcs` over HTTP — both off until you switch them on. Codex uses stdio
+servers only; for the HTTP one, Claude Code needs a one-time `/mcp` sign-in in an interactive session.
 
 When something goes wrong, the desktop app keeps a record of it: **Settings → Diagnostics** shows the
 path to a log of every analysis — the commands run, how long each took, and how it ended — alongside

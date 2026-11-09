@@ -333,7 +333,89 @@ const aiTaskSchema = (model: (typeof AI_MODELS)[number], effort: (typeof AI_EFFO
     .prefault({});
 
 /**
- * Local AI integration (the `claude` CLI). The one feature that sends anything outside
+ * Which local agent CLI runs the AI tasks.
+ *
+ * `claude` is the original and the default; `codex` runs the same briefs through `codex exec`.
+ * A closed set, re-checked in the bridge, because it decides which executable is spawned.
+ */
+export const AI_BACKENDS = ['claude', 'codex'] as const;
+export type AiBackend = (typeof AI_BACKENDS)[number];
+
+/**
+ * Codex reasoning efforts (`model_reasoning_effort`). `auto` maps each task's own effort setting
+ * onto Codex's scale, so the per-task tuning above still means something on the other backend.
+ */
+export const CODEX_EFFORTS = ['auto', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+
+/** Where the dxvcs MCP server's tool list and setup notes live. */
+export const DXVCS_MCP_README_URL = 'https://github.com/DevExpress/dxvcs-mcp#mcp-tools';
+
+/**
+ * An MCP server name: becomes a key in `--mcp-config` JSON for Claude, a `mcp__<name>` tool
+ * allowance, and a TOML key (`mcp_servers.<name>`) for Codex — so it is held to the characters all
+ * three accept without quoting.
+ */
+export const MCP_SERVER_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
+
+/**
+ * One MCP server the agent may use for metadata.
+ *
+ * `stdio` servers are started by the agent CLI with `command` + `args` (no shell); `http` servers
+ * are reached at `url`. Only the tool-using tasks get them — see `activeMcpServers`.
+ */
+export const mcpServerSchema = z.object({
+  name: z.string().trim().regex(MCP_SERVER_NAME_RE, 'name may only contain letters, digits, _ and -'),
+  type: z.enum(['stdio', 'http']).default('stdio'),
+  command: z.string().trim().max(1024).default(''),
+  args: z.array(z.string().max(1024)).max(32).default([]),
+  url: z.string().trim().max(2048).default(''),
+  enabled: z.boolean().default(true),
+});
+export type McpServerConfig = z.infer<typeof mcpServerSchema>;
+
+/**
+ * The servers a fresh config starts with: the dxvcs knowledge base, locally over stdio (the way it
+ * runs on a dev box today, against the docker Postgres the hourly importer fills) and remotely
+ * over HTTP (Entra sign-in; Claude Code can do the OAuth, Codex cannot yet).
+ *
+ * **Both off by default.** The stdio entry names a path on one particular machine and the remote
+ * one has no URL yet; switching either on for everyone would point every agent at a server that is
+ * not there. Prefilled, so turning it on is one click.
+ */
+export const DEFAULT_MCP_SERVERS: readonly McpServerConfig[] = [
+  {
+    name: 'dxvcs-local',
+    type: 'stdio',
+    command: 'bash',
+    args: ['/work/dxvcs_mcp/scripts/mcp-stdio.sh', 'local'],
+    url: '',
+    enabled: false,
+  },
+  { name: 'dxvcs', type: 'http', command: '', args: [], url: '', enabled: false },
+];
+
+/**
+ * The MCP servers that will actually be handed to `backend`: enabled, complete, uniquely named —
+ * and for Codex, stdio only, since it cannot sign in to the Entra-protected HTTP endpoint.
+ *
+ * The prompt builder and the bridge both use this answer, so the brief never promises the model a
+ * server the CLI was not given. (The bridge re-validates; this is the renderer's half.)
+ */
+export function activeMcpServers(
+  ai: Pick<AiConfig, 'mcpServers' | 'backend'>,
+): McpServerConfig[] {
+  const seen = new Set<string>();
+  return (ai.mcpServers ?? []).filter((s) => {
+    if (!s.enabled || !MCP_SERVER_NAME_RE.test(s.name) || seen.has(s.name)) return false;
+    if (s.type === 'stdio' && !s.command.trim()) return false;
+    if (s.type === 'http' && (ai.backend === 'codex' || !/^https?:\/\/\S+$/.test(s.url.trim()))) return false;
+    seen.add(s.name);
+    return true;
+  });
+}
+
+/**
+ * Local AI integration (the `claude` or `codex` CLI). The one feature that sends anything outside
  * GitHub, so it has a single switch that hides all of it.
  */
 export const aiSchema = z
@@ -344,6 +426,31 @@ export const aiSchema = z
      * explicit click. Off hides every AI control outright.
      */
     enabled: z.boolean().default(true),
+    /** Which agent CLI runs the tasks. Claude unless chosen otherwise, so upgrading changes nothing. */
+    backend: z.enum(AI_BACKENDS).default('claude'),
+    /**
+     * Codex settings. One model for every task — Codex has no sonnet/opus split to choose between
+     * per task — and an effort that by default follows each task's own setting.
+     */
+    codex: z
+      .object({
+        /** Blank = whatever `~/.codex/config.toml` says. Shape-checked again in the bridge. */
+        model: z
+          .string()
+          .trim()
+          .regex(/^[A-Za-z0-9._:-]{0,64}$/, 'model may only contain letters, digits, . _ : and -')
+          .default(''),
+        effort: z.enum(CODEX_EFFORTS).default('auto'),
+      })
+      .prefault({}),
+    /**
+     * MCP servers the investigating tasks may use, with the briefs telling them to go there first
+     * for metadata. A config that predates this gets the (switched-off) dxvcs entries.
+     */
+    mcpServers: z
+      .array(mcpServerSchema)
+      .max(16)
+      .default(() => DEFAULT_MCP_SERVERS.map((s) => ({ ...s, args: [...s.args] }))),
     /**
      * Appended to whichever brief runs, for standing context the model can't infer —
      * "our integration tests are flaky on Windows", "ignore the deprecation warnings".
@@ -440,7 +547,7 @@ export const monitorConfigSchema = z.object({
   diagnostics: diagnosticsSchema,
   /** Shared `feature/**` branches: the tab and its three actions (on by default). */
   featureBranches: featureBranchesSchema,
-  /** Local AI integration via the `claude` CLI. */
+  /** Local AI integration via the `claude` or `codex` CLI. */
   ai: aiSchema,
   /** Desktop app: auto-download & install updates. Ignored where unsupported. */
   autoUpdate: z.boolean().default(true),
@@ -501,6 +608,9 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   featureBranches: { enabled: true, prefix: 'feature/' },
   ai: {
     enabled: true,
+    backend: 'claude',
+    codex: { model: '', effort: 'auto' },
+    mcpServers: DEFAULT_MCP_SERVERS.map((s) => ({ ...s, args: [...s.args] })),
     extraInstructions: '',
     autoStart: true,
     quick: { model: 'sonnet', effort: 'medium', prompt: '' },

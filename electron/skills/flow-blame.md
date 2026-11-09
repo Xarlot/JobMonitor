@@ -17,6 +17,41 @@ Answer in this order. Stop at the first one that fits: naming a developer's comm
 someone else's flaky test is the expensive mistake here, and it is the one that happens
 when you look for a commit first.
 
+## Metadata first, when an MCP server is connected
+
+If the run has the **dxvcs** MCP server (tools such as `first_failing`, `commits_between`,
+`ci_runs`, `test_history`), use it **before** `gh` for every history and authorship question
+below. It is a read-only, pre-indexed copy of DevExpress/dxvcs — commits with their changed
+paths and where each landed per branch, pull requests, runs with jobs, steps and logs, error
+fingerprints and parsed test results — so it answers in one call what the `gh` recipes here
+take several to page through, and it costs no GitHub rate limit.
+
+| Question | MCP tool | instead of |
+|---|---|---|
+| Last green, first red, and the suspects between | `first_failing(workflow, job, branch, path_prefixes)` | paging `gh run list` (step 1) |
+| Run history, conclusions, timings | `ci_runs(branch, workflow)`, `run_info(run_id)` | `gh run list`, `gh run view --json jobs` |
+| Commits that reached the branch in a range | `commits_between(branch, from, to, path_prefixes)` | `gh api …/compare` (step 4) |
+| What one candidate changed | `commit_info(sha)` | `gh api …/commits/<sha>` (step 5) |
+| History of a path, recent authors | `who_touched(path_prefix)`, `search_commits(query, path_prefixes)` | `gh api …/commits?path=` (step 4b) |
+| Merge commit → author of the merged work | `pr_info(number)` | `gh pr view` |
+| Since when a test fails, in how many runs | `test_failures(workflow, branch)` | scanning failing runs |
+| Flaky or regression | `test_history(test)`, `failure_history(workflow, job)` | annotations of several runs |
+| The failure itself | `run_info(run_id)`, `job_log(job_id, grep=…)` | downloading the log |
+
+Pass `path_prefixes` for the code the failure implicates — the class in the stack trace, the
+test, its fixtures — so the suspect list is cut to commits that can reach it. A result that
+says `truncated` is not the whole range: narrow it rather than reading it as complete.
+
+**Check freshness once with `index_status`.** The index is refreshed about hourly; the newest
+runs and commits may not be in it yet. For those — and for a repository other than
+DevExpress/dxvcs, or a tool that errors — fall back to the `gh` commands in each step, and say
+in one clause that you did.
+
+The steps below still apply in full. The index makes them faster; it does not make comparing
+like with like, checking that the good run ran the test, or ruling out a flake optional.
+
+Without such a server, ignore this section: the `gh` commands are the source.
+
 ## 1. Find the boundary
 
 List recent runs of this workflow on this branch, newest first:

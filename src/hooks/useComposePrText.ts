@@ -30,7 +30,13 @@ import {
 } from '../lib/featureBranch';
 import { devLog, devWarn } from '../lib/devLog';
 import { newRequestId } from './useClaudeTriage';
-import { claudeToolsReady, composeAvailable, composeWithClaude, probeClaudeTools } from '../storage/desktopClaude';
+import {
+  agentRunOptions,
+  claudeToolsReady,
+  composeAvailable,
+  composeWithClaude,
+  probeClaudeTools,
+} from '../storage/desktopClaude';
 import { ErrorCategory, Feature, Operation, Telemetry } from '../lib/telemetry';
 
 export interface ComposedText {
@@ -127,7 +133,7 @@ export function useComposePrText(): ComposeState & {
       // every branch that falls back to the template, and the question here is how often Claude
       // writes a description — not how often the button exists.
       if (!config.ai.enabled || !composeAvailable()) return finish(template());
-      if (!claudeToolsReady(await probeClaudeTools())) {
+      if (!claudeToolsReady(await probeClaudeTools(), config.ai.backend)) {
         return finish(template());
       }
 
@@ -148,8 +154,7 @@ export function useComposePrText(): ComposeState & {
         prompt,
         requestId: newRequestId(),
         task: 'pr',
-        model: config.ai.pr.model,
-        effort: config.ai.pr.effort,
+        ...agentRunOptions(config.ai, config.ai.pr, false),
       });
 
       if (!result.ok) {

@@ -351,3 +351,22 @@ describe('keeping the answer about the attribution', () => {
     expect(SKILL_MARKDOWN).toMatch(/not a recommendation about the build farm/i);
   });
 });
+
+describe('the flow-blame skill with an MCP server', () => {
+  it('maps each history and authorship question to an MCP tool', () => {
+    for (const tool of ['first_failing', 'commits_between', 'commit_info', 'who_touched', 'pr_info', 'ci_runs', 'test_failures', 'test_history', 'failure_history', 'job_log']) {
+      expect(SKILL_MARKDOWN, tool).toContain(tool);
+    }
+    expect(SKILL_MARKDOWN).toMatch(/path_prefixes/);
+  });
+
+  it('comes before the gh procedure and does not waive its checks', () => {
+    expect(SKILL_MARKDOWN.indexOf('## Metadata first')).toBeLessThan(SKILL_MARKDOWN.indexOf('## 1. Find the boundary'));
+    expect(SKILL_MARKDOWN).toMatch(/does not make comparing\s+like with like/);
+  });
+
+  it('checks freshness and falls back to gh', () => {
+    expect(SKILL_MARKDOWN).toMatch(/index_status/);
+    expect(SKILL_MARKDOWN).toMatch(/fall back to the `gh` commands/);
+  });
+});

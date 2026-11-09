@@ -1,10 +1,19 @@
 /**
- * Bridge to the desktop shell's local `gh` + `claude` CLIs
- * (`window.desktop.claude`, implemented in electron/claudeBridge.cjs).
+ * Bridge to the desktop shell's local `gh` + agent CLIs — `claude`, or `codex` when chosen in
+ * settings (`window.desktop.claude`, implemented in electron/claudeBridge.cjs; the names predate
+ * the second backend).
  *
  * Absent in a plain browser, so `probeClaudeTools()` reports nothing available and
  * the UI simply doesn't offer the feature.
  */
+
+import {
+  activeMcpServers,
+  type AiBackend,
+  type AiConfig,
+  type AiTaskConfig,
+  type McpServerConfig,
+} from './configStore';
 
 export interface ClaudeToolStatus {
   gh: boolean;
@@ -12,6 +21,9 @@ export interface ClaudeToolStatus {
   ghAuthenticated: boolean;
   claude: boolean;
   claudeVersion: string | null;
+  /** Optional: a desktop build predating the Codex backend does not report it. */
+  codex?: boolean;
+  codexVersion?: string | null;
 }
 
 export const NO_CLAUDE_TOOLS: ClaudeToolStatus = {
@@ -20,7 +32,66 @@ export const NO_CLAUDE_TOOLS: ClaudeToolStatus = {
   ghAuthenticated: false,
   claude: false,
   claudeVersion: null,
+  codex: false,
+  codexVersion: null,
 };
+
+/** An MCP server as the bridge receives it: only the fields its type uses. */
+export type McpServerSpec =
+  | { name: string; type: 'stdio'; command: string; args: string[] }
+  | { name: string; type: 'http'; url: string };
+
+function toSpec(server: McpServerConfig): McpServerSpec {
+  return server.type === 'http'
+    ? { name: server.name, type: 'http', url: server.url.trim() }
+    : {
+        name: server.name,
+        type: 'stdio',
+        command: server.command.trim(),
+        // The settings editor keeps one argument per line, blank lines included while typing.
+        args: server.args.map((a) => a.trim()).filter(Boolean),
+      };
+}
+
+/** Claude effort names onto Codex's scale: Codex has no `max`, and `xhigh` is its top. */
+const CODEX_EFFORT_FOR: Record<AiTaskConfig['effort'], string> = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'xhigh',
+};
+
+/**
+ * What a request needs to say about *how* to run, given the settings: which CLI, which model and
+ * effort on that CLI, and — for a task that investigates — which MCP servers to hand it.
+ *
+ * One function so the four call sites (triage, PR write-up, review reply, resolve note) cannot
+ * disagree about it, and so the brief's "use the MCP first" is only ever said when the same list
+ * reaches the CLI.
+ */
+export function agentRunOptions(
+  ai: Pick<AiConfig, 'backend' | 'codex' | 'mcpServers'>,
+  task: Pick<AiTaskConfig, 'model' | 'effort'>,
+  usesTools: boolean,
+): { backend: AiBackend; model?: string; effort?: string; mcpServers?: McpServerSpec[] } {
+  const backend: AiBackend = ai.backend === 'codex' ? 'codex' : 'claude';
+  const servers = usesTools ? activeMcpServers({ ...ai, backend }).map(toSpec) : [];
+  const mcp = servers.length > 0 ? { mcpServers: servers } : {};
+  if (backend === 'claude') return { backend, model: task.model, effort: task.effort, ...mcp };
+  const codex = ai.codex ?? { model: '', effort: 'auto' };
+  return {
+    backend,
+    model: codex.model || undefined,
+    effort: codex.effort === 'auto' ? CODEX_EFFORT_FOR[task.effort] : codex.effort,
+    ...mcp,
+  };
+}
+
+/** Names of the MCP servers a tool-using task will get — what the brief should mention. */
+export function mcpServerNamesFor(ai: Pick<AiConfig, 'backend' | 'mcpServers'>): string[] {
+  return activeMcpServers(ai).map((s) => s.name);
+}
 
 export interface ClaudeAnalyzeRequest {
   owner: string;
@@ -58,6 +129,10 @@ export interface ClaudeAnalyzeRequest {
   effort?: string;
   /** Continue a previous, unfinished run rather than starting a new one. */
   resumeSessionId?: string;
+  /** Which agent CLI to run. Absent means `claude`, which is what older builds always did. */
+  backend?: AiBackend;
+  /** MCP servers for a tool-using task; ignored by the bridge for the rest. */
+  mcpServers?: McpServerSpec[];
 }
 
 /** Which log the analysis actually read. `none` means it worked from annotations alone. */
@@ -131,6 +206,7 @@ export interface ClaudeComposeRequest {
   task: 'pr' | 'reply';
   model?: string;
   effort?: string;
+  backend?: AiBackend;
 }
 
 export type ClaudeComposeResult =
@@ -162,12 +238,12 @@ export function claudeBridgeAvailable(): boolean {
 }
 
 /**
- * `claude` is the only hard requirement. `gh` is preferred — it yields the whole run's
- * failed-step log — but the app can hand over a per-job log it already fetched, so a
+ * The chosen agent CLI is the only hard requirement. `gh` is preferred — it yields the whole
+ * run's failed-step log — but the app can hand over a per-job log it already fetched, so a
  * missing or unauthenticated `gh` degrades the analysis rather than blocking it.
  */
-export function claudeToolsReady(status: ClaudeToolStatus): boolean {
-  return status.claude;
+export function claudeToolsReady(status: ClaudeToolStatus, backend: AiBackend = 'claude'): boolean {
+  return backend === 'codex' ? Boolean(status.codex) : status.claude;
 }
 
 /** True when `gh` can supply the richer whole-run log. */

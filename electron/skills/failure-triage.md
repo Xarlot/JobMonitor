@@ -59,6 +59,35 @@ Cheapest first, and stop when you have an answer:
 Skipping a step you did not need is correct. Reading everything before answering is not
 thoroughness — it is a slower answer of the same quality.
 
+## Metadata first, when an MCP server is connected
+
+If the run has the **dxvcs** MCP server (tools such as `run_info`, `job_log`, `run_artifacts`,
+`test_failures`), take metadata from it **before** `gh`. It is a read-only, pre-indexed copy
+of DevExpress/dxvcs — runs with their jobs, failed steps and first errors, full logs, error
+fingerprints, parsed JUnit/TRX results, commits and pull requests — so one call replaces a
+download and a grep, and it costs no GitHub rate limit.
+
+The same cheapest-first order, through the index:
+
+1. `run_info(run_id)` — the jobs, the failed steps and the first errors of each. Often enough
+   to name the cause on its own.
+2. `job_log(job_id, step, grep)` — a slice of the full log around the failure lines, instead
+   of downloading the whole run's log. `from_line` reads on from a hit.
+3. `run_artifacts(run_id)` / `test_failures(workflow, branch)` — parsed test results with the
+   failing tests and their messages. Download the artifact only for a detail these lack.
+4. `commit_info(sha)` / `pr_info(number)` — what the change touched, instead of the raw diff.
+
+`failures` and `failure_history` tell a new error fingerprint from a known one, `search_logs`
+finds the same error in other jobs, and `test_history(test)` separates a regression from a
+flaky test — use them when that distinction is the question, not by default.
+
+**Check freshness once with `index_status`.** The index is refreshed about hourly, so the run
+you were given may not be in it yet. Then — and for a repository other than DevExpress/dxvcs,
+an artifact it does not parse, or a tool that errors — use `gh` as below, and say in one
+clause that you did. The budget is the same whichever tool answers.
+
+Without such a server, ignore this section: `gh` is the source.
+
 ## Retry a download before giving up on it
 
 `gh run download` and `gh api` fail transiently: rate limits, blob-storage timeouts, and

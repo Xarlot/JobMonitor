@@ -4,6 +4,38 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+**Codex as a second AI backend, and MCP servers for metadata.** Settings → AI integration can now run
+every AI task through `codex exec` instead of `claude`, and hand the investigating tasks MCP servers —
+with the dxvcs knowledge base prefilled — which they are told to use first for run, log, test and
+commit metadata.
+
+### Added
+- **AI backend: Claude Code or Codex.** One switch in Settings → AI integration. Codex runs the same
+  briefs non-interactively (`codex exec --json`, prompt on stdin), drives the same live activity feed
+  and narration, honours the same timeouts, Stop and Continue (`codex exec resume`), and gets the
+  triage and blame skills through an `AGENTS.md` in its scratch directory. One Codex model for every
+  task (blank = your Codex default) and an effort that by default follows each task's own setting.
+  The tasks that investigate run in Codex's `workspace-write` sandbox with network on — its read-only
+  sandbox cuts the network, so `gh` could not reach GitHub — confined to the scratch directory; the
+  rest stay read-only. **Check AI integration** reports `codex` alongside `claude` and `gh`.
+- **MCP servers.** A list in Settings → AI integration (name, stdio command + arguments or HTTP URL,
+  enabled), prefilled with the dxvcs server — `dxvcs-local` over stdio
+  (`bash /work/dxvcs_mcp/scripts/mcp-stdio.sh local`) and `dxvcs` over HTTP with an empty URL — both
+  **off** until you switch them on, with a link to the server's tool list. Passed to Claude with
+  `--mcp-config` (and its tools allowed as `mcp__<name>`), to Codex as `-c mcp_servers.<name>.…`
+  overrides; Codex gets stdio servers only, since it cannot sign in to the Entra-protected endpoint.
+  Only the investigating tasks (deep analysis, Who broke it, What failed) are given them.
+- **MCP-first briefs.** With a server configured, those three tasks are told to take metadata from it
+  before `gh`: `first_failing` + `commits_between(path_prefixes)` for the boundary and suspects,
+  `commit_info`/`pr_info`/`who_touched` for authorship, `run_info`/`job_log`/`failures`/`search_logs`
+  for causes, `test_failures`/`test_history`/`failure_history` for flaky-versus-regression and
+  since-when, `ci_runs`/`run_artifacts` for run history and statistics — to check `index_status`
+  freshness once, and to fall back to `gh` only for what the index lacks (not yet indexed, another
+  repository, an unparsed artifact). The budgets are unchanged. Without a server the prompts are
+  exactly as before. The `failure-triage` and `flow-blame` skills carry the same guidance.
+
 ## [3.8.0]
 
 **See how long CI waited for runners.** A pull request's check timeline now shows each Actions job's

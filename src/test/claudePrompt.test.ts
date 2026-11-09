@@ -843,3 +843,81 @@ describe('returnsDocument', () => {
     }
   });
 });
+
+/**
+ * MCP support: with a server configured, the investigating tasks are told to take their metadata
+ * from it first and to use `gh` only for what it lacks. Without one, nothing about the prompt may
+ * change — that is the guarantee existing users upgrade on.
+ */
+describe('MCP-first guidance', () => {
+  const dxvcs = (over: Partial<ClaudePromptInput> = {}) =>
+    input({ owner: 'DevExpress', repo: 'dxvcs', mcpServers: ['dxvcs-local'], ...over });
+
+  it('leaves every prompt untouched when no server is configured', () => {
+    for (const depth of ['quick', 'deep', 'log', 'blame', 'cause', 'marks'] as const) {
+      const without = buildClaudePrompt(input({ depth }));
+      expect(buildClaudePrompt(input({ depth, mcpServers: [] }))).toBe(without);
+      expect(buildClaudePrompt(input({ depth, mcpServers: undefined }))).toBe(without);
+      expect(without).not.toMatch(/MCP/);
+    }
+  });
+
+  it.each(['deep', 'blame', 'cause'] as const)('tells the %s task to use the server first', (depth) => {
+    const prompt = buildClaudePrompt(dxvcs({ depth }));
+    expect(prompt).toContain('--- METADATA FIRST: MCP ---');
+    expect(prompt).toContain('`dxvcs-local`');
+    expect(prompt).toMatch(/Get metadata from the MCP server first/);
+    expect(prompt).toContain('index_status');
+    expect(prompt).toContain('run_info(run_id=1001)');
+    // `gh` stays, but as the fallback.
+    expect(prompt).toContain('--- COMMANDS (fallback for what the MCP server does not have) ---');
+    expect(prompt).toContain('gh run view 1001 --log-failed --repo DevExpress/dxvcs');
+  });
+
+  it('puts the MCP section after the brief and before the user’s own instructions', () => {
+    const prompt = buildClaudePrompt(dxvcs({ extraInstructions: 'be brief' }));
+    expect(prompt.indexOf(CLAUDE_INVESTIGATION_BRIEF)).toBe(0);
+    expect(prompt.indexOf('METADATA FIRST')).toBeLessThan(prompt.indexOf('ADDITIONAL INSTRUCTIONS'));
+  });
+
+  it('points blame at the boundary, the commit range and the history tools', () => {
+    const prompt = buildClaudePrompt(dxvcs({ depth: 'blame' }));
+    for (const tool of ['first_failing', 'commits_between', 'path_prefixes', 'commit_info', 'pr_info', 'who_touched', 'ci_runs', 'test_history', 'failure_history', 'test_failures']) {
+      expect(prompt, tool).toContain(tool);
+    }
+    // The skill's own checks are not waived by the faster data.
+    expect(prompt).toMatch(/does not make them optional/);
+  });
+
+  it('points the deep read at one run’s evidence and the cause task at parsed results', () => {
+    const deep = buildClaudePrompt(dxvcs({ depth: 'deep' }));
+    for (const tool of ['job_log', 'run_artifacts', 'search_logs', 'failure_history']) expect(deep).toContain(tool);
+    expect(deep).toMatch(/two to four calls/);
+    const cause = buildClaudePrompt(dxvcs({ depth: 'cause' }));
+    expect(cause).toContain('test_failures(workflow="ci.yml", branch="faster-export")');
+    expect(cause).toMatch(/source:/);
+  });
+
+  it('says nothing about MCP to the tasks that have no tools', () => {
+    for (const depth of ['quick', 'log', 'marks'] as const) {
+      expect(buildClaudePrompt(dxvcs({ depth }))).not.toMatch(/MCP/);
+    }
+    expect(buildClaudePrompt(dxvcs({ canInvestigate: false }))).not.toMatch(/MCP/);
+  });
+
+  it('keeps the section under a custom prompt, which replaces wording, not the environment', () => {
+    const prompt = buildClaudePrompt(dxvcs({ promptOverride: 'Just find it.' }));
+    expect(prompt.startsWith('Just find it.')).toBe(true);
+    expect(prompt).toContain('METADATA FIRST');
+  });
+
+  it('warns when the failing repository is not the one the index covers', () => {
+    const elsewhere = buildClaudePrompt(input({ mcpServers: ['dxvcs-local'] }));
+    expect(elsewhere).toMatch(/`acme\/rocket`, which the index does not cover/);
+    expect(buildClaudePrompt(dxvcs())).not.toMatch(/does not cover/);
+  });
+
+  it('names every configured server', () => {
+    expect(buildClaudePrompt(dxvcs({ mcpServers: ['dxvcs-local', 'dxvcs'] }))).toContain('`dxvcs-local`, `dxvcs`');
+  });
+});

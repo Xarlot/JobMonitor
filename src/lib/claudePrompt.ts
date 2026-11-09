@@ -105,6 +105,12 @@ export interface ClaudePromptInput {
   promptOverride?: string;
   /** Standing context from settings, appended to whichever brief runs. */
   extraInstructions?: string;
+  /**
+   * Names of the MCP servers this run is handed (see `activeMcpServers`). Non-empty switches the
+   * investigating tasks to "metadata from the MCP first, `gh` for the rest"; empty or absent
+   * leaves the prompt exactly as it was before MCP support existed.
+   */
+  mcpServers?: readonly string[];
 }
 
 /**
@@ -543,7 +549,100 @@ function commandLines(input: ClaudePromptInput): string[] {
  * what actually passes `--allowedTools`, and this side only decides whether to spell the
  * commands out. Listing a task here that has no tools would hand it a recipe it cannot run.
  */
-const TOOL_TASKS: ReadonlySet<ClaudeDepth> = new Set(['deep', 'blame', 'cause']);
+export const TOOL_TASKS: ReadonlySet<ClaudeDepth> = new Set(['deep', 'blame', 'cause']);
+
+/** The repository the dxvcs MCP server indexes. Anything else is outside what it knows. */
+export const MCP_INDEXED_REPO = 'DevExpress/dxvcs';
+
+/**
+ * The part of the MCP guidance every investigating task shares: what the server is, why to go
+ * there first, how to tell when its data is too old, and when `gh` is still the right tool.
+ *
+ * Kept as a separate section rather than woven into each brief, for two reasons. Without a
+ * server the briefs must read exactly as they always have, and a section that is either present
+ * or absent is the only way to guarantee that. And a custom prompt replaces the brief's wording
+ * but not the facts of the environment: a run that has the server should be told so whoever
+ * wrote the brief.
+ */
+function mcpPreamble(servers: readonly string[], slug: string): string {
+  const named = servers.map((n) => `\`${n}\``).join(', ');
+  const plural = servers.length > 1;
+  const sameRepo = slug.toLowerCase() === MCP_INDEXED_REPO.toLowerCase();
+  return [
+    `**Get metadata from the MCP server${plural ? 's' : ''} first.** This run is connected to ${named}: a read-only, pre-indexed knowledge base of ${MCP_INDEXED_REPO} — commits with their changed paths and where each landed per branch, pull requests, GitHub Actions runs with their jobs, steps and full logs, error fingerprints, parsed JUnit/TRX test results, and job-monitor issues. One of its tools answers in a single call what takes several \`gh\` calls, a download and an unzip, and it spends no GitHub rate limit. Reach for it before \`gh\` and \`git\`.`,
+    '',
+    `- **Check freshness once.** Call \`index_status\` before you rely on it for anything recent — it is refreshed about hourly, so the run you were asked about, or the newest commits, may not be indexed yet. If they are missing, that is the moment to use \`gh\` for them, not a reason to conclude they do not exist.`,
+    sameRepo
+      ? `- **Fall back to \`gh\` only for what it does not have**: something newer than the index, an artifact it does not parse, or a tool that errors. Say in one clause when you fell back and why.`
+      : `- **This failure is in \`${slug}\`, which the index does not cover.** Use it only for what it does hold — commits, pull requests and runs of ${MCP_INDEXED_REPO} that this code shares — and use \`gh\` for this repository's own runs, logs and artifacts.`,
+    `- **Its calls count against the same budget as any other.** Ask it narrow questions — a run id, a branch, a \`path_prefixes\` filter, a \`grep\` on a log — rather than paging through everything it holds.`,
+    `- Everything you take from it is evidence you obtained, under the same rule as \`gh\` output: quote it, never embellish it.`,
+  ].join('\n');
+}
+
+/** Exact MCP calls for this failure, alongside the `gh` commands — same reason as {@link commandLines}. */
+function mcpCallLines(input: ClaudePromptInput): string[] {
+  const lines: string[] = [];
+  if (input.runId != null) {
+    lines.push(`Run, jobs, failed steps, first errors: run_info(run_id=${input.runId})`);
+    lines.push(`Parsed test totals and artifacts:      run_artifacts(run_id=${input.runId})`);
+  }
+  lines.push(`Commit, files, PRs, landing:           commit_info(sha="${input.headSha}")`);
+  if (input.origin.kind === 'pr') {
+    lines.push(`PR files, commits, reviews, runs:      pr_info(number=${input.origin.prNumber})`);
+  }
+  if (input.workflowFile && input.headRef) {
+    lines.push(
+      `Failing tests on this branch:          test_failures(workflow="${input.workflowFile}", branch="${input.headRef}")`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * What to ask the MCP server, per task.
+ *
+ * The repository questions (who changed what, when it landed, which PR) and the run-statistics
+ * questions (run history, since when, how many runs, flaky or regression) are exactly what the
+ * index was built to answer, so each task is pointed at the tools for *its* question — the deep
+ * read at one run's evidence, blame at history and authorship, the cause task at parsed results.
+ */
+const MCP_GUIDANCE: Partial<Record<ClaudeDepth, string>> = {
+  deep: `For this triage:
+- \`run_info\` first: the run's jobs, failed steps and the first errors of each, which is usually enough to name the cause without opening a log at all.
+- \`job_log(job_id, step, grep)\` for a targeted slice of the full log — grep for the failure lines rather than downloading the whole run's log; \`from_line\` to read on from a hit.
+- \`run_artifacts\` and \`test_failures\` for parsed JUnit/TRX results before downloading any artifact; download only when you need a detail they do not carry.
+- \`failures\` / \`failure_history\` to tell a new error fingerprint from a known one, and \`search_logs\` to see whether the same error appears in other jobs; \`test_history(test)\` when you need to tell a regression from a flaky test.
+- \`commit_info\` / \`pr_info\` for what the change touched, instead of \`gh pr diff\`.
+The skill's budget still holds: two to four calls, stop once you can name the cause and quote the line.`,
+  blame: `For this attribution, the history and authorship questions all have a direct tool:
+- **The boundary:** \`first_failing(workflow, job, branch, path_prefixes)\` returns the last green and first red run and the suspect commits between them — use it instead of paging \`gh run list\`. Pass \`path_prefixes\` for the code the failure implicates (the class in the stack trace, the test, its fixtures) to cut the suspects to the ones that can reach it.
+- **The commits in the range:** \`commits_between(branch, from, to, path_prefixes)\` (or \`from_time\`/\`to_time\`) lists what reached the branch, merged work included, with its PRs; it says when it \`truncated\`. Use it instead of \`gh api …/compare\`.
+- **What each candidate changed, and who wrote it:** \`commit_info(sha)\` for files and landing, \`pr_info(number)\` for the PR author behind a merge, \`who_touched(path_prefix)\` for a path's recent authors when there is no boundary.
+- **Run history and statistics:** \`ci_runs(branch, workflow)\` for the runs, their conclusions and timings; \`test_failures(workflow, branch)\` for since when a test fails and in how many runs; \`test_history(test)\` and \`failure_history(workflow, job)\` for its timeline across branches — alternating results are a flake, failing every run since one point is a regression.
+- **The failure itself:** \`run_info(run_id)\` and \`job_log(job_id, grep=…)\` rather than downloading logs.
+The skill's checks still apply — compare runs of the same trigger event, make sure the green run actually ran the failing test, rule out a flake and infrastructure before naming anyone. The index answers them faster; it does not make them optional.`,
+  cause: `For this list:
+- \`run_info(run_id)\` names the failed steps and their first errors; \`run_artifacts(run_id)\` carries the parsed test totals; \`test_failures(workflow, branch)\` lists the failing tests with their messages — read the records out of these before downloading any artifact.
+- \`job_log(job_id, step, grep)\` when you need the exact line for a \`message:\`.
+- Name the tool in \`source:\` — e.g. "dxvcs MCP test_failures" — when that is where the records came from.`,
+};
+
+/** The MCP section for a task, or nothing when the run has no server or the task has no tools. */
+function mcpSection(input: ClaudePromptInput): string[] {
+  const servers = (input.mcpServers ?? []).filter(Boolean);
+  if (servers.length === 0 || !input.canInvestigate || !TOOL_TASKS.has(input.depth)) return [];
+  const slug = `${input.owner}/${input.repo}`;
+  return [
+    '',
+    '--- METADATA FIRST: MCP ---',
+    mcpPreamble(servers, slug),
+    ...(MCP_GUIDANCE[input.depth] ? ['', MCP_GUIDANCE[input.depth] as string] : []),
+    '',
+    'Calls for this failure:',
+    ...mcpCallLines(input),
+  ];
+}
 
 /**
  * What the log section is called, per task.
@@ -632,6 +731,7 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
 
   return [
     brief,
+    ...mcpSection(input),
     ...(extra ? ['', '--- ADDITIONAL INSTRUCTIONS FROM THE USER ---', extra] : []),
     '',
     '--- FAILURE FACTS ---',
@@ -640,7 +740,13 @@ export function buildClaudePrompt(input: ClaudePromptInput): string {
     '--- REPORTED FAILURES (from the check-run annotations) ---',
     annotationBlock,
     ...(TOOL_TASKS.has(input.depth) && input.canInvestigate
-      ? ['', '--- COMMANDS ---', ...commandLines(input)]
+      ? [
+          '',
+          (input.mcpServers ?? []).some(Boolean)
+            ? '--- COMMANDS (fallback for what the MCP server does not have) ---'
+            : '--- COMMANDS ---',
+          ...commandLines(input),
+        ]
       : []),
     '',
     // Said explicitly rather than left as an empty section: a bare header with nothing

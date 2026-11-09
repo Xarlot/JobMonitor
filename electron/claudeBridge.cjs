@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Desktop-only bridge to the developer's local `gh` and `claude` CLIs.
+ * Desktop-only bridge to the developer's local `gh` and agent CLIs — `claude`, or `codex`
+ * when the settings choose it.
  *
  * Used to triage a failed CI job: `gh` fetches the full failed-step log (far more
  * than the browser's log tail), `claude` turns it into a problem statement and a
@@ -269,6 +270,31 @@ function installSkill(scratchDir, skill = failureTriageSkill) {
   }
 }
 
+/**
+ * The same skills for Codex, which reads `AGENTS.md` from its working directory rather than
+ * discovering `.claude/skills`. Each one goes in under a `# Skill: <name>` heading, so a brief
+ * that says "follow the `failure-triage` skill" points at something Codex can actually find.
+ *
+ * Returns `true` or the reason it failed, best-effort like {@link installSkill}.
+ */
+function installAgentsMd(scratchDir, skills) {
+  if (!skills.length) return true;
+  try {
+    const body = skills
+      .map((skill) => {
+        // The YAML front matter is Claude's discovery metadata; in AGENTS.md it would just be noise.
+        const markdown = skill.SKILL_MARKDOWN.replace(/^---\n[\s\S]*?\n---\n+/, '');
+        return `# Skill: ${skill.SKILL_NAME}\n\n${markdown.trim()}\n`;
+      })
+      .join('\n');
+    fs.mkdirSync(scratchDir, { recursive: true });
+    fs.writeFileSync(path.join(scratchDir, 'AGENTS.md'), body, 'utf8');
+    return true;
+  } catch (e) {
+    return e.message;
+  }
+}
+
 function claudeVariants(task, overrides = {}) {
   const modelName = ALLOWED_MODELS.has(overrides.model) ? overrides.model : CLAUDE_MODEL[task];
   const effort = ALLOWED_EFFORTS.has(overrides.effort) ? overrides.effort : CLAUDE_EFFORT[task];
@@ -276,19 +302,36 @@ function claudeVariants(task, overrides = {}) {
   // Resuming carries the whole prior conversation, so the run picks up with everything it
   // had already established rather than paying for it again.
   const resume = overrides.resumeSessionId ? ['--resume', String(overrides.resumeSessionId)] : [];
-  const stream = [
+  const streamWith = (mcp) => [
     '-p',
     '--verbose',
     '--output-format',
     'stream-json',
+    // Before the flags that follow it: `--mcp-config` is variadic, and the next option is what
+    // ends its list.
+    ...(mcp ? ['--mcp-config', mcp.configPath] : []),
     '--max-turns',
     String(MAX_TURNS_BY_TASK[task]),
     // A task that doesn't investigate gets no tool allowlist at all, so there is nothing
     // for it to wander into — a stronger guarantee than passing an empty one.
-    ...(USES_TOOLS[task] ? ['--allowedTools', ALLOWED_TOOLS] : []),
+    ...(USES_TOOLS[task]
+      ? ['--allowedTools', mcp ? [ALLOWED_TOOLS, ...mcp.names.map((n) => `mcp__${n}`)].join(',') : ALLOWED_TOOLS]
+      : []),
     ...resume,
   ];
+  const stream = streamWith(null);
+  // MCP only reaches a task that has tools, and only when there is a config file to point at.
+  const mcp =
+    USES_TOOLS[task] && overrides.mcp && overrides.mcp.configPath && overrides.mcp.names?.length
+      ? overrides.mcp
+      : null;
   return [
+    // With MCP servers, the first rung carries them; the next is the same run without them, so
+    // a CLI that rejects `--mcp-config` still investigates — with `gh`, which the brief names as
+    // the fallback — instead of dropping straight to the tool-less variants.
+    ...(mcp
+      ? [{ args: [...streamWith(mcp), ...model, '--effort', effort], streaming: true, mcp: true }]
+      : []),
     { args: [...stream, ...model, '--effort', effort], streaming: true },
     {
       args: [...stream, ...model],
@@ -302,6 +345,151 @@ function claudeVariants(task, overrides = {}) {
     { args: ['-p', ...model, ...resume], streaming: false, toolsUnavailable: true },
     // True last resort: only what every version of the CLI has ever accepted.
     { args: ['-p'], streaming: false, toolsUnavailable: true },
+  ];
+}
+
+/**
+ * The agent CLIs this bridge can run. A closed set: the value picks the executable.
+ */
+const BACKENDS = new Set(['claude', 'codex']);
+
+/** Mirrors MCP_SERVER_NAME_RE in src/storage/configStore.ts. */
+const MCP_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const MAX_MCP_SERVERS = 8;
+
+/**
+ * Re-validate the renderer's MCP server list.
+ *
+ * These are the one place the renderer names an executable, so they get the strictest reading
+ * of anything that crosses the boundary: a closed shape, bounded lengths, no NUL or newline (a
+ * newline would also break the TOML Codex parses its overrides as), an absolute-or-bare command,
+ * and an http(s) URL that actually parses. Anything off is dropped, not repaired — the run then
+ * goes ahead on `gh` alone, which the brief already treats as the fallback.
+ *
+ * The command is still the user's own choice from their own settings, run with their own
+ * permissions — exactly as if they had registered it with `claude mcp add` or `codex mcp add`.
+ * Codex is given stdio servers only: it cannot do the OAuth sign-in the HTTP endpoint needs.
+ */
+function normalizeMcpServers(list, backend) {
+  if (!Array.isArray(list)) return [];
+  const clean = (v, max) =>
+    typeof v === 'string' && v.length > 0 && v.length <= max && !/[\0\r\n]/.test(v) ? v : null;
+  const seen = new Set();
+  const out = [];
+  for (const raw of list.slice(0, MAX_MCP_SERVERS)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const name = String(raw.name ?? '');
+    if (!MCP_NAME_RE.test(name) || seen.has(name)) continue;
+    if (raw.type === 'stdio') {
+      const command = clean(raw.command, 1024);
+      const args = Array.isArray(raw.args) ? raw.args.slice(0, 32).map((a) => clean(a, 1024)) : [];
+      if (!command || args.some((a) => a === null)) continue;
+      seen.add(name);
+      out.push({ name, type: 'stdio', command, args });
+    } else if (raw.type === 'http' && backend !== 'codex') {
+      const url = clean(raw.url, 2048);
+      let parsed = null;
+      try {
+        parsed = url ? new URL(url) : null;
+      } catch {
+        parsed = null;
+      }
+      if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) continue;
+      seen.add(name);
+      out.push({ name, type: 'http', url: parsed.toString() });
+    }
+  }
+  return out;
+}
+
+/** The `--mcp-config` document for Claude Code: `{ mcpServers: { name: {...} } }`. */
+function claudeMcpConfig(servers) {
+  const mcpServers = {};
+  for (const s of servers) {
+    mcpServers[s.name] =
+      s.type === 'http'
+        ? { type: 'http', url: s.url }
+        : { type: 'stdio', command: s.command, args: s.args };
+  }
+  return { mcpServers };
+}
+
+/**
+ * The same servers as `codex -c` overrides (`mcp_servers.<name>.command=…`).
+ *
+ * Each value is TOML. A JSON string literal is a valid TOML basic string for everything that can
+ * reach here — the validator above already refused NUL and newlines — so `JSON.stringify` is the
+ * quoting, and a path with spaces or quotes in it survives intact.
+ */
+function codexMcpOverrides(servers) {
+  const out = [];
+  for (const s of servers) {
+    if (s.type !== 'stdio') continue;
+    out.push('-c', `mcp_servers.${s.name}.command=${JSON.stringify(s.command)}`);
+    out.push('-c', `mcp_servers.${s.name}.args=${JSON.stringify(s.args)}`);
+  }
+  return out;
+}
+
+/**
+ * Codex's reasoning efforts. Claude's `max` has no Codex counterpart and maps to its top.
+ */
+const CODEX_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh']);
+const CODEX_EFFORT_FROM_CLAUDE = { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'xhigh' };
+/** A Codex model id: free-form, unlike Claude's aliases, so shape-checked instead of listed. */
+const CODEX_MODEL_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+
+/**
+ * The `codex exec` argv variants, most capable first — the Codex half of {@link claudeVariants}.
+ *
+ * Verified against codex-cli 0.167:
+ *  - `--json` streams JSONL events (`thread.started`, `item.started`/`item.completed` with
+ *    `command_execution`, `mcp_tool_call` and `agent_message` items, `turn.completed`,
+ *    `turn.failed`), which drive the same activity feed as Claude's stream-json.
+ *  - `-` reads the prompt from stdin; `exec resume <id> -` continues a thread the same way.
+ *  - `exec resume` has no `-s`/`-C`, so the sandbox is set with `-c sandbox_mode=…` on every
+ *    variant and the working directory comes from the spawn's cwd.
+ *  - The read-only sandbox also cuts the network, so `gh` cannot reach api.github.com from it.
+ *    The tasks that investigate therefore run in `workspace-write` with network on: writes are
+ *    confined to the scratch directory (and temp), which is where `gh run download` must put
+ *    artifacts anyway. The tool-less tasks stay read-only. MCP servers are spawned by Codex
+ *    itself, outside the sandbox, so they work in either.
+ *
+ * There is no turn limit to pass — Codex has no `--max-turns` — so the wall-clock timeout is
+ * the only bound, as it is for every task in practice.
+ */
+function codexVariants(task, overrides = {}) {
+  const tools = USES_TOOLS[task];
+  const model = CODEX_MODEL_RE.test(String(overrides.model ?? '')) ? ['-m', String(overrides.model)] : [];
+  const effort = CODEX_EFFORTS.has(overrides.effort)
+    ? overrides.effort
+    : CODEX_EFFORT_FROM_CLAUDE[overrides.effort] ?? CODEX_EFFORT_FROM_CLAUDE[CLAUDE_EFFORT[task]];
+  const sandbox = tools
+    ? ['-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true']
+    : ['-c', 'sandbox_mode="read-only"'];
+  const mcp = tools && Array.isArray(overrides.mcpServers) ? codexMcpOverrides(overrides.mcpServers) : [];
+  const resumeId = overrides.resumeSessionId ? String(overrides.resumeSessionId) : null;
+  const head = resumeId ? ['exec', 'resume'] : ['exec'];
+  const tail = resumeId ? [resumeId, '-'] : ['-'];
+  const common = ['--skip-git-repo-check', ...sandbox];
+  const lastMessage = overrides.lastMessagePath ? ['-o', overrides.lastMessagePath] : [];
+  return [
+    ...(mcp.length
+      ? [
+          {
+            args: [...head, '--json', ...common, ...mcp, ...model, '-c', `model_reasoning_effort="${effort}"`, ...tail],
+            streaming: true,
+            mcp: true,
+          },
+        ]
+      : []),
+    { args: [...head, '--json', ...common, ...model, '-c', `model_reasoning_effort="${effort}"`, ...tail], streaming: true },
+    { args: [...head, '--json', ...common, ...model, ...tail], streaming: true },
+    // No event stream: the answer arrives at the end, written to a file because stdout then
+    // carries Codex's own progress output as well.
+    { args: [...head, ...common, ...model, ...lastMessage, ...tail], streaming: false, lastMessageFile: true },
+    // True last resort, like Claude's bare `-p`.
+    { args: [...head, '--skip-git-repo-check', ...tail], streaming: false },
   ];
 }
 
@@ -460,9 +648,10 @@ function version(command, args) {
  * signed in" is a different message from "neither is installed".
  */
 async function probe() {
-  const [ghVersion, claudeVersion] = await Promise.all([
+  const [ghVersion, claudeVersion, codexVersion] = await Promise.all([
     version('gh', ['--version']),
     version('claude', ['--version']),
+    version('codex', ['--version']),
   ]);
   let ghAuthenticated = false;
   if (ghVersion) {
@@ -479,6 +668,8 @@ async function probe() {
     ghAuthenticated,
     claude: Boolean(claudeVersion),
     claudeVersion,
+    codex: Boolean(codexVersion),
+    codexVersion,
   };
 }
 
@@ -502,9 +693,12 @@ async function analyze(sender, payload) {
     model,
     effort,
     resumeSessionId,
+    backend = 'claude',
+    mcpServers,
   } = payload ?? {};
 
   // Re-validated here, not trusted from the renderer.
+  if (!BACKENDS.has(backend)) return { ok: false, error: 'Invalid backend.' };
   if (!NAME_RE.test(String(owner ?? '')) || !NAME_RE.test(String(repo ?? ''))) {
     return { ok: false, error: 'Invalid repository.' };
   }
@@ -625,9 +819,11 @@ async function analyze(sender, payload) {
     // Stable per failure and task, not random. `claude --resume` looks a session up by the
     // directory it ran in, so a resumed run must land in the same place — a fresh mkdtemp
     // would make every session unreachable the moment it was needed.
+    // Per backend as well: a Claude session cannot be resumed by Codex or the other way round,
+    // and the two must not sweep each other's directories.
     const scratch = path.join(
       os.tmpdir(),
-      `job-monitor-triage-${scratchKey(owner, repo, runId, depth)}`,
+      `job-monitor-triage-${scratchKey(owner, repo, runId, depth)}${backend === 'codex' ? '-codex' : ''}`,
     );
 
     // The caller's prompt ends with a log placeholder line; the log was appended above.
@@ -639,6 +835,8 @@ async function analyze(sender, payload) {
       model,
       effort,
       resumeSessionId,
+      backend,
+      mcpServers: USES_TOOLS[depth] ? normalizeMcpServers(mcpServers, backend) : [],
       emit,
       log,
       track,
@@ -688,28 +886,56 @@ async function runClaudeTask({
    * back to it, and keeping it would leak a temp directory per unfinished run.
    */
   resumable = true,
+  /** `claude` or `codex` — already checked against {@link BACKENDS} by the caller. */
+  backend = 'claude',
+  /** Validated by {@link normalizeMcpServers}; empty for a task without tools. */
+  mcpServers = [],
   emit,
   log,
   track,
 }) {
   /** Set when the run leaves a resumable session behind that this caller can return to. */
   let keepScratch = false;
+  const codex = backend === 'codex';
   try {
     fs.mkdirSync(scratchDir, { recursive: true });
 
     // `claude` discovers skills from `.claude/skills` under its working directory, and the
     // scratch dir is that directory — so writing it here is how the procedure reaches the
-    // model. Only the investigating tasks can use one: the rest have one turn and no tools.
+    // model. Codex reads `AGENTS.md` from the same place instead. Only the investigating tasks
+    // can use one: the rest have one turn and no tools.
     //
     // Best-effort. If this fails the brief still carries the contract and the facts, so
     // the analysis degrades to a less methodical one rather than failing outright.
-    for (const skill of SKILLS_BY_TASK[task] ?? []) {
-      const installed = installSkill(scratchDir, skill);
-      if (installed !== true) log(`could not install the ${skill.SKILL_NAME} skill: ${installed}`);
+    if (codex) {
+      const installed = installAgentsMd(scratchDir, SKILLS_BY_TASK[task] ?? []);
+      if (installed !== true) log(`could not write AGENTS.md for codex: ${installed}`);
+    } else {
+      for (const skill of SKILLS_BY_TASK[task] ?? []) {
+        const installed = installSkill(scratchDir, skill);
+        if (installed !== true) log(`could not install the ${skill.SKILL_NAME} skill: ${installed}`);
+      }
     }
 
+    // Claude takes its MCP servers as a JSON file; Codex as `-c` overrides built in codexVariants.
+    let mcp = null;
+    if (!codex && mcpServers.length > 0) {
+      try {
+        const configPath = path.join(scratchDir, 'mcp-servers.json');
+        fs.writeFileSync(configPath, JSON.stringify(claudeMcpConfig(mcpServers), null, 2), 'utf8');
+        mcp = { configPath, names: mcpServers.map((s) => s.name) };
+      } catch (e) {
+        log(`could not write the MCP config: ${e.message}`);
+      }
+    }
+    if (mcpServers.length > 0) {
+      log(`mcp servers: ${mcpServers.map((s) => `${s.name} (${s.type})`).join(', ')}`);
+    }
+    const lastMessagePath = path.join(scratchDir, 'last-message.txt');
+
     let toolCallCount = 0;
-    const parser = createStreamParser((phase, detail) => {
+    const createParser = codex ? createCodexStreamParser : createStreamParser;
+    const parser = createParser((phase, detail) => {
       if (detail && typeof detail.activity === 'string') {
         toolCallCount += 1;
         logEvent('claude', `tool: ${detail.activity}`, { requestId, depth: task, n: toolCallCount });
@@ -733,12 +959,15 @@ async function runClaudeTask({
     let reply = null;
     let answer = '';
     let attempt = 0;
-    for (const variant of claudeVariants(task, { model, effort, resumeSessionId })) {
+    const variants = codex
+      ? codexVariants(task, { model, effort, resumeSessionId, mcpServers, lastMessagePath })
+      : claudeVariants(task, { model, effort, resumeSessionId, mcp });
+    for (const variant of variants) {
       attempt += 1;
       if (variant.toolsUnavailable) emit('analysing', { toolsUnavailable: true });
-      log(`spawn: claude ${variant.args.join(' ')}`, { env: variant.env, attempt });
+      log(`spawn: ${backend} ${variant.args.join(' ')}`, { env: variant.env, attempt });
       const startedAt = Date.now();
-      reply = await run('claude', variant.args, {
+      reply = await run(backend, variant.args, {
         ...baseOptions,
         maxBytes: variant.streaming ? MAX_STREAM_BYTES : MAX_REPLY_BYTES,
         env: variant.env,
@@ -746,10 +975,14 @@ async function runClaudeTask({
           ? (text) => parser.push(text)
           : (text) => emit('analysing', { chunk: text }),
       });
-      answer = variant.streaming ? parser.finish() : reply.ok ? reply.stdout : '';
+      answer = variant.streaming
+        ? parser.finish()
+        : reply.ok
+          ? (variant.lastMessageFile ? readLastMessage(lastMessagePath) : null) ?? reply.stdout
+          : '';
       // The post-mortem set. Every question asked of a failed run so far has been one of
       // these: how long, how big, how did it end, and how many turns did it get through.
-      log(`claude ${reply.ok ? 'ok' : 'failed'}: ${answer.length} chars of answer`, {
+      log(`${backend} ${reply.ok ? 'ok' : 'failed'}: ${answer.length} chars of answer`, {
         ms: Date.now() - startedAt,
         answerChars: answer.length,
         streamTruncated: Boolean(reply.truncated),
@@ -777,7 +1010,7 @@ async function runClaudeTask({
       const sessionId = parser.sessionId();
       keepScratch = resumable && Boolean(sessionId);
       if (answer.trim() || sessionId) {
-        log(`claude ended early (${reason}) with ${answer.length} chars`, {
+        log(`${backend} ended early (${reason}) with ${answer.length} chars`, {
           sessionId: Boolean(sessionId),
           keptScratch: keepScratch,
         });
@@ -790,7 +1023,7 @@ async function runClaudeTask({
           sessionId: resumable ? (sessionId ?? undefined) : undefined,
         };
       }
-      return { ok: false, error: `claude: ${reason}` };
+      return { ok: false, error: `${backend}: ${reason}` };
     }
 
     emit('done');
@@ -806,6 +1039,16 @@ async function runClaudeTask({
         /* a leftover temp dir is not worth failing over */
       }
     }
+  }
+}
+
+/** The answer `codex exec -o` wrote, or null when there is none to read. */
+function readLastMessage(file) {
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    return text.trim() ? text : null;
+  } catch {
+    return null;
   }
 }
 
@@ -828,7 +1071,9 @@ function describeExit(outcome, fallback, flags = {}) {
         ? `it ran out of turns after ${outcome.numTurns}`
         : 'it ran out of turns';
     case 'error_during_execution':
-      return 'it hit an error partway through';
+      return outcome.message
+        ? `it hit an error partway through: ${outcome.message}`
+        : 'it hit an error partway through';
     default:
       return fallback || 'it exited without saying why';
   }
@@ -948,9 +1193,127 @@ function createStreamParser(emit) {
   };
 }
 
+/**
+ * One-line label for a Codex item, for the same activity feed Claude's tool calls go to.
+ *
+ * Shell commands arrive wrapped (`/bin/bash -lc '…'`); the wrapper is stripped so the feed
+ * shows the command that was meant, the way Claude's Bash calls appear.
+ */
+function describeCodexItem(item) {
+  const clip = (text, max = 120) =>
+    String(text ?? '').length > max ? `${String(text).slice(0, max)}…` : String(text ?? '');
+  switch (item.type) {
+    case 'command_execution': {
+      const command = String(item.command ?? '');
+      const wrapped = /^(?:\S*\/)?(?:ba|z)?sh -l?c '([\s\S]*)'$/.exec(command);
+      return `$ ${clip(wrapped ? wrapped[1].replace(/'\\''/g, "'") : command)}`;
+    }
+    case 'mcp_tool_call': {
+      const args = item.arguments && typeof item.arguments === 'object' ? JSON.stringify(item.arguments) : '';
+      return `mcp ${clip(item.server, 30)}.${clip(item.tool, 40)}${args && args !== '{}' ? ` ${clip(args, 80)}` : ''}`;
+    }
+    case 'web_search':
+      return `search ${clip(item.query, 80)}`;
+    case 'file_change':
+      return 'file change';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Consume `codex exec --json`, presenting the same interface as {@link createStreamParser}.
+ *
+ * Codex's events differ in shape but not in meaning: `thread.started` carries the id that
+ * `codex exec resume` takes; a `command_execution` or `mcp_tool_call` item starting is a tool
+ * call; each completed `agent_message` is a block of text — narration while it works, the
+ * answer last. The final answer is therefore the **last** message, as Claude's `result` event
+ * is: the earlier ones were the narration the live view has already shown.
+ */
+function createCodexStreamParser(emit) {
+  let buffer = '';
+  let text = '';
+  let lastMessage = null;
+  let outcome = null;
+  let textTruncated = false;
+  let sessionId = null;
+  let errorMessage = null;
+
+  const handle = (event) => {
+    if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
+      sessionId = event.thread_id;
+    } else if (event.type === 'item.started' && event.item) {
+      const activity = describeCodexItem(event.item);
+      if (activity) emit('analysing', { activity });
+    } else if (event.type === 'item.completed' && event.item) {
+      const item = event.item;
+      if (item.type === 'agent_message' && typeof item.text === 'string' && item.text) {
+        lastMessage = item.text;
+        if (text.length < MAX_REPLY_BYTES) {
+          // Whole messages, so a newline between them is safe — see createStreamParser.
+          const piece = text ? `\n${item.text}` : item.text;
+          text += piece;
+          if (text.length >= MAX_REPLY_BYTES) textTruncated = true;
+          emit('analysing', { chunk: piece });
+        }
+      } else if (item.type === 'error' && typeof item.message === 'string') {
+        errorMessage = item.message;
+      }
+    } else if (event.type === 'turn.completed') {
+      outcome = { subtype: 'success', isError: false, numTurns: null };
+    } else if (event.type === 'turn.failed') {
+      outcome = {
+        subtype: 'error_during_execution',
+        isError: true,
+        numTurns: null,
+        message: event.error?.message ?? errorMessage ?? null,
+      };
+    } else if (event.type === 'error' && typeof event.message === 'string') {
+      errorMessage = event.message;
+      outcome = { subtype: 'error_during_execution', isError: true, numTurns: null, message: event.message };
+    }
+  };
+
+  const parseLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      handle(JSON.parse(trimmed));
+    } catch {
+      /* a non-JSON line is not worth aborting the run over */
+    }
+  };
+
+  return {
+    outcome() {
+      return outcome;
+    },
+    textTruncated() {
+      return textTruncated;
+    },
+    sessionId() {
+      return sessionId;
+    },
+    push(part) {
+      buffer += part;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) parseLine(line);
+    },
+    finish() {
+      if (buffer.trim()) parseLine(buffer);
+      buffer = '';
+      // A clean finish answers with the last message alone; an unfinished one keeps everything
+      // it wrote, since the narration is then the only record of how far it got.
+      if (outcome?.subtype === 'success' && lastMessage) return lastMessage.slice(0, MAX_REPLY_BYTES);
+      return text;
+    },
+  };
+}
+
 /** Heuristic: did the CLI reject our flags rather than fail at the task? */
 function looksLikeBadFlag(error) {
-  return /unknown option|unrecognized|unknown argument|invalid option|--allowedTools|--max-turns|--model|--effort/i.test(
+  return /unknown option|unrecognized|unknown argument|unexpected argument|invalid option|--allowedTools|--max-turns|--model|--effort|--mcp-config/i.test(
     String(error ?? ''),
   );
 }
@@ -1026,9 +1389,10 @@ async function fetchLog({ owner, repo, runId, track, emit }) {
  * somewhere empty keeps it from picking up a CLAUDE.md belonging to some real project.
  */
 async function compose(sender, payload) {
-  const { prompt, requestId, task = 'pr', model, effort } = payload ?? {};
+  const { prompt, requestId, task = 'pr', model, effort, backend = 'claude' } = payload ?? {};
 
   // Re-validated here, not trusted from the renderer.
+  if (!BACKENDS.has(backend)) return { ok: false, error: 'Invalid backend.' };
   if (typeof prompt !== 'string' || prompt.length === 0 || prompt.length > 500_000) {
     return { ok: false, error: 'Invalid prompt.' };
   }
@@ -1077,6 +1441,7 @@ async function compose(sender, payload) {
       // Deliberately absent: a one-shot composition has nothing to continue, and not
       // accepting a session id removes an argv surface entirely.
       resumeSessionId: undefined,
+      backend,
       // And so the scratch directory is always removed. Keeping one is only useful when
       // `--resume` could find it again, and the path above is random by design — every
       // early-exiting compose would otherwise leave a directory nothing can reach or sweep.
@@ -1126,8 +1491,14 @@ module.exports = {
   ANALYZE_DEPTHS,
   COMPOSE_TASKS,
   claudeVariants,
+  codexVariants,
   createStreamParser,
+  createCodexStreamParser,
+  normalizeMcpServers,
+  claudeMcpConfig,
+  codexMcpOverrides,
   installSkill,
+  installAgentsMd,
   describeExit,
   SKILLS_BY_TASK,
   MAX_REPLY_BYTES,

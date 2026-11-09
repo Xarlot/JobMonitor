@@ -111,3 +111,21 @@ describe('the failure-triage skill', () => {
   });
 });
 
+
+describe('the failure-triage skill with an MCP server', () => {
+  it('takes metadata from the MCP server before gh, cheapest first', () => {
+    expect(SKILL_MARKDOWN).toMatch(/Metadata first, when an MCP server is connected/);
+    const section = SKILL_MARKDOWN.slice(SKILL_MARKDOWN.indexOf('## Metadata first'));
+    const order = ['run_info(run_id)', 'job_log(job_id', 'run_artifacts(run_id)', 'commit_info(sha)'].map((t) =>
+      section.indexOf(t),
+    );
+    expect(order.every((i) => i > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('checks freshness and falls back to gh for what the index lacks', () => {
+    expect(SKILL_MARKDOWN).toMatch(/index_status/);
+    expect(SKILL_MARKDOWN).toMatch(/other than DevExpress\/dxvcs/);
+    expect(SKILL_MARKDOWN).toMatch(/Without such a server, ignore this section/);
+  });
+});

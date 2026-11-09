@@ -24,10 +24,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import {
+  agentRunOptions,
   analyzeWithClaude,
   cancelClaudeAnalysis,
   claudeBridgeAvailable,
   claudeToolsReady,
+  mcpServerNamesFor,
   NO_CLAUDE_TOOLS,
   onClaudeProgress,
   probeClaudeTools,
@@ -77,6 +79,7 @@ import {
   CLAUDE_RESUME_PROMPT,
   parseClaudeAnalysis,
   returnsDocument,
+  TOOL_TASKS,
   trimLog,
   type ClaudeAnalysis,
   type ClaudeDepth,
@@ -481,6 +484,8 @@ export function useClaudeTriage(): ClaudeTriage {
             hasLog: depth === 'deep' || depth === 'cause' || fallbackLog.length > 0,
             promptOverride: task.prompt,
             extraInstructions: ai.extraInstructions,
+            // Only the investigating tasks are handed the servers, so only they are told to use them.
+            mcpServers: TOOL_TASKS.has(depth) ? mcpServerNamesFor(ai) : [],
           });
 
       return analyzeWithClaude({
@@ -492,8 +497,7 @@ export function useClaudeTriage(): ClaudeTriage {
         fallbackLog,
         evidenceInPrompt,
         depth,
-        model: task.model,
-        effort: task.effort,
+        ...agentRunOptions(ai, task, TOOL_TASKS.has(depth)),
         resumeSessionId,
       });
     })().then((result) => {
@@ -636,7 +640,7 @@ export function useClaudeTriage(): ClaudeTriage {
 
   return {
     tools,
-    available: ai.enabled && claudeToolsReady(tools),
+    available: ai.enabled && claudeToolsReady(tools, ai.backend),
     stateFor,
     run,
     cancel,

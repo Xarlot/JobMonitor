@@ -643,6 +643,46 @@ budget investigating has usually written a partial verdict, and discarding it di
 comes back as `ok: true` with an `incompleteReason`, and the dialog says so rather than letting a
 truncated commit list read as a finished one.
 
+### Two backends, one pipeline
+
+`runClaudeTask` runs either CLI — `ai.backend` arrives in the payload and is checked against
+`BACKENDS`. Codex differs where it has to and nowhere else:
+
+- **argv**: `codexVariants` builds `codex exec --json --skip-git-repo-check -c sandbox_mode=… -`
+  (prompt on stdin), `exec resume <id> -` to continue. `exec resume` has no `-s`/`-C`, so the sandbox
+  is always a `-c` override and the working directory is the spawn's cwd. Same ladder idea as Claude:
+  drop MCP, then the effort override, then `--json` (answer read from `-o last-message.txt`), then a
+  bare `exec -`. `unexpected argument` (clap's wording) counts as a rejected flag.
+- **sandbox**: the investigating tasks run `workspace-write` with
+  `sandbox_workspace_write.network_access=true`. Codex's `read-only` sandbox also cuts the network
+  (verified: `gh` reports "error connecting to api.github.com"), and `gh run download` must write into
+  the scratch directory anyway. The one-turn tasks stay `read-only`. There is no turn limit to pass.
+- **stream**: `createCodexStreamParser` maps `thread.started` → session id, `item.started`
+  (`command_execution`, `mcp_tool_call`) → activity, `agent_message` → narration, and the **last**
+  message of a `turn.completed` run → the answer (Claude's `result` event plays that role).
+- **skills**: Codex reads `AGENTS.md` from its cwd, not `.claude/skills`, so `installAgentsMd` writes
+  the task's skills there under `# Skill: <name>` headings.
+- **scratch**: suffixed `-codex`, so a Claude session id is never resumed by Codex or vice versa.
+
+### MCP servers
+
+`ai.mcpServers` (settings) → `activeMcpServers` (enabled, complete, unique; stdio only for Codex) →
+`agentRunOptions` puts them on the request **only for a tool-using task**, and `mcpServerNamesFor`
+gives the same names to `buildClaudePrompt`, so the brief never mentions a server the CLI was not
+given. The bridge re-validates them in `normalizeMcpServers` (closed shape, no NUL/newline, http(s)
+URLs only) — they are the one place the renderer names an executable. Claude gets a
+`mcp-servers.json` in the scratch dir via `--mcp-config` (placed before `--max-turns`, because the
+option is variadic) plus `mcp__<name>` on `--allowedTools`; Codex gets
+`-c mcp_servers.<name>.command=…`/`.args=…` with JSON-quoted (valid TOML) values. Either ladder's
+first rung is the only one with MCP, so a CLI that rejects it still investigates with `gh`.
+
+The MCP section of the prompt (`mcpSection` in `claudePrompt.ts`) is appended after the brief — also
+after a custom prompt, since it describes the environment rather than wording — with per-task tool
+guidance and the exact calls for this failure. With no server, `buildClaudePrompt` output is
+byte-identical to before (`claudePrompt.test.ts` pins that). Claude Code in a managed environment may
+refuse a `--mcp-config` server by policy ("MCP server blocked by enterprise policy"); the brief's `gh`
+fallback covers that.
+
 ### Two skills, two questions
 
 `SKILLS_BY_TASK` installs per task rather than all of them: a skill the model cannot use is one it has

@@ -62,6 +62,9 @@ export const MOCK_CONFIG: MonitorConfig = {
   featureBranches: { enabled: true, prefix: 'feature/' },
   ai: {
     enabled: true,
+    backend: 'claude',
+    codex: { model: '', effort: 'auto' },
+    mcpServers: [],
     extraInstructions: '',
     autoStart: true,
     quick: { model: 'sonnet', effort: 'medium', prompt: '' },

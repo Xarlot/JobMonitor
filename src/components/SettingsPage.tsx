@@ -28,6 +28,10 @@ import { useAuth } from '../context/AuthContext';
 import {
   AI_EFFORTS,
   AI_MODELS,
+  CODEX_EFFORTS,
+  DEFAULT_MCP_SERVERS,
+  DXVCS_MCP_README_URL,
+  MCP_SERVER_NAME_RE,
   MAX_FLOW_MATCHES,
   monitorConfigSchema,
   newFlowId,
@@ -35,6 +39,7 @@ import {
   type AiConfig,
   type AiTaskConfig,
   type AutoMergeConfig,
+  type McpServerConfig,
   type DiagnosticsConfig,
   type FeatureBranchesConfig,
   type EmptyFlowFilter,
@@ -1248,7 +1253,7 @@ function AiTaskFields({
  * the API. If the tools are found and analyses still fail, the answer is in the diagnostics
  * log below, and the panel says so rather than implying a clean bill of health.
  */
-function CheckAiIntegration() {
+function CheckAiIntegration({ backend }: { backend: AiConfig['backend'] }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<ClaudeToolStatus | null>(null);
 
@@ -1291,13 +1296,30 @@ function CheckAiIntegration() {
           className={styles.mt3Rounded}
         >
           <CheckRow
-            state={result.claude ? 'ok' : 'bad'}
+            state={result.claude ? 'ok' : backend === 'claude' ? 'bad' : 'skip'}
             label="claude"
             detail={
               result.claudeVersion ??
               'Not found on PATH. Install the Claude Code CLI, then reopen the app.'
             }
-            note="Required — every AI feature runs through it."
+            note={
+              backend === 'claude'
+                ? 'Required — the selected AI backend; every AI feature runs through it.'
+                : 'Not used — Codex is the selected backend.'
+            }
+          />
+          <CheckRow
+            state={result.codex ? 'ok' : backend === 'codex' ? 'bad' : 'skip'}
+            label="codex"
+            detail={
+              result.codexVersion ??
+              'Not found on PATH. Install the Codex CLI (`npm i -g @openai/codex`), sign in, then reopen the app.'
+            }
+            note={
+              backend === 'codex'
+                ? 'Required — the selected AI backend; every AI feature runs through it.'
+                : 'Optional — only used when Codex is chosen as the AI backend.'
+            }
           />
           <CheckRow
             state={result.gh ? 'ok' : 'warn'}
@@ -1322,9 +1344,9 @@ function CheckAiIntegration() {
           />
 
           <div className={styles.px3Py2}>
-            {result.claude
+            {(backend === 'codex' ? result.codex : result.claude)
               ? 'This checks that the tools are installed, not that they work — if an analysis still fails, the diagnostics log below says why.'
-              : 'Without claude, the AI controls stay hidden however this page is configured.'}
+              : `Without ${backend}, the AI controls stay hidden however this page is configured.`}
           </div>
         </div>
       )}
@@ -1502,6 +1524,237 @@ function DiagnosticsSection({
 }
 
 /**
+ * Which agent CLI runs the tasks, and the Codex-only knobs.
+ *
+ * Claude keeps its per-task model and effort below. Codex has no sonnet/opus pair to choose
+ * between per task, so it gets one model for everything and an effort that by default follows
+ * each task's own setting — the tuning below keeps meaning something on either backend.
+ */
+function AiBackendFields({
+  settings,
+  onChange,
+}: {
+  settings: AiConfig;
+  onChange: (patch: Partial<AiConfig>) => void;
+}) {
+  return (
+    <div className={styles.roundedP3}>
+      <Heading as="h3" className={styles.bodyMb1}>
+        AI backend
+      </Heading>
+      <Text as="p" className={styles.fgMutedSmall2}>
+        Which local agent runs the analyses. Both get the same briefs, the same skills (Codex reads
+        them from an <code>AGENTS.md</code>) and the same MCP servers.
+      </Text>
+      <SegmentedControl aria-label="AI backend" size="small" className={styles.mb3}>
+        <SegmentedControl.Button
+          selected={settings.backend === 'claude'}
+          onClick={() => onChange({ backend: 'claude' })}
+        >
+          Claude Code
+        </SegmentedControl.Button>
+        <SegmentedControl.Button
+          selected={settings.backend === 'codex'}
+          onClick={() => onChange({ backend: 'codex' })}
+        >
+          Codex
+        </SegmentedControl.Button>
+      </SegmentedControl>
+      {settings.backend === 'codex' && (
+        <div className={styles.flexGap3_3}>
+          <FormControl className={styles.minWidth}>
+            <FormControl.Label>Codex model</FormControl.Label>
+            <TextInput
+              value={settings.codex.model}
+              placeholder="from ~/.codex/config.toml"
+              onChange={(e) => onChange({ codex: { ...settings.codex, model: e.target.value.trim() } })}
+            />
+            <FormControl.Caption>Blank uses your Codex default. Used for every task.</FormControl.Caption>
+          </FormControl>
+          <FormControl className={styles.minWidth}>
+            <FormControl.Label>Codex reasoning effort</FormControl.Label>
+            <Select
+              value={settings.codex.effort}
+              onChange={(e) =>
+                onChange({
+                  codex: { ...settings.codex, effort: e.target.value as AiConfig['codex']['effort'] },
+                })
+              }
+            >
+              {CODEX_EFFORTS.map((v) => (
+                <Select.Option key={v} value={v}>
+                  {v === 'auto' ? 'auto — each task’s own effort' : v}
+                </Select.Option>
+              ))}
+            </Select>
+            <FormControl.Caption>
+              The per-task <strong>model</strong> choices below apply to Claude only.
+            </FormControl.Caption>
+          </FormControl>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One argument per line in the editor; blank lines are dropped when the server is used. */
+function argsToText(args: readonly string[]): string {
+  return args.join('\n');
+}
+
+/**
+ * MCP servers for the investigating tasks (deep analysis, who broke it, what failed).
+ *
+ * With at least one enabled, those briefs tell the agent to take its metadata — runs, logs,
+ * test results, commits, authorship — from the server first and use `gh` only for what the
+ * index does not hold. With none, the briefs are exactly what they were without this feature.
+ */
+function McpServersFields({
+  servers,
+  backend,
+  onChange,
+}: {
+  servers: McpServerConfig[];
+  backend: AiConfig['backend'];
+  onChange: (servers: McpServerConfig[]) => void;
+}) {
+  const update = (index: number, patch: Partial<McpServerConfig>) =>
+    onChange(servers.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  const remove = (index: number) => onChange(servers.filter((_, i) => i !== index));
+  const add = () =>
+    onChange([
+      ...servers,
+      { name: `mcp-${servers.length + 1}`, type: 'stdio', command: '', args: [], url: '', enabled: true },
+    ]);
+  const restoreDefaults = () => {
+    const names = new Set(servers.map((s) => s.name));
+    onChange([
+      ...servers,
+      ...DEFAULT_MCP_SERVERS.filter((d) => !names.has(d.name)).map((d) => ({ ...d, args: [...d.args] })),
+    ]);
+  };
+
+  return (
+    <div className={styles.roundedP3}>
+      <Heading as="h3" className={styles.bodyMb1}>
+        MCP servers
+      </Heading>
+      <Text as="p" className={styles.fgMutedSmall2}>
+        Handed to the tasks that investigate — deep analysis, “Who broke it” and “What failed” —
+        and those are then told to get their metadata here first: run history and timings, jobs,
+        logs, parsed test results, flaky-vs-regression history, commits, pull requests and who
+        touched a path. <code>gh</code> stays the fallback for whatever the index doesn’t hold yet.
+        The <strong>dxvcs</strong> server indexes DevExpress/dxvcs —{' '}
+        <Link href={DXVCS_MCP_README_URL} target="_blank" rel="noreferrer">
+          its tools and setup
+        </Link>{' '}
+        (locally: <code>/work/dxvcs_mcp/README.md</code>). Nothing here is used by the one-turn
+        tasks.
+      </Text>
+      {servers.length === 0 && (
+        <Text as="p" className={styles.fgMutedSmall2}>
+          No MCP servers — the investigating tasks use <code>gh</code> alone.
+        </Text>
+      )}
+      {servers.map((server, index) => {
+        const nameOk = MCP_SERVER_NAME_RE.test(server.name);
+        const codexSkips = backend === 'codex' && server.type === 'http';
+        return (
+          <div key={index} className={styles.roundedP3}>
+            <div className={styles.flexGap3_3}>
+              <FormControl>
+                <Checkbox
+                  checked={server.enabled}
+                  onChange={(e) => update(index, { enabled: e.target.checked })}
+                />
+                <FormControl.Label>Enabled</FormControl.Label>
+              </FormControl>
+              <FormControl className={styles.minWidth}>
+                <FormControl.Label>Name</FormControl.Label>
+                <TextInput
+                  value={server.name}
+                  validationStatus={nameOk ? undefined : 'error'}
+                  onChange={(e) => update(index, { name: e.target.value.trim() })}
+                />
+                {!nameOk && (
+                  <FormControl.Validation variant="error">
+                    Letters, digits, _ and - only.
+                  </FormControl.Validation>
+                )}
+              </FormControl>
+              <FormControl className={styles.minWidth}>
+                <FormControl.Label>Transport</FormControl.Label>
+                <Select
+                  value={server.type}
+                  onChange={(e) => update(index, { type: e.target.value as McpServerConfig['type'] })}
+                >
+                  <Select.Option value="stdio">stdio (local command)</Select.Option>
+                  <Select.Option value="http">http (remote URL)</Select.Option>
+                </Select>
+              </FormControl>
+              <IconButton
+                icon={TrashIcon}
+                aria-label={`Remove MCP server ${server.name}`}
+                variant="invisible"
+                onClick={() => remove(index)}
+              />
+            </div>
+            {server.type === 'stdio' ? (
+              <div className={styles.flexGap3_3}>
+                <FormControl className={styles.minWidth}>
+                  <FormControl.Label>Command</FormControl.Label>
+                  <TextInput
+                    value={server.command}
+                    placeholder="bash"
+                    onChange={(e) => update(index, { command: e.target.value })}
+                  />
+                </FormControl>
+                <FormControl className={styles.maxWidth6}>
+                  <FormControl.Label>Arguments (one per line)</FormControl.Label>
+                  <Textarea
+                    rows={2}
+                    resize="vertical"
+                    value={argsToText(server.args)}
+                    onChange={(e) => update(index, { args: e.target.value.split('\n') })}
+                  />
+                  <FormControl.Caption>
+                    Started by the agent CLI without a shell, like <code>claude mcp add</code> or{' '}
+                    <code>codex mcp add</code> would.
+                  </FormControl.Caption>
+                </FormControl>
+              </div>
+            ) : (
+              <FormControl className={styles.maxWidth6}>
+                <FormControl.Label>URL</FormControl.Label>
+                <TextInput
+                  block
+                  value={server.url}
+                  placeholder="https://<dxvcs-mcp host>/mcp"
+                  onChange={(e) => update(index, { url: e.target.value.trim() })}
+                />
+                <FormControl.Caption>
+                  {codexSkips
+                    ? 'Skipped with Codex: it cannot sign in to an Entra-protected MCP endpoint yet — use the stdio entry.'
+                    : 'Claude Code signs in with OAuth; authenticate once with /mcp in an interactive claude session first. Blank leaves it unused.'}
+                </FormControl.Caption>
+              </FormControl>
+            )}
+          </div>
+        );
+      })}
+      <div className={styles.flexGap2_4}>
+        <Button leadingVisual={PlusIcon} onClick={add}>
+          Add MCP server
+        </Button>
+        {DEFAULT_MCP_SERVERS.some((d) => !servers.some((s) => s.name === d.name)) && (
+          <Button onClick={restoreDefaults}>Add the dxvcs entries</Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Local AI integration. One switch for the whole thing, because this is the only feature
  * that sends anything outside GitHub.
  */
@@ -1518,13 +1771,13 @@ function AiSection({
         AI integration
       </Heading>
       <Text as="p" className={styles.fgMutedBody}>
-        Runs the <code>claude</code> CLI already installed on this machine to explain a failure
-        and to rewrite its log. Desktop app only. This is the one thing Job Monitor sends
+        Runs the <code>claude</code> or <code>codex</code> CLI already installed on this machine
+        to explain a failure and to rewrite its log. Desktop app only. This is the one thing Job Monitor sends
         anywhere other than <code>api.github.com</code>, and it only ever runs when you click —
         never in the background. Your GitHub token is never passed to it.
       </Text>
 
-      <CheckAiIntegration />
+      <CheckAiIntegration backend={settings.backend} />
 
       <FormControl className={styles.mb3}>
         <Checkbox
@@ -1533,13 +1786,19 @@ function AiSection({
         />
         <FormControl.Label>Enable AI integration</FormControl.Label>
         <FormControl.Caption>
-          Off hides every AI control — the analysis buttons and the Claude log view — whether or
-          not <code>claude</code> is installed.
+          Off hides every AI control — the analysis buttons and the AI log view — whether or
+          not the CLI is installed.
         </FormControl.Caption>
       </FormControl>
 
       {settings.enabled && (
         <>
+          <AiBackendFields settings={settings} onChange={onChange} />
+          <McpServersFields
+            servers={settings.mcpServers}
+            backend={settings.backend}
+            onChange={(mcpServers) => onChange({ mcpServers })}
+          />
           <FormControl className={styles.mb4_2}>
             <FormControl.Label>Additional instructions</FormControl.Label>
             <Textarea

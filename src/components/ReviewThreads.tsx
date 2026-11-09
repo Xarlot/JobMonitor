@@ -72,6 +72,7 @@ import {
   cancelClaudeAnalysis,
   claudeToolsReady,
   composeAvailable,
+  agentRunOptions,
   composeWithClaude,
   probeClaudeTools,
 } from '../storage/desktopClaude';
@@ -365,12 +366,12 @@ function useClaudeAvailable(): boolean {
     if (!wanted) return;
     let live = true;
     void probeClaudeTools().then((status) => {
-      if (live) setReady(claudeToolsReady(status));
+      if (live) setReady(claudeToolsReady(status, config.ai.backend));
     });
     return () => {
       live = false;
     };
-  }, [wanted]);
+  }, [wanted, config.ai.backend]);
   return wanted && ready;
 }
 
@@ -650,7 +651,7 @@ function ThreadCard({
     Telemetry.featureUsed(feature);
     const startedAtMs = performance.now();
     // All three run as the bridge's `reply` task: one turn, no tools, over a brief written here.
-    const result = await composeWithClaude({ prompt, requestId, task: 'reply', model: settings.model, effort: settings.effort });
+    const result = await composeWithClaude({ prompt, requestId, task: 'reply', ...agentRunOptions(config.ai, settings, false) });
     if (claudeId.current !== requestId) return; // cancelled or superseded
     claudeId.current = null;
     if (!result.ok) {

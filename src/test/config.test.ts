@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activeMcpServers,
   DEFAULT_CONFIG,
   effectivePrAuthor,
   forkRepo,
@@ -7,6 +8,7 @@ import {
   monitorConfigSchema,
   safeParseConfig,
 } from '../storage/configStore';
+import { agentRunOptions, claudeToolsReady, mcpServerNamesFor } from '../storage/desktopClaude';
 
 describe('configStore', () => {
   it('applies defaults for polling and flows', () => {
@@ -280,5 +282,103 @@ describe('ai defaults', () => {
     expect(
       monitorConfigSchema.safeParse({ ...base, ai: { deep: { effort: 'ultra' } } }).success,
     ).toBe(false);
+  });
+});
+
+describe('AI backend and MCP servers', () => {
+  const base = { version: 1, upstream: { owner: 'o', repo: 'r' }, fork: { owner: 'o' } };
+
+  it('defaults to Claude, with Codex following each task’s effort', () => {
+    expect(DEFAULT_CONFIG.ai.backend).toBe('claude');
+    expect(DEFAULT_CONFIG.ai.codex).toEqual({ model: '', effort: 'auto' });
+  });
+
+  /** Prefilled so it is one click to turn on, but off: the path is one machine's. */
+  it('prefills the dxvcs servers, switched off', () => {
+    const [local, remote] = DEFAULT_CONFIG.ai.mcpServers;
+    expect(local).toMatchObject({
+      name: 'dxvcs-local',
+      type: 'stdio',
+      command: 'bash',
+      args: ['/work/dxvcs_mcp/scripts/mcp-stdio.sh', 'local'],
+      enabled: false,
+    });
+    expect(remote).toMatchObject({ name: 'dxvcs', type: 'http', url: '', enabled: false });
+    expect(activeMcpServers(DEFAULT_CONFIG.ai)).toEqual([]);
+  });
+
+  it('migrates an ai block saved before the backend and MCP settings existed', () => {
+    const parsed = monitorConfigSchema.parse({ ...base, ai: { enabled: true, quick: { model: 'opus' } } });
+    expect(parsed.ai.backend).toBe('claude');
+    expect(parsed.ai.mcpServers).toEqual(DEFAULT_CONFIG.ai.mcpServers);
+    expect(parsed.ai.quick.model).toBe('opus');
+  });
+
+  it('keeps an emptied server list empty', () => {
+    expect(monitorConfigSchema.parse({ ...base, ai: { mcpServers: [] } }).ai.mcpServers).toEqual([]);
+  });
+
+  it('rejects an unknown backend and a server name the CLIs cannot take', () => {
+    expect(monitorConfigSchema.safeParse({ ...base, ai: { backend: 'gemini' } }).success).toBe(false);
+    expect(
+      monitorConfigSchema.safeParse({ ...base, ai: { mcpServers: [{ name: 'a.b', command: 'x' }] } }).success,
+    ).toBe(false);
+    expect(monitorConfigSchema.safeParse({ ...base, ai: { codex: { model: 'gpt 5' } } }).success).toBe(false);
+  });
+
+  it('hands over only enabled, complete, uniquely named servers — and no http ones to Codex', () => {
+    const servers = [
+      { name: 'a', type: 'stdio' as const, command: 'bash', args: ['x'], url: '', enabled: true },
+      { name: 'off', type: 'stdio' as const, command: 'bash', args: [], url: '', enabled: false },
+      { name: 'nocmd', type: 'stdio' as const, command: ' ', args: [], url: '', enabled: true },
+      { name: 'a', type: 'stdio' as const, command: 'dup', args: [], url: '', enabled: true },
+      { name: 'web', type: 'http' as const, command: '', args: [], url: 'https://h/mcp', enabled: true },
+      { name: 'nourl', type: 'http' as const, command: '', args: [], url: '', enabled: true },
+    ];
+    expect(activeMcpServers({ backend: 'claude', mcpServers: servers }).map((s) => s.name)).toEqual(['a', 'web']);
+    expect(activeMcpServers({ backend: 'codex', mcpServers: servers }).map((s) => s.name)).toEqual(['a']);
+  });
+});
+
+describe('agentRunOptions', () => {
+  const server = { name: 'dxvcs-local', type: 'stdio' as const, command: 'bash', args: ['/s.sh', '', 'local'], url: '', enabled: true };
+  const ai = { backend: 'claude' as const, codex: { model: '', effort: 'auto' as const }, mcpServers: [server] };
+
+  it('passes Claude the task’s own model and effort, and MCP only to a tool-using task', () => {
+    expect(agentRunOptions(ai, { model: 'opus', effort: 'high' }, true)).toEqual({
+      backend: 'claude',
+      model: 'opus',
+      effort: 'high',
+      mcpServers: [{ name: 'dxvcs-local', type: 'stdio', command: 'bash', args: ['/s.sh', 'local'] }],
+    });
+    expect(agentRunOptions(ai, { model: 'sonnet', effort: 'low' }, false)).toEqual({
+      backend: 'claude',
+      model: 'sonnet',
+      effort: 'low',
+    });
+  });
+
+  it('maps the task effort onto Codex unless one is chosen, and leaves the model to Codex when blank', () => {
+    const codex = { ...ai, backend: 'codex' as const };
+    expect(agentRunOptions(codex, { model: 'opus', effort: 'max' }, false)).toEqual({
+      backend: 'codex',
+      model: undefined,
+      effort: 'xhigh',
+    });
+    expect(
+      agentRunOptions({ ...codex, codex: { model: 'gpt-5', effort: 'low' } }, { model: 'opus', effort: 'high' }, true),
+    ).toMatchObject({ backend: 'codex', model: 'gpt-5', effort: 'low', mcpServers: [{ name: 'dxvcs-local' }] });
+  });
+
+  it('names the same servers for the brief as it hands the CLI', () => {
+    expect(mcpServerNamesFor(ai)).toEqual(['dxvcs-local']);
+    expect(mcpServerNamesFor({ ...ai, mcpServers: [] })).toEqual([]);
+  });
+
+  it('checks for the CLI of the chosen backend', () => {
+    const status = { gh: true, ghVersion: 'x', ghAuthenticated: true, claude: true, claudeVersion: 'x', codex: false, codexVersion: null };
+    expect(claudeToolsReady(status)).toBe(true);
+    expect(claudeToolsReady(status, 'codex')).toBe(false);
+    expect(claudeToolsReady({ ...status, codex: true }, 'codex')).toBe(true);
   });
 });

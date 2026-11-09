@@ -1,13 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initRunLog, logEvent, runLogPath } from '../../electron/runLog.cjs';
 import {
   ANALYZE_DEPTHS,
   COMPOSE_TASKS,
   claudeVariants,
+  claudeMcpConfig,
+  codexMcpOverrides,
+  codexVariants,
+  createCodexStreamParser,
   createStreamParser,
   describeExit,
+  installAgentsMd,
   installSkill,
+  normalizeMcpServers,
   MAX_REPLY_BYTES,
+  SKILLS_BY_TASK,
   TASK_TABLES,
 } from '../../electron/claudeBridge.cjs';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -718,5 +725,224 @@ describe('resuming an unfinished run', () => {
   it('derives the same directory for the same analysis and different ones otherwise', () => {
     const key = /function scratchKey\(([^)]*)\)/.exec(BRIDGE_SOURCE);
     expect(key?.[1]).toBe('owner, repo, runId, depth');
+  });
+});
+
+const DXVCS_LOCAL = {
+  name: 'dxvcs-local',
+  type: 'stdio',
+  command: 'bash',
+  args: ['/work/dxvcs_mcp/scripts/mcp-stdio.sh', 'local'],
+};
+
+describe('MCP servers for Claude', () => {
+  const mcp = { configPath: '/tmp/scratch/mcp-servers.json', names: ['dxvcs-local'] };
+
+  it('adds nothing at all when no server is configured', () => {
+    for (const task of Object.keys(TASK_TABLES.CLAUDE_MODEL)) {
+      expect(claudeVariants(task, {})).toEqual(claudeVariants(task));
+      expect(claudeVariants(task, { mcp: null })).toEqual(claudeVariants(task));
+      for (const v of claudeVariants(task)) expect(v.args).not.toContain('--mcp-config');
+    }
+  });
+
+  it('passes the config file and allows the server’s tools on the first rung', () => {
+    const [first, second] = claudeVariants('blame', { mcp });
+    expect(first.mcp).toBe(true);
+    expect(valueOf(first.args, '--mcp-config')).toBe(mcp.configPath);
+    const allowed = valueOf(first.args, '--allowedTools').split(',');
+    expect(allowed).toContain('mcp__dxvcs-local');
+    expect(allowed).toContain('Bash(gh run list:*)');
+    // `--mcp-config` is variadic, so an option must follow it, never a bare value.
+    expect(first.args[first.args.indexOf('--mcp-config') + 2].startsWith('--')).toBe(true);
+    // The next rung is the plain Claude ladder, so a CLI without --mcp-config still investigates.
+    expect(second.args).not.toContain('--mcp-config');
+    expect(claudeVariants('blame', { mcp }).slice(1)).toEqual(claudeVariants('blame'));
+  });
+
+  it('never gives a tool-less task an MCP server', () => {
+    for (const task of ['quick', 'log', 'marks', 'pr', 'reply']) {
+      expect(claudeVariants(task, { mcp })).toEqual(claudeVariants(task));
+    }
+  });
+
+  it('writes the --mcp-config document Claude Code reads', () => {
+    expect(claudeMcpConfig([DXVCS_LOCAL, { name: 'dxvcs', type: 'http', url: 'https://h/mcp' }])).toEqual({
+      mcpServers: {
+        'dxvcs-local': { type: 'stdio', command: 'bash', args: DXVCS_LOCAL.args },
+        dxvcs: { type: 'http', url: 'https://h/mcp' },
+      },
+    });
+  });
+});
+
+describe('normalizeMcpServers', () => {
+  it('keeps well-formed servers and drops everything else', () => {
+    const out = normalizeMcpServers(
+      [
+        DXVCS_LOCAL,
+        { name: 'bad name', type: 'stdio', command: 'bash', args: [] },
+        { name: 'nl', type: 'stdio', command: 'bash\nrm', args: [] },
+        { name: 'argnl', type: 'stdio', command: 'bash', args: ['a\nb'] },
+        { name: 'dxvcs-local', type: 'stdio', command: 'other', args: [] },
+        { name: 'web', type: 'http', url: 'https://h.example/mcp' },
+        { name: 'ftp', type: 'http', url: 'ftp://h.example/mcp' },
+        { name: 'junk', type: 'http', url: 'not a url' },
+        null,
+        'string',
+      ],
+      'claude',
+    );
+    expect(out.map((s) => s.name)).toEqual(['dxvcs-local', 'web']);
+    expect(out[0]).toEqual(DXVCS_LOCAL);
+  });
+
+  it('gives Codex stdio servers only', () => {
+    expect(
+      normalizeMcpServers([DXVCS_LOCAL, { name: 'web', type: 'http', url: 'https://h/mcp' }], 'codex').map((s) => s.name),
+    ).toEqual(['dxvcs-local']);
+  });
+
+  it('treats anything that is not a list as no servers', () => {
+    expect(normalizeMcpServers(undefined, 'claude')).toEqual([]);
+    expect(normalizeMcpServers({ name: 'x' }, 'claude')).toEqual([]);
+  });
+
+  /** The renderer is untrusted; the payload is re-read in the main process like every other field. */
+  it('is applied to the payload in analyze, and only for a tool-using task', () => {
+    expect(BRIDGE_SOURCE).toMatch(/mcpServers: USES_TOOLS\[depth\] \? normalizeMcpServers\(mcpServers, backend\) : \[\]/);
+    expect(BRIDGE_SOURCE).toContain("if (!BACKENDS.has(backend)) return { ok: false, error: 'Invalid backend.' };");
+  });
+});
+
+describe('codexVariants', () => {
+  it('runs codex exec non-interactively, streaming JSON, prompt on stdin', () => {
+    const [first] = codexVariants('deep');
+    expect(first.args.slice(0, 2)).toEqual(['exec', '--json']);
+    expect(first.args).toContain('--skip-git-repo-check');
+    expect(first.args.at(-1)).toBe('-');
+    expect(first.streaming).toBe(true);
+  });
+
+  /**
+   * Codex's read-only sandbox also cuts the network, so `gh` cannot reach GitHub from it — verified
+   * against codex-cli 0.167. Investigating tasks get workspace-write (the scratch dir) with network;
+   * the rest stay read-only.
+   */
+  it('sandboxes by task: read-only without tools, scratch-writable with network with them', () => {
+    for (const task of ['quick', 'log', 'marks', 'pr', 'reply']) {
+      expect(codexVariants(task)[0].args).toContain('sandbox_mode="read-only"');
+      expect(codexVariants(task)[0].args.join(' ')).not.toContain('network_access');
+    }
+    for (const task of ['deep', 'blame', 'cause']) {
+      const args = codexVariants(task)[0].args;
+      expect(args).toContain('sandbox_mode="workspace-write"');
+      expect(args).toContain('sandbox_workspace_write.network_access=true');
+    }
+  });
+
+  it('maps effort from the task, accepts Codex efforts, and checks the model’s shape', () => {
+    expect(codexVariants('deep')[0].args).toContain('model_reasoning_effort="high"');
+    expect(codexVariants('deep', { effort: 'max' })[0].args).toContain('model_reasoning_effort="xhigh"');
+    expect(codexVariants('deep', { effort: 'minimal' })[0].args).toContain('model_reasoning_effort="minimal"');
+    expect(codexVariants('deep', { effort: 'bogus' })[0].args).toContain('model_reasoning_effort="high"');
+    expect(valueOf(codexVariants('quick', { model: 'gpt-5.1-codex' })[0].args, '-m')).toBe('gpt-5.1-codex');
+    expect(codexVariants('quick', { model: 'bad model; rm' })[0].args).not.toContain('-m');
+    expect(codexVariants('quick', { model: '' })[0].args).not.toContain('-m');
+  });
+
+  it('resumes with exec resume <id> -', () => {
+    const id = '01a1c047-706f-7e43-bc5d-24652db2f00f';
+    for (const v of codexVariants('blame', { resumeSessionId: id })) {
+      expect(v.args.slice(0, 2)).toEqual(['exec', 'resume']);
+      expect(v.args.slice(-2)).toEqual([id, '-']);
+      // `exec resume` has no -s/-C; the sandbox goes through -c.
+      expect(v.args).not.toContain('-s');
+    }
+  });
+
+  it('passes MCP servers as -c overrides to a tool-using task only, with a rung without them', () => {
+    const [first, second] = codexVariants('blame', { mcpServers: [DXVCS_LOCAL] });
+    expect(first.mcp).toBe(true);
+    expect(first.args).toContain('mcp_servers.dxvcs-local.command="bash"');
+    expect(first.args).toContain('mcp_servers.dxvcs-local.args=["/work/dxvcs_mcp/scripts/mcp-stdio.sh","local"]');
+    expect(second.args.join(' ')).not.toContain('mcp_servers');
+    expect(codexVariants('blame', { mcpServers: [DXVCS_LOCAL] }).slice(1)).toEqual(codexVariants('blame'));
+    expect(codexVariants('quick', { mcpServers: [DXVCS_LOCAL] })).toEqual(codexVariants('quick'));
+  });
+
+  it('quotes override values as TOML strings', () => {
+    expect(codexMcpOverrides([{ name: 's', type: 'stdio', command: '/p a"th/x', args: ['q"'] }])).toEqual([
+      '-c',
+      's.command'.replace(/^/, 'mcp_servers.') + '="/p a\\"th/x"',
+      '-c',
+      'mcp_servers.s.args=["q\\""]',
+    ]);
+    expect(codexMcpOverrides([{ name: 'h', type: 'http', url: 'https://x' }])).toEqual([]);
+  });
+
+  it('ends with a bare exec any Codex understands, and only drops flags on the way', () => {
+    const variants = codexVariants('deep', { lastMessagePath: '/tmp/x/last-message.txt' });
+    expect(variants.at(-1).args).toEqual(['exec', '--skip-git-repo-check', '-']);
+    const plain = variants.find((v) => v.lastMessageFile);
+    expect(valueOf(plain.args, '-o')).toBe('/tmp/x/last-message.txt');
+    expect(plain.streaming).toBe(false);
+  });
+});
+
+describe('createCodexStreamParser', () => {
+  const lines = (...events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+
+  it('reports commands and MCP calls as activity, messages as text, and the thread as the session', () => {
+    const seen = [];
+    const parser = createCodexStreamParser((phase, detail) => seen.push(detail));
+    parser.push(
+      lines(
+        { type: 'thread.started', thread_id: '01a1c047-706f-7e43-bc5d-24652db2f00f' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'Checking the index first.' } },
+        { type: 'item.started', item: { type: 'mcp_tool_call', server: 'dxvcs-local', tool: 'run_info', arguments: { run_id: 1 } } },
+        { type: 'item.started', item: { type: 'command_execution', command: "/bin/bash -lc 'gh run view 1 --json jobs'" } },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'FINAL' } },
+        { type: 'turn.completed', usage: {} },
+      ),
+    );
+    expect(seen.filter((d) => d.activity).map((d) => d.activity)).toEqual([
+      'mcp dxvcs-local.run_info {"run_id":1}',
+      '$ gh run view 1 --json jobs',
+    ]);
+    expect(seen.filter((d) => d.chunk).map((d) => d.chunk)).toEqual(['Checking the index first.', '\nFINAL']);
+    // A clean finish answers with the last message, as Claude's result event does.
+    expect(parser.finish()).toBe('FINAL');
+    expect(parser.sessionId()).toBe('01a1c047-706f-7e43-bc5d-24652db2f00f');
+    expect(parser.outcome().subtype).toBe('success');
+  });
+
+  it('keeps everything written, and the reason, when the turn fails', () => {
+    const parser = createCodexStreamParser(() => {});
+    parser.push(lines({ type: 'item.completed', item: { type: 'agent_message', text: 'partial' } }));
+    parser.push(JSON.stringify({ type: 'turn.failed', error: { message: 'usage limit reached' } }));
+    expect(parser.finish()).toBe('partial');
+    expect(describeExit(parser.outcome(), 'exit 1')).toBe('it hit an error partway through: usage limit reached');
+  });
+});
+
+describe('installAgentsMd', () => {
+  let dir;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agents-md-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('writes the task’s skills into AGENTS.md, under their names, without the front matter', () => {
+    expect(installAgentsMd(dir, SKILLS_BY_TASK.blame)).toBe(true);
+    const text = readFileSync(join(dir, 'AGENTS.md'), 'utf8');
+    expect(text.startsWith('# Skill: flow-blame\n')).toBe(true);
+    expect(text).not.toMatch(/^description:/m);
+    expect(text).toContain('first_failing');
+  });
+
+  it('writes nothing for a task without skills', () => {
+    expect(installAgentsMd(dir, [])).toBe(true);
+    expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false);
   });
 });
