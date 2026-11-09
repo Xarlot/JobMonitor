@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MCP_CURL_PREFIX as PROMPT_CURL_PREFIX } from '../lib/claudePrompt';
 import { initRunLog, logEvent, runLogPath } from '../../electron/runLog.cjs';
 import {
   ANALYZE_DEPTHS,
   COMPOSE_TASKS,
   claudeVariants,
-  claudeMcpConfig,
+  MCP_CURL_PREFIX,
   codexMcpOverrides,
   codexVariants,
   createCodexStreamParser,
@@ -735,44 +736,38 @@ const DXVCS_LOCAL = {
   args: ['/work/dxvcs_mcp/scripts/mcp-stdio.sh', 'local'],
 };
 
-describe('MCP servers for Claude', () => {
-  const mcp = { configPath: '/tmp/scratch/mcp-servers.json', names: ['dxvcs-local'] };
+describe('MCP servers for Claude (over curl)', () => {
+  const mcpCurlUrls = ['http://127.0.0.1:8091/mcp'];
 
   it('adds nothing at all when no server is configured', () => {
     for (const task of Object.keys(TASK_TABLES.CLAUDE_MODEL)) {
       expect(claudeVariants(task, {})).toEqual(claudeVariants(task));
-      expect(claudeVariants(task, { mcp: null })).toEqual(claudeVariants(task));
-      for (const v of claudeVariants(task)) expect(v.args).not.toContain('--mcp-config');
+      expect(claudeVariants(task, { mcpCurlUrls: [] })).toEqual(claudeVariants(task));
     }
   });
 
-  it('passes the config file and allows the server’s tools on the first rung', () => {
-    const [first, second] = claudeVariants('blame', { mcp });
-    expect(first.mcp).toBe(true);
-    expect(valueOf(first.args, '--mcp-config')).toBe(mcp.configPath);
-    const allowed = valueOf(first.args, '--allowedTools').split(',');
-    expect(allowed).toContain('mcp__dxvcs-local');
+  /** Native MCP servers are refused by enterprise policy in Claude Code, so none is configured. */
+  it('allows curl to exactly that URL, and jq, instead of passing --mcp-config', () => {
+    const variants = claudeVariants('blame', { mcpCurlUrls });
+    for (const v of variants) expect(v.args).not.toContain('--mcp-config');
+    const allowed = valueOf(variants[0].args, '--allowedTools').split(',');
+    expect(allowed).toContain(`Bash(${MCP_CURL_PREFIX} http://127.0.0.1:8091/mcp:*)`);
+    expect(allowed).toContain('Bash(jq:*)');
     expect(allowed).toContain('Bash(gh run list:*)');
-    // `--mcp-config` is variadic, so an option must follow it, never a bare value.
-    expect(first.args[first.args.indexOf('--mcp-config') + 2].startsWith('--')).toBe(true);
-    // The next rung is the plain Claude ladder, so a CLI without --mcp-config still investigates.
-    expect(second.args).not.toContain('--mcp-config');
-    expect(claudeVariants('blame', { mcp }).slice(1)).toEqual(claudeVariants('blame'));
+    expect(allowed.some((a) => a.startsWith('mcp__'))).toBe(false);
+    expect(valueOf(variants[1].args, '--allowedTools')).toContain('Bash(jq:*)');
+    expect(variants.length).toBe(claudeVariants('blame').length);
   });
 
-  it('never gives a tool-less task an MCP server', () => {
+  /** The brief spells the command and this rule allows it; they must agree to the character. */
+  it('uses the same curl prefix the brief hands the model', () => {
+    expect(MCP_CURL_PREFIX).toBe(PROMPT_CURL_PREFIX);
+  });
+
+  it('never gives a tool-less task the curl rule', () => {
     for (const task of ['quick', 'log', 'marks', 'pr', 'reply']) {
-      expect(claudeVariants(task, { mcp })).toEqual(claudeVariants(task));
+      expect(claudeVariants(task, { mcpCurlUrls })).toEqual(claudeVariants(task));
     }
-  });
-
-  it('writes the --mcp-config document Claude Code reads', () => {
-    expect(claudeMcpConfig([DXVCS_LOCAL, { name: 'dxvcs', type: 'http', url: 'https://h/mcp' }])).toEqual({
-      mcpServers: {
-        'dxvcs-local': { type: 'stdio', command: 'bash', args: DXVCS_LOCAL.args },
-        dxvcs: { type: 'http', url: 'https://h/mcp' },
-      },
-    });
   });
 });
 
@@ -786,22 +781,39 @@ describe('normalizeMcpServers', () => {
         { name: 'argnl', type: 'stdio', command: 'bash', args: ['a\nb'] },
         { name: 'dxvcs-local', type: 'stdio', command: 'other', args: [] },
         { name: 'web', type: 'http', url: 'https://h.example/mcp' },
-        { name: 'ftp', type: 'http', url: 'ftp://h.example/mcp' },
+        { name: 'ftp', type: 'http', url: 'ftp://localhost/mcp' },
         { name: 'junk', type: 'http', url: 'not a url' },
         null,
         'string',
       ],
-      'claude',
+      'codex',
     );
-    expect(out.map((s) => s.name)).toEqual(['dxvcs-local', 'web']);
+    expect(out.map((s) => s.name)).toEqual(['dxvcs-local']);
     expect(out[0]).toEqual(DXVCS_LOCAL);
   });
 
-  it('gives Codex stdio servers only', () => {
-    expect(
-      normalizeMcpServers([DXVCS_LOCAL, { name: 'web', type: 'http', url: 'https://h/mcp' }], 'codex').map((s) => s.name),
-    ).toEqual(['dxvcs-local']);
+  it('gives Claude loopback HTTP servers only, URL kept verbatim, and says why it skipped the rest', () => {
+    const skipped = [];
+    const out = normalizeMcpServers(
+      [
+        DXVCS_LOCAL,
+        { name: 'web', type: 'http', url: 'https://h.example/mcp' },
+        { name: 'local', type: 'http', url: 'http://127.0.0.1:8091/mcp' },
+        { name: 'paren', type: 'http', url: 'http://127.0.0.1:8091/mcp)' },
+        { name: 'host', type: 'http', url: 'http://localhost:8091' },
+      ],
+      'claude',
+      (name, why) => skipped.push(`${name}: ${why}`),
+    );
+    expect(out).toEqual([
+      { name: 'local', type: 'http', url: 'http://127.0.0.1:8091/mcp' },
+      // Not normalised to "…:8091/": the permission rule is a prefix match on the given text.
+      { name: 'host', type: 'http', url: 'http://localhost:8091' },
+    ]);
+    expect(skipped.join('\n')).toMatch(/dxvcs-local: stdio servers cannot be reached with curl/);
+    expect(skipped.join('\n')).toMatch(/web: only a loopback URL/);
   });
+
 
   it('treats anything that is not a list as no servers', () => {
     expect(normalizeMcpServers(undefined, 'claude')).toEqual([]);
@@ -810,7 +822,7 @@ describe('normalizeMcpServers', () => {
 
   /** The renderer is untrusted; the payload is re-read in the main process like every other field. */
   it('is applied to the payload in analyze, and only for a tool-using task', () => {
-    expect(BRIDGE_SOURCE).toMatch(/mcpServers: USES_TOOLS\[depth\] \? normalizeMcpServers\(mcpServers, backend\) : \[\]/);
+    expect(BRIDGE_SOURCE).toMatch(/mcpServers: USES_TOOLS\[depth\]\s*\? normalizeMcpServers\(mcpServers, backend,/);
     expect(BRIDGE_SOURCE).toContain("if (!BACKENDS.has(backend)) return { ok: false, error: 'Invalid backend.' };");
   });
 });

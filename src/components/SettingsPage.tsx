@@ -1649,7 +1649,10 @@ function McpServersFields({
           its tools and setup
         </Link>{' '}
         (locally: <code>/work/dxvcs_mcp/README.md</code>). Nothing here is used by the one-turn
-        tasks.
+        tasks. <strong>Codex</strong> connects to stdio servers natively. <strong>Claude</strong>{' '}
+        calls a loopback HTTP server with <code>curl</code> instead — Claude Code’s own MCP servers
+        are blocked by policy here — so for Claude enable <code>dxvcs-local-http</code>, started by{' '}
+        <code>docker compose up -d mcp</code> in dxvcs-mcp.
       </Text>
       {servers.length === 0 && (
         <Text as="p" className={styles.fgMutedSmall2}>
@@ -1659,6 +1662,7 @@ function McpServersFields({
       {servers.map((server, index) => {
         const nameOk = MCP_SERVER_NAME_RE.test(server.name);
         const codexSkips = backend === 'codex' && server.type === 'http';
+        const claudeSkipsStdio = backend === 'claude' && server.type === 'stdio';
         return (
           <div key={index} className={styles.roundedP3}>
             <div className={styles.flexGap3_3}>
@@ -1718,8 +1722,9 @@ function McpServersFields({
                     onChange={(e) => update(index, { args: e.target.value.split('\n') })}
                   />
                   <FormControl.Caption>
-                    Started by the agent CLI without a shell, like <code>claude mcp add</code> or{' '}
-                    <code>codex mcp add</code> would.
+                    {claudeSkipsStdio
+                      ? 'Skipped with Claude: it reaches MCP over curl, which needs an HTTP server — use dxvcs-local-http.'
+                      : 'Started by Codex without a shell, as `codex mcp add` would.'}
                   </FormControl.Caption>
                 </FormControl>
               </div>
@@ -1729,13 +1734,13 @@ function McpServersFields({
                 <TextInput
                   block
                   value={server.url}
-                  placeholder="https://<dxvcs-mcp host>/mcp"
+                  placeholder="http://127.0.0.1:8091/mcp"
                   onChange={(e) => update(index, { url: e.target.value.trim() })}
                 />
                 <FormControl.Caption>
                   {codexSkips
-                    ? 'Skipped with Codex: it cannot sign in to an Entra-protected MCP endpoint yet — use the stdio entry.'
-                    : 'Claude Code signs in with OAuth; authenticate once with /mcp in an interactive claude session first. Blank leaves it unused.'}
+                    ? 'Skipped with Codex: it cannot sign in to an HTTP MCP endpoint yet — use the stdio entry.'
+                    : 'Claude calls it with curl, allowed for this exact URL only — so only a loopback URL (127.0.0.1 / localhost, no sign-in) is used; a remote Entra-protected one is skipped. The local one is started by `docker compose up -d mcp` in dxvcs-mcp.'}
                 </FormControl.Caption>
               </FormControl>
             )}

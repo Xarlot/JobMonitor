@@ -8,7 +8,7 @@ import {
   monitorConfigSchema,
   safeParseConfig,
 } from '../storage/configStore';
-import { agentRunOptions, claudeToolsReady, mcpServerNamesFor } from '../storage/desktopClaude';
+import { agentRunOptions, claudeToolsReady, mcpServersForPrompt } from '../storage/desktopClaude';
 
 describe('configStore', () => {
   it('applies defaults for polling and flows', () => {
@@ -295,7 +295,8 @@ describe('AI backend and MCP servers', () => {
 
   /** Prefilled so it is one click to turn on, but off: the path is one machine's. */
   it('prefills the dxvcs servers, switched off', () => {
-    const [local, remote] = DEFAULT_CONFIG.ai.mcpServers;
+    const [local, localHttp, remote] = DEFAULT_CONFIG.ai.mcpServers;
+    expect(localHttp).toMatchObject({ name: 'dxvcs-local-http', type: 'http', url: 'http://127.0.0.1:8091/mcp', enabled: false });
     expect(local).toMatchObject({
       name: 'dxvcs-local',
       type: 'stdio',
@@ -326,7 +327,7 @@ describe('AI backend and MCP servers', () => {
     expect(monitorConfigSchema.safeParse({ ...base, ai: { codex: { model: 'gpt 5' } } }).success).toBe(false);
   });
 
-  it('hands over only enabled, complete, uniquely named servers — and no http ones to Codex', () => {
+  it('hands Codex stdio servers and Claude loopback HTTP ones (curl), enabled and unique', () => {
     const servers = [
       { name: 'a', type: 'stdio' as const, command: 'bash', args: ['x'], url: '', enabled: true },
       { name: 'off', type: 'stdio' as const, command: 'bash', args: [], url: '', enabled: false },
@@ -334,22 +335,25 @@ describe('AI backend and MCP servers', () => {
       { name: 'a', type: 'stdio' as const, command: 'dup', args: [], url: '', enabled: true },
       { name: 'web', type: 'http' as const, command: '', args: [], url: 'https://h/mcp', enabled: true },
       { name: 'nourl', type: 'http' as const, command: '', args: [], url: '', enabled: true },
+      { name: 'local', type: 'http' as const, command: '', args: [], url: 'http://127.0.0.1:8091/mcp', enabled: true },
+      { name: 'quote', type: 'http' as const, command: '', args: [], url: "http://localhost/x'y", enabled: true },
     ];
-    expect(activeMcpServers({ backend: 'claude', mcpServers: servers }).map((s) => s.name)).toEqual(['a', 'web']);
+    expect(activeMcpServers({ backend: 'claude', mcpServers: servers }).map((s) => s.name)).toEqual(['local']);
     expect(activeMcpServers({ backend: 'codex', mcpServers: servers }).map((s) => s.name)).toEqual(['a']);
   });
 });
 
 describe('agentRunOptions', () => {
   const server = { name: 'dxvcs-local', type: 'stdio' as const, command: 'bash', args: ['/s.sh', '', 'local'], url: '', enabled: true };
-  const ai = { backend: 'claude' as const, codex: { model: '', effort: 'auto' as const }, mcpServers: [server] };
+  const http = { name: 'dxvcs-local-http', type: 'http' as const, command: '', args: [], url: 'http://127.0.0.1:8091/mcp', enabled: true };
+  const ai = { backend: 'claude' as const, codex: { model: '', effort: 'auto' as const }, mcpServers: [server, http] };
 
   it('passes Claude the task’s own model and effort, and MCP only to a tool-using task', () => {
     expect(agentRunOptions(ai, { model: 'opus', effort: 'high' }, true)).toEqual({
       backend: 'claude',
       model: 'opus',
       effort: 'high',
-      mcpServers: [{ name: 'dxvcs-local', type: 'stdio', command: 'bash', args: ['/s.sh', 'local'] }],
+      mcpServers: [{ name: 'dxvcs-local-http', type: 'http', url: 'http://127.0.0.1:8091/mcp' }],
     });
     expect(agentRunOptions(ai, { model: 'sonnet', effort: 'low' }, false)).toEqual({
       backend: 'claude',
@@ -367,12 +371,18 @@ describe('agentRunOptions', () => {
     });
     expect(
       agentRunOptions({ ...codex, codex: { model: 'gpt-5', effort: 'low' } }, { model: 'opus', effort: 'high' }, true),
-    ).toMatchObject({ backend: 'codex', model: 'gpt-5', effort: 'low', mcpServers: [{ name: 'dxvcs-local' }] });
+    ).toMatchObject({
+      backend: 'codex',
+      model: 'gpt-5',
+      effort: 'low',
+      mcpServers: [{ name: 'dxvcs-local', type: 'stdio', command: 'bash', args: ['/s.sh', 'local'] }],
+    });
   });
 
-  it('names the same servers for the brief as it hands the CLI', () => {
-    expect(mcpServerNamesFor(ai)).toEqual(['dxvcs-local']);
-    expect(mcpServerNamesFor({ ...ai, mcpServers: [] })).toEqual([]);
+  it('describes the same servers to the brief as it hands the CLI — with the curl URL for Claude', () => {
+    expect(mcpServersForPrompt(ai)).toEqual([{ name: 'dxvcs-local-http', curlUrl: 'http://127.0.0.1:8091/mcp' }]);
+    expect(mcpServersForPrompt({ ...ai, backend: 'codex' })).toEqual([{ name: 'dxvcs-local' }]);
+    expect(mcpServersForPrompt({ ...ai, mcpServers: [] })).toEqual([]);
   });
 
   it('checks for the CLI of the chosen backend', () => {

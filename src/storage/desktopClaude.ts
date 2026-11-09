@@ -88,9 +88,17 @@ export function agentRunOptions(
   };
 }
 
-/** Names of the MCP servers a tool-using task will get — what the brief should mention. */
-export function mcpServerNamesFor(ai: Pick<AiConfig, 'backend' | 'mcpServers'>): string[] {
-  return activeMcpServers(ai).map((s) => s.name);
+/**
+ * The MCP servers a tool-using task will get, as the brief should describe them: Codex connects
+ * natively (name only), Claude calls each over `curl` (name and the exact URL its permission rule
+ * allows).
+ */
+export function mcpServersForPrompt(
+  ai: Pick<AiConfig, 'backend' | 'mcpServers'>,
+): { name: string; curlUrl?: string }[] {
+  return activeMcpServers(ai).map((s) =>
+    ai.backend === 'codex' ? { name: s.name } : { name: s.name, curlUrl: s.url.trim() },
+  );
 }
 
 export interface ClaudeAnalyzeRequest {

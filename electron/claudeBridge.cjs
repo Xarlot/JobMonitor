@@ -302,36 +302,28 @@ function claudeVariants(task, overrides = {}) {
   // Resuming carries the whole prior conversation, so the run picks up with everything it
   // had already established rather than paying for it again.
   const resume = overrides.resumeSessionId ? ['--resume', String(overrides.resumeSessionId)] : [];
-  const streamWith = (mcp) => [
+  // MCP only reaches a task that has tools. For Claude it is not a native connection — Claude
+  // Code refuses `--mcp-config` servers under enterprise policy — but `curl` to a loopback HTTP
+  // endpoint, allowed by one prefix rule per server plus `jq` to unwrap the reply. The brief
+  // hands over the exact command, since a prefix rule refuses any other spelling.
+  const curlUrls =
+    USES_TOOLS[task] && Array.isArray(overrides.mcpCurlUrls) ? overrides.mcpCurlUrls : [];
+  const allowed = curlUrls.length
+    ? [ALLOWED_TOOLS, ...curlUrls.map((url) => `Bash(${MCP_CURL_PREFIX} ${url}:*)`), 'Bash(jq:*)'].join(',')
+    : ALLOWED_TOOLS;
+  const stream = [
     '-p',
     '--verbose',
     '--output-format',
     'stream-json',
-    // Before the flags that follow it: `--mcp-config` is variadic, and the next option is what
-    // ends its list.
-    ...(mcp ? ['--mcp-config', mcp.configPath] : []),
     '--max-turns',
     String(MAX_TURNS_BY_TASK[task]),
     // A task that doesn't investigate gets no tool allowlist at all, so there is nothing
     // for it to wander into — a stronger guarantee than passing an empty one.
-    ...(USES_TOOLS[task]
-      ? ['--allowedTools', mcp ? [ALLOWED_TOOLS, ...mcp.names.map((n) => `mcp__${n}`)].join(',') : ALLOWED_TOOLS]
-      : []),
+    ...(USES_TOOLS[task] ? ['--allowedTools', allowed] : []),
     ...resume,
   ];
-  const stream = streamWith(null);
-  // MCP only reaches a task that has tools, and only when there is a config file to point at.
-  const mcp =
-    USES_TOOLS[task] && overrides.mcp && overrides.mcp.configPath && overrides.mcp.names?.length
-      ? overrides.mcp
-      : null;
   return [
-    // With MCP servers, the first rung carries them; the next is the same run without them, so
-    // a CLI that rejects `--mcp-config` still investigates — with `gh`, which the brief names as
-    // the fallback — instead of dropping straight to the tool-less variants.
-    ...(mcp
-      ? [{ args: [...streamWith(mcp), ...model, '--effort', effort], streaming: true, mcp: true }]
-      : []),
     { args: [...stream, ...model, '--effort', effort], streaming: true },
     {
       args: [...stream, ...model],
@@ -358,6 +350,16 @@ const MCP_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const MAX_MCP_SERVERS = 8;
 
 /**
+ * How a curl call to an MCP server must begin, up to the URL. Must equal `MCP_CURL_PREFIX` in
+ * src/lib/claudePrompt.ts — the brief spells the command, this allows it, and a test holds the
+ * two together.
+ */
+const MCP_CURL_PREFIX = 'curl -s -m 60';
+/** Mirrors MCP_URL_RE in configStore: nothing that could end a `Bash(…)` rule or split a command. */
+const MCP_URL_RE = /^https?:\/\/[^\s'"\\()`$]+$/;
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
  * Re-validate the renderer's MCP server list.
  *
  * These are the one place the renderer names an executable, so they get the strictest reading
@@ -369,8 +371,11 @@ const MAX_MCP_SERVERS = 8;
  * The command is still the user's own choice from their own settings, run with their own
  * permissions — exactly as if they had registered it with `claude mcp add` or `codex mcp add`.
  * Codex is given stdio servers only: it cannot do the OAuth sign-in the HTTP endpoint needs.
+ * Claude is given loopback HTTP servers only, which it reaches with `curl` (see claudeVariants):
+ * a stdio server cannot be curled, and a remote one needs a sign-in curl cannot do. What is
+ * dropped for that reason is reported through `onSkip`, so the diagnostics log says why.
  */
-function normalizeMcpServers(list, backend) {
+function normalizeMcpServers(list, backend, onSkip = () => {}) {
   if (!Array.isArray(list)) return [];
   const clean = (v, max) =>
     typeof v === 'string' && v.length > 0 && v.length <= max && !/[\0\r\n]/.test(v) ? v : null;
@@ -384,34 +389,36 @@ function normalizeMcpServers(list, backend) {
       const command = clean(raw.command, 1024);
       const args = Array.isArray(raw.args) ? raw.args.slice(0, 32).map((a) => clean(a, 1024)) : [];
       if (!command || args.some((a) => a === null)) continue;
+      if (backend !== 'codex') {
+        onSkip(name, 'stdio servers cannot be reached with curl');
+        continue;
+      }
       seen.add(name);
       out.push({ name, type: 'stdio', command, args });
-    } else if (raw.type === 'http' && backend !== 'codex') {
+    } else if (raw.type === 'http') {
+      if (backend === 'codex') {
+        onSkip(name, 'codex cannot sign in to an HTTP MCP endpoint');
+        continue;
+      }
       const url = clean(raw.url, 2048);
       let parsed = null;
       try {
-        parsed = url ? new URL(url) : null;
+        parsed = url && MCP_URL_RE.test(url) ? new URL(url) : null;
       } catch {
         parsed = null;
       }
-      if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) continue;
+      if (!parsed) continue;
+      if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+        onSkip(name, 'only a loopback URL is called with curl (a remote one needs a sign-in)');
+        continue;
+      }
       seen.add(name);
-      out.push({ name, type: 'http', url: parsed.toString() });
+      // The string as given, not `parsed.toString()`: the brief shows the user's URL, and the
+      // permission rule is a prefix match against exactly that text.
+      out.push({ name, type: 'http', url });
     }
   }
   return out;
-}
-
-/** The `--mcp-config` document for Claude Code: `{ mcpServers: { name: {...} } }`. */
-function claudeMcpConfig(servers) {
-  const mcpServers = {};
-  for (const s of servers) {
-    mcpServers[s.name] =
-      s.type === 'http'
-        ? { type: 'http', url: s.url }
-        : { type: 'stdio', command: s.command, args: s.args };
-  }
-  return { mcpServers };
 }
 
 /**
@@ -836,7 +843,11 @@ async function analyze(sender, payload) {
       effort,
       resumeSessionId,
       backend,
-      mcpServers: USES_TOOLS[depth] ? normalizeMcpServers(mcpServers, backend) : [],
+      mcpServers: USES_TOOLS[depth]
+        ? normalizeMcpServers(mcpServers, backend, (name, why) =>
+            log(`mcp server ${name} not used: ${why}`),
+          )
+        : [],
       emit,
       log,
       track,
@@ -917,17 +928,9 @@ async function runClaudeTask({
       }
     }
 
-    // Claude takes its MCP servers as a JSON file; Codex as `-c` overrides built in codexVariants.
-    let mcp = null;
-    if (!codex && mcpServers.length > 0) {
-      try {
-        const configPath = path.join(scratchDir, 'mcp-servers.json');
-        fs.writeFileSync(configPath, JSON.stringify(claudeMcpConfig(mcpServers), null, 2), 'utf8');
-        mcp = { configPath, names: mcpServers.map((s) => s.name) };
-      } catch (e) {
-        log(`could not write the MCP config: ${e.message}`);
-      }
-    }
+    // Claude reaches its (loopback HTTP) MCP servers with curl, allowed per URL; Codex connects
+    // natively through `-c` overrides built in codexVariants.
+    const mcpCurlUrls = codex ? [] : mcpServers.filter((s) => s.type === 'http').map((s) => s.url);
     if (mcpServers.length > 0) {
       log(`mcp servers: ${mcpServers.map((s) => `${s.name} (${s.type})`).join(', ')}`);
     }
@@ -961,7 +964,7 @@ async function runClaudeTask({
     let attempt = 0;
     const variants = codex
       ? codexVariants(task, { model, effort, resumeSessionId, mcpServers, lastMessagePath })
-      : claudeVariants(task, { model, effort, resumeSessionId, mcp });
+      : claudeVariants(task, { model, effort, resumeSessionId, mcpCurlUrls });
     for (const variant of variants) {
       attempt += 1;
       if (variant.toolsUnavailable) emit('analysing', { toolsUnavailable: true });
@@ -1313,7 +1316,7 @@ function createCodexStreamParser(emit) {
 
 /** Heuristic: did the CLI reject our flags rather than fail at the task? */
 function looksLikeBadFlag(error) {
-  return /unknown option|unrecognized|unknown argument|unexpected argument|invalid option|--allowedTools|--max-turns|--model|--effort|--mcp-config/i.test(
+  return /unknown option|unrecognized|unknown argument|unexpected argument|invalid option|--allowedTools|--max-turns|--model|--effort/i.test(
     String(error ?? ''),
   );
 }
@@ -1495,7 +1498,7 @@ module.exports = {
   createStreamParser,
   createCodexStreamParser,
   normalizeMcpServers,
-  claudeMcpConfig,
+  MCP_CURL_PREFIX,
   codexMcpOverrides,
   installSkill,
   installAgentsMd,

@@ -391,12 +391,48 @@ export const DEFAULT_MCP_SERVERS: readonly McpServerConfig[] = [
     url: '',
     enabled: false,
   },
+  {
+    name: 'dxvcs-local-http',
+    type: 'http',
+    command: '',
+    args: [],
+    url: 'http://127.0.0.1:8091/mcp',
+    enabled: false,
+  },
   { name: 'dxvcs', type: 'http', command: '', args: [], url: '', enabled: false },
 ];
 
 /**
- * The MCP servers that will actually be handed to `backend`: enabled, complete, uniquely named —
- * and for Codex, stdio only, since it cannot sign in to the Entra-protected HTTP endpoint.
+ * A URL safe to put inside a `Bash(curl … <url>:*)` permission rule and a shell command line: no
+ * whitespace, quotes, backslashes, parentheses, backticks or `$`, any of which would either end
+ * the rule early or change how the command parses.
+ */
+export const MCP_URL_RE = /^https?:\/\/[^\s'"\\()`$]+$/;
+
+/**
+ * True for an MCP URL on this machine — the only kind Claude is pointed at, over `curl`.
+ *
+ * Claude Code in a managed environment refuses `--mcp-config` servers by policy, so Claude calls
+ * the tools with plain JSON-RPC over HTTP instead. That only works for an endpoint with no sign-in,
+ * which is what a loopback server is (the dxvcs `mcp` compose service binds 127.0.0.1 only).
+ */
+export function isLoopbackMcpUrl(url: string): boolean {
+  if (!MCP_URL_RE.test(url)) return false;
+  try {
+    const host = new URL(url).hostname;
+    return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The MCP servers that will actually be handed to `backend`: enabled, complete, uniquely named.
+ *
+ * - **Codex** connects natively and gets stdio servers only — it cannot sign in to the
+ *   Entra-protected HTTP endpoint.
+ * - **Claude** gets loopback HTTP servers only, which it calls with `curl`: native MCP servers are
+ *   blocked by enterprise policy in Claude Code here, and a stdio server cannot be reached by curl.
  *
  * The prompt builder and the bridge both use this answer, so the brief never promises the model a
  * server the CLI was not given. (The bridge re-validates; this is the renderer's half.)
@@ -407,8 +443,8 @@ export function activeMcpServers(
   const seen = new Set<string>();
   return (ai.mcpServers ?? []).filter((s) => {
     if (!s.enabled || !MCP_SERVER_NAME_RE.test(s.name) || seen.has(s.name)) return false;
-    if (s.type === 'stdio' && !s.command.trim()) return false;
-    if (s.type === 'http' && (ai.backend === 'codex' || !/^https?:\/\/\S+$/.test(s.url.trim()))) return false;
+    if (s.type === 'stdio' && (ai.backend !== 'codex' || !s.command.trim())) return false;
+    if (s.type === 'http' && (ai.backend === 'codex' || !isLoopbackMcpUrl(s.url.trim()))) return false;
     seen.add(s.name);
     return true;
   });
