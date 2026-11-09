@@ -272,8 +272,10 @@ given MCP servers, and are then told to get their metadata there first: run hist
 and logs, parsed test results, flaky-or-regression history, commits, pull requests and who touched a
 path, with `gh` as the fallback for whatever the index does not hold yet. The list comes prefilled
 with the [dxvcs MCP server](https://github.com/DevExpress/dxvcs-mcp#mcp-tools) for DevExpress/dxvcs —
-`dxvcs-local` over stdio and `dxvcs` over HTTP — both off until you switch them on. Codex uses stdio
-servers only; for the HTTP one, Claude Code needs a one-time `/mcp` sign-in in an interactive session.
+`dxvcs-local` over stdio, `dxvcs-local-http` at `http://127.0.0.1:8091/mcp` and a remote `dxvcs` —
+all off until you switch them on. Codex connects to the stdio one natively. Claude calls the local
+HTTP one with `curl` (start it with `docker compose up -d mcp` in dxvcs-mcp), because Claude Code's own
+MCP servers can be blocked by enterprise policy; its permission allows curl to that URL only.
 
 When something goes wrong, the desktop app keeps a record of it: **Settings → Diagnostics** shows the
 path to a log of every analysis — the commands run, how long each took, and how it ended — alongside

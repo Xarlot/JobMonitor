@@ -38,6 +38,12 @@ take several to page through, and it costs no GitHub rate limit.
 | Flaky or regression | `test_history(test)`, `failure_history(workflow, job)` | annotations of several runs |
 | The failure itself | `run_info(run_id)`, `job_log(job_id, grep=…)` | downloading the log |
 
+**Over `curl`, when the tools are not connected natively.** Some runs (Claude) reach the server
+as plain JSON-RPC over HTTP instead: the brief then gives the exact `curl … | jq …` command, and
+each tool is one such call with `"name"` and `"arguments"` in the `-d` body (`tools/list` for the
+schemas). Use the command exactly as given — the permission covers that prefix only — one call
+per command. Everything else in this section applies unchanged.
+
 Pass `path_prefixes` for the code the failure implicates — the class in the stack trace, the
 test, its fixtures — so the suspect list is cut to commits that can reach it. A result that
 says `truncated` is not the whole range: narrow it rather than reading it as complete.

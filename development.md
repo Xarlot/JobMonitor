@@ -667,21 +667,32 @@ truncated commit list read as a finished one.
 ### MCP servers
 
 `ai.mcpServers` (settings) → `activeMcpServers` (enabled, complete, unique; stdio only for Codex) →
-`agentRunOptions` puts them on the request **only for a tool-using task**, and `mcpServerNamesFor`
-gives the same names to `buildClaudePrompt`, so the brief never mentions a server the CLI was not
-given. The bridge re-validates them in `normalizeMcpServers` (closed shape, no NUL/newline, http(s)
-URLs only) — they are the one place the renderer names an executable. Claude gets a
-`mcp-servers.json` in the scratch dir via `--mcp-config` (placed before `--max-turns`, because the
-option is variadic) plus `mcp__<name>` on `--allowedTools`; Codex gets
-`-c mcp_servers.<name>.command=…`/`.args=…` with JSON-quoted (valid TOML) values. Either ladder's
-first rung is the only one with MCP, so a CLI that rejects it still investigates with `gh`.
+`agentRunOptions` puts them on the request **only for a tool-using task**, and `mcpServersForPrompt`
+gives the same servers to `buildClaudePrompt`, so the brief never mentions a server the CLI was not
+given. The bridge re-validates them in `normalizeMcpServers` (closed shape, no NUL/newline, URLs free of
+whitespace, quotes and parentheses) — they are the one place the renderer names an executable.
+
+- **Codex** connects natively: stdio servers as `-c mcp_servers.<name>.command=…`/`.args=…` with
+  JSON-quoted (valid TOML) values. Its first rung is the only one with MCP, so a Codex that rejects
+  the overrides still investigates with `gh`.
+- **Claude** gets no `--mcp-config`: Claude Code here refuses those servers by enterprise policy
+  ("MCP server blocked by enterprise policy"). It gets **loopback HTTP** servers only, called as
+  JSON-RPC with `curl`: `--allowedTools` adds `Bash(curl -s -m 60 <url>:*)` per server and
+  `Bash(jq:*)`, and the brief prints the exact `curl … | jq …` command (the dxvcs server is stateless,
+  so one POST of `tools/call` needs no `initialize`; the reply is SSE `data:` lines). The rule is a
+  **prefix** match — verified live: the given spelling ran, `curl -m 60 -s …` was denied — which is
+  why `MCP_CURL_PREFIX` exists on both sides and a test holds them equal, and why the URL is passed
+  through verbatim rather than normalised by `new URL()`. Stdio and remote servers are skipped for
+  Claude, with the reason in the diagnostics log. Caveat: a prefix rule cannot stop a second URL being
+  appended to the same curl command; the allowlist already permits `gh api`, so this widens rather
+  than opens the exfiltration surface — a wrapper script with a fixed URL would close it.
 
 The MCP section of the prompt (`mcpSection` in `claudePrompt.ts`) is appended after the brief — also
 after a custom prompt, since it describes the environment rather than wording — with per-task tool
 guidance and the exact calls for this failure. With no server, `buildClaudePrompt` output is
-byte-identical to before (`claudePrompt.test.ts` pins that). Claude Code in a managed environment may
-refuse a `--mcp-config` server by policy ("MCP server blocked by enterprise policy"); the brief's `gh`
-fallback covers that.
+byte-identical to before (`claudePrompt.test.ts` pins that). For Claude the section carries the curl
+recipe (`tools/call` and `tools/list`, one call per command, JSON arguments inside the single-quoted
+`-d` body); for Codex it does not mention curl at all.
 
 ### Two skills, two questions
 

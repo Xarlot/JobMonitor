@@ -81,6 +81,12 @@ The same cheapest-first order, through the index:
 finds the same error in other jobs, and `test_history(test)` separates a regression from a
 flaky test — use them when that distinction is the question, not by default.
 
+**Over `curl`, when the tools are not connected natively.** Some runs (Claude) reach the server
+as plain JSON-RPC over HTTP instead: the brief then gives the exact `curl … | jq …` command, and
+each tool is one such call with `"name"` and `"arguments"` in the `-d` body (`tools/list` for the
+schemas). Use the command exactly as given — the permission covers that prefix only — one call
+per command. Everything else in this section applies unchanged.
+
 **Check freshness once with `index_status`.** The index is refreshed about hourly, so the run
 you were given may not be in it yet. Then — and for a repository other than DevExpress/dxvcs,
 an artifact it does not parse, or a tool that errors — use `gh` as below, and say in one

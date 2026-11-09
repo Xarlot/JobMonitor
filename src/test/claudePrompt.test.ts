@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClaudePrompt,
+  MCP_CURL_PREFIX,
   CLAUDE_RESUME_PROMPT,
   CLAUDE_INVESTIGATION_BRIEF,
   CLAUDE_LOG_BRIEF,
@@ -851,7 +852,7 @@ describe('returnsDocument', () => {
  */
 describe('MCP-first guidance', () => {
   const dxvcs = (over: Partial<ClaudePromptInput> = {}) =>
-    input({ owner: 'DevExpress', repo: 'dxvcs', mcpServers: ['dxvcs-local'], ...over });
+    input({ owner: 'DevExpress', repo: 'dxvcs', mcpServers: [{ name: 'dxvcs-local' }], ...over });
 
   it('leaves every prompt untouched when no server is configured', () => {
     for (const depth of ['quick', 'deep', 'log', 'blame', 'cause', 'marks'] as const) {
@@ -912,12 +913,51 @@ describe('MCP-first guidance', () => {
   });
 
   it('warns when the failing repository is not the one the index covers', () => {
-    const elsewhere = buildClaudePrompt(input({ mcpServers: ['dxvcs-local'] }));
+    const elsewhere = buildClaudePrompt(input({ mcpServers: [{ name: 'dxvcs-local' }] }));
     expect(elsewhere).toMatch(/`acme\/rocket`, which the index does not cover/);
     expect(buildClaudePrompt(dxvcs())).not.toMatch(/does not cover/);
   });
 
   it('names every configured server', () => {
-    expect(buildClaudePrompt(dxvcs({ mcpServers: ['dxvcs-local', 'dxvcs'] }))).toContain('`dxvcs-local`, `dxvcs`');
+    expect(buildClaudePrompt(dxvcs({ mcpServers: [{ name: 'dxvcs-local' }, { name: 'dxvcs' }] }))).toContain('`dxvcs-local`, `dxvcs`');
   });
+});
+
+/**
+ * Claude reaches the server with curl (its native MCP servers are blocked by policy), so its brief
+ * must carry the exact command its permission rule allows; Codex, connected natively, must not.
+ */
+describe('MCP over curl (Claude)', () => {
+  const URL_ = 'http://127.0.0.1:8091/mcp';
+  const claude = (over: Partial<ClaudePromptInput> = {}) =>
+    buildClaudePrompt(
+      input({ owner: 'DevExpress', repo: 'dxvcs', mcpServers: [{ name: 'dxvcs-local-http', curlUrl: URL_ }], ...over }),
+    );
+
+  it('gives the exact curl + jq recipe, starting with the permitted prefix', () => {
+    const prompt = claude();
+    expect(prompt).toContain(
+      `curl -s -m 60 ${URL_} -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL","arguments":{"arg":"value"}}}' | jq -rR 'select(startswith("data: "))|.[6:]|fromjson|(.result.content[0].text // .error // .)'`,
+    );
+    expect(prompt).toContain('"method":"tools/list"');
+    expect(prompt).toMatch(/One tool call per command/);
+    expect(prompt).toMatch(/never a single quote/);
+    expect(prompt).toContain(`\`${MCP_CURL_PREFIX} <url>\` character for character`);
+    expect(prompt).toMatch(/not as connected MCP tools/);
+  });
+
+  it('keeps the same tool ordering guidance', () => {
+    const prompt = claude({ depth: 'blame' });
+    expect(prompt).toContain('index_status');
+    expect(prompt.indexOf('first_failing')).toBeGreaterThan(prompt.indexOf('How to call it'));
+    expect(prompt).toContain('shorthand for that command');
+  });
+
+  it('says nothing about curl to Codex', () => {
+    const codex = buildClaudePrompt(input({ owner: 'DevExpress', repo: 'dxvcs', mcpServers: [{ name: 'dxvcs-local' }] }));
+    expect(codex).toContain('METADATA FIRST');
+    expect(codex).not.toContain('curl');
+    expect(codex).toMatch(/This run is connected to `dxvcs-local`/);
+  });
+
 });

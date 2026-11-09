@@ -22,11 +22,15 @@ commit metadata.
   rest stay read-only. **Check AI integration** reports `codex` alongside `claude` and `gh`.
 - **MCP servers.** A list in Settings → AI integration (name, stdio command + arguments or HTTP URL,
   enabled), prefilled with the dxvcs server — `dxvcs-local` over stdio
-  (`bash /work/dxvcs_mcp/scripts/mcp-stdio.sh local`) and `dxvcs` over HTTP with an empty URL — both
-  **off** until you switch them on, with a link to the server's tool list. Passed to Claude with
-  `--mcp-config` (and its tools allowed as `mcp__<name>`), to Codex as `-c mcp_servers.<name>.…`
-  overrides; Codex gets stdio servers only, since it cannot sign in to the Entra-protected endpoint.
-  Only the investigating tasks (deep analysis, Who broke it, What failed) are given them.
+  (`bash /work/dxvcs_mcp/scripts/mcp-stdio.sh local`), `dxvcs-local-http` at
+  `http://127.0.0.1:8091/mcp` (`docker compose up -d mcp` in dxvcs-mcp) and `dxvcs` over HTTP with an
+  empty URL — all **off** until you switch them on, with a link to the server's tool list. Codex
+  connects to stdio servers natively (`-c mcp_servers.<name>.…`). Claude Code refuses
+  `--mcp-config` servers under enterprise policy, so Claude instead calls a **loopback HTTP** server
+  with `curl` — the brief gives the exact `curl … | jq …` command and `--allowedTools` permits
+  `Bash(curl -s -m 60 <url>:*)` and `Bash(jq:*)` for that URL only; stdio and remote servers are
+  skipped for Claude (and logged). Only the investigating tasks (deep analysis, Who broke it, What
+  failed) are given them.
 - **MCP-first briefs.** With a server configured, those three tasks are told to take metadata from it
   before `gh`: `first_failing` + `commits_between(path_prefixes)` for the boundary and suspects,
   `commit_info`/`pr_info`/`who_touched` for authorship, `run_info`/`job_log`/`failures`/`search_logs`

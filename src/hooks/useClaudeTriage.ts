@@ -29,7 +29,7 @@ import {
   cancelClaudeAnalysis,
   claudeBridgeAvailable,
   claudeToolsReady,
-  mcpServerNamesFor,
+  mcpServersForPrompt,
   NO_CLAUDE_TOOLS,
   onClaudeProgress,
   probeClaudeTools,
@@ -485,7 +485,7 @@ export function useClaudeTriage(): ClaudeTriage {
             promptOverride: task.prompt,
             extraInstructions: ai.extraInstructions,
             // Only the investigating tasks are handed the servers, so only they are told to use them.
-            mcpServers: TOOL_TASKS.has(depth) ? mcpServerNamesFor(ai) : [],
+            mcpServers: TOOL_TASKS.has(depth) ? mcpServersForPrompt(ai) : [],
           });
 
       return analyzeWithClaude({

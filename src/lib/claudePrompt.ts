@@ -110,7 +110,50 @@ export interface ClaudePromptInput {
    * investigating tasks to "metadata from the MCP first, `gh` for the rest"; empty or absent
    * leaves the prompt exactly as it was before MCP support existed.
    */
-  mcpServers?: readonly string[];
+  mcpServers?: readonly McpPromptServer[];
+}
+
+/**
+ * An MCP server as the brief describes it. With `curlUrl` the agent has no native MCP connection
+ * and calls the tools as JSON-RPC over HTTP with `curl` (the Claude route — native servers are
+ * blocked by policy there); without it the tools are connected natively (Codex).
+ */
+export interface McpPromptServer {
+  name: string;
+  curlUrl?: string;
+}
+
+/**
+ * How every curl call to an MCP server must begin, up to the URL.
+ *
+ * Claude's permission rule is a *prefix* — `Bash(curl -s -m 60 <url>:*)` in
+ * electron/claudeBridge.cjs, which must use this same string — so a call spelt any other way
+ * (`curl -m 60 -s …`, a different timeout) is refused. The brief therefore hands over the command
+ * verbatim rather than describing it.
+ */
+export const MCP_CURL_PREFIX = 'curl -s -m 60';
+
+/** The jq filter that turns the server's SSE reply into the tool's text, or the error. */
+const MCP_JQ_RESULT = `jq -rR 'select(startswith("data: "))|.[6:]|fromjson|(.result.content[0].text // .error // .)'`;
+const MCP_JQ_TOOLS = `jq -rR 'select(startswith("data: "))|.[6:]|fromjson|(.result.tools[]? | {name, description, inputSchema}) // .error'`;
+
+function mcpCurl(url: string, body: string, jq: string): string {
+  return `${MCP_CURL_PREFIX} ${url} -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '${body}' | ${jq}`;
+}
+
+/** The curl recipe for one server: how to call a tool, and how to list them. */
+function mcpCurlRecipe(server: McpPromptServer): string {
+  const url = server.curlUrl as string;
+  return [
+    `\`${server.name}\` — call a tool (replace TOOL and the arguments object):`,
+    '```',
+    mcpCurl(url, '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL","arguments":{"arg":"value"}}}', MCP_JQ_RESULT),
+    '```',
+    `List the tools and their argument schemas (once, only if you need a parameter you are unsure of):`,
+    '```',
+    mcpCurl(url, '{"jsonrpc":"2.0","id":1,"method":"tools/list"}', MCP_JQ_TOOLS),
+    '```',
+  ].join('\n');
 }
 
 /**
@@ -564,12 +607,17 @@ export const MCP_INDEXED_REPO = 'DevExpress/dxvcs';
  * but not the facts of the environment: a run that has the server should be told so whoever
  * wrote the brief.
  */
-function mcpPreamble(servers: readonly string[], slug: string): string {
-  const named = servers.map((n) => `\`${n}\``).join(', ');
+function mcpPreamble(servers: readonly McpPromptServer[], slug: string): string {
+  const named = servers.map((s) => `\`${s.name}\``).join(', ');
   const plural = servers.length > 1;
   const sameRepo = slug.toLowerCase() === MCP_INDEXED_REPO.toLowerCase();
+  const curl = servers.filter((s) => s.curlUrl);
+  const connection =
+    curl.length > 0
+      ? `This run can reach ${named} over HTTP — not as connected MCP tools, but by calling them with \`curl\``
+      : `This run is connected to ${named}`;
   return [
-    `**Get metadata from the MCP server${plural ? 's' : ''} first.** This run is connected to ${named}: a read-only, pre-indexed knowledge base of ${MCP_INDEXED_REPO} — commits with their changed paths and where each landed per branch, pull requests, GitHub Actions runs with their jobs, steps and full logs, error fingerprints, parsed JUnit/TRX test results, and job-monitor issues. One of its tools answers in a single call what takes several \`gh\` calls, a download and an unzip, and it spends no GitHub rate limit. Reach for it before \`gh\` and \`git\`.`,
+    `**Get metadata from the MCP server${plural ? 's' : ''} first.** ${connection}: a read-only, pre-indexed knowledge base of ${MCP_INDEXED_REPO} — commits with their changed paths and where each landed per branch, pull requests, GitHub Actions runs with their jobs, steps and full logs, error fingerprints, parsed JUnit/TRX test results, and job-monitor issues. One of its tools answers in a single call what takes several \`gh\` calls, a download and an unzip, and it spends no GitHub rate limit. Reach for it before \`gh\` and \`git\`.`,
     '',
     `- **Check freshness once.** Call \`index_status\` before you rely on it for anything recent — it is refreshed about hourly, so the run you were asked about, or the newest commits, may not be indexed yet. If they are missing, that is the moment to use \`gh\` for them, not a reason to conclude they do not exist.`,
     sameRepo
@@ -577,6 +625,19 @@ function mcpPreamble(servers: readonly string[], slug: string): string {
       : `- **This failure is in \`${slug}\`, which the index does not cover.** Use it only for what it does hold — commits, pull requests and runs of ${MCP_INDEXED_REPO} that this code shares — and use \`gh\` for this repository's own runs, logs and artifacts.`,
     `- **Its calls count against the same budget as any other.** Ask it narrow questions — a run id, a branch, a \`path_prefixes\` filter, a \`grep\` on a log — rather than paging through everything it holds.`,
     `- Everything you take from it is evidence you obtained, under the same rule as \`gh\` output: quote it, never embellish it.`,
+    ...(curl.length > 0
+      ? [
+          '',
+          `**How to call it.** Use exactly this command, changing only the JSON after \`-d\`. It must start with \`${MCP_CURL_PREFIX} <url>\` character for character — that prefix is what you are permitted to run, and any other spelling is refused.`,
+          '',
+          ...curl.map(mcpCurlRecipe),
+          '',
+          `- **One tool call per command**, with no \`&&\`, \`;\` or loops around it. Piping into \`jq\` as shown is fine.`,
+          `- The arguments are a JSON object inside the single-quoted \`-d\` body: double quotes inside, never a single quote. Numbers stay unquoted: \`"run_id":42617218132\`.`,
+          `- Below, \`tool(arg=value, …)\` is shorthand for that command with \`"name":"tool"\` and \`"arguments":{"arg":value, …}\`.`,
+          `- A reply that is an \`error\` object means the call failed — fix the arguments once (\`tools/list\` shows the schema), then fall back to \`gh\`.`,
+        ]
+      : []),
   ].join('\n');
 }
 
