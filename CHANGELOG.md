@@ -4,7 +4,10 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.9.0]
+
+**One card per branch.** A flow watching several branches now shows each on its own card instead of
+mixing their runs on one, and the Branches box finally takes a typed comma.
 
 ### Changed
 - **A flow watching several branches shows a card per branch.** `2026.1, main` used to give one card
