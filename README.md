@@ -264,8 +264,9 @@ CLI of the chosen **AI backend** is required; `gh` is optional, and without it a
 log Job Monitor fetched itself.
 
 **AI backend.** Every AI task runs through [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
-by default; switch to **Codex** on the same page to run the same briefs through `codex exec` (one
-Codex model for every task, effort following each task's own setting unless you pick one).
+by default; switch to **Codex** on the same page to run the same briefs through `codex exec`. Each
+task's model is then picked by type — `opus` runs the newest Codex Astra model, `sonnet` the newest
+Sol, `haiku` the newest Luna, from Codex's own model list — and its reasoning effort passes through as is.
 
 **MCP servers.** The investigating tasks — deep analysis, **Who broke it** and **What failed** — can be
 given MCP servers, and are then told to get their metadata there first: run history and timings, jobs
@@ -273,7 +274,8 @@ and logs, parsed test results, flaky-or-regression history, commits, pull reques
 path, with `gh` as the fallback for whatever the index does not hold yet. The list comes prefilled
 with the [dxvcs MCP server](https://github.com/DevExpress/dxvcs-mcp#mcp-tools) for DevExpress/dxvcs —
 `dxvcs-local` over stdio, `dxvcs-local-http` at `http://127.0.0.1:8091/mcp` and a remote `dxvcs` —
-all off until you switch them on. Codex connects to the stdio one natively. Claude calls the local
+all off until you switch them on. Codex connects natively to the stdio one and to the local HTTP one
+(the remote one needs a sign-in neither agent can do). Claude calls the local
 HTTP one with `curl` (start it with `docker compose up -d mcp` in dxvcs-mcp), because Claude Code's own
 MCP servers can be blocked by enterprise policy; its permission allows curl to that URL only.
 

@@ -53,15 +53,6 @@ function toSpec(server: McpServerConfig): McpServerSpec {
       };
 }
 
-/** Claude effort names onto Codex's scale: Codex has no `max`, and `xhigh` is its top. */
-const CODEX_EFFORT_FOR: Record<AiTaskConfig['effort'], string> = {
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-  max: 'xhigh',
-};
-
 /**
  * What a request needs to say about *how* to run, given the settings: which CLI, which model and
  * effort on that CLI, and — for a task that investigates — which MCP servers to hand it.
@@ -71,21 +62,17 @@ const CODEX_EFFORT_FOR: Record<AiTaskConfig['effort'], string> = {
  * reaches the CLI.
  */
 export function agentRunOptions(
-  ai: Pick<AiConfig, 'backend' | 'codex' | 'mcpServers'>,
+  ai: Pick<AiConfig, 'backend' | 'mcpServers'>,
   task: Pick<AiTaskConfig, 'model' | 'effort'>,
   usesTools: boolean,
 ): { backend: AiBackend; model?: string; effort?: string; mcpServers?: McpServerSpec[] } {
   const backend: AiBackend = ai.backend === 'codex' ? 'codex' : 'claude';
   const servers = usesTools ? activeMcpServers({ ...ai, backend }).map(toSpec) : [];
   const mcp = servers.length > 0 ? { mcpServers: servers } : {};
-  if (backend === 'claude') return { backend, model: task.model, effort: task.effort, ...mcp };
-  const codex = ai.codex ?? { model: '', effort: 'auto' };
-  return {
-    backend,
-    model: codex.model || undefined,
-    effort: codex.effort === 'auto' ? CODEX_EFFORT_FOR[task.effort] : codex.effort,
-    ...mcp,
-  };
+  // Both backends get the task's own tier and effort. For Codex the bridge resolves the tier to the
+  // newest model of the matching family (opus → Astra, sonnet → Sol, haiku → Luna) from Codex's
+  // own model list, and the effort passes as-is: Codex takes the same low…max scale.
+  return { backend, model: task.model, effort: task.effort, ...mcp };
 }
 
 /**

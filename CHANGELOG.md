@@ -15,8 +15,10 @@ commit metadata.
 - **AI backend: Claude Code or Codex.** One switch in Settings → AI integration. Codex runs the same
   briefs non-interactively (`codex exec --json`, prompt on stdin), drives the same live activity feed
   and narration, honours the same timeouts, Stop and Continue (`codex exec resume`), and gets the
-  triage and blame skills through an `AGENTS.md` in its scratch directory. One Codex model for every
-  task (blank = your Codex default) and an effort that by default follows each task's own setting.
+  triage and blame skills through an `AGENTS.md` in its scratch directory. Each task's model is
+  picked by type rather than by id — `opus`/`sonnet`/`haiku` run the newest Codex Astra/Sol/Luna
+  listed in `~/.codex/models_cache.json` (no list: your Codex default) — and its effort passes as
+  is, since Codex takes the same `low`…`max` scale.
   The tasks that investigate run in Codex's `workspace-write` sandbox with network on — its read-only
   sandbox cuts the network, so `gh` could not reach GitHub — confined to the scratch directory; the
   rest stay read-only. **Check AI integration** reports `codex` alongside `claude` and `gh`.
@@ -25,7 +27,7 @@ commit metadata.
   (`bash /work/dxvcs_mcp/scripts/mcp-stdio.sh local`), `dxvcs-local-http` at
   `http://127.0.0.1:8091/mcp` (`docker compose up -d mcp` in dxvcs-mcp) and `dxvcs` over HTTP with an
   empty URL — all **off** until you switch them on, with a link to the server's tool list. Codex
-  connects to stdio servers natively (`-c mcp_servers.<name>.…`). Claude Code refuses
+  connects natively to stdio servers and loopback HTTP ones (`-c mcp_servers.<name>.…`). Claude Code refuses
   `--mcp-config` servers under enterprise policy, so Claude instead calls a **loopback HTTP** server
   with `curl` — the brief gives the exact `curl … | jq …` command and `--allowedTools` permits
   `Bash(curl -s -m 60 <url>:*)` and `Bash(jq:*)` for that URL only; stdio and remote servers are

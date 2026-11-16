@@ -28,9 +28,9 @@ import { useAuth } from '../context/AuthContext';
 import {
   AI_EFFORTS,
   AI_MODELS,
-  CODEX_EFFORTS,
   DEFAULT_MCP_SERVERS,
   DXVCS_MCP_README_URL,
+  isLoopbackMcpUrl,
   MCP_SERVER_NAME_RE,
   MAX_FLOW_MATCHES,
   monitorConfigSchema,
@@ -1526,9 +1526,8 @@ function DiagnosticsSection({
 /**
  * Which agent CLI runs the tasks, and the Codex-only knobs.
  *
- * Claude keeps its per-task model and effort below. Codex has no sonnet/opus pair to choose
- * between per task, so it gets one model for everything and an effort that by default follows
- * each task's own setting — the tuning below keeps meaning something on either backend.
+ * The per-task model and effort below apply to either backend: for Codex the model is a type
+ * (opus/sonnet/haiku → Astra/Sol/Luna) resolved to the newest of that family, never a pinned id.
  */
 function AiBackendFields({
   settings,
@@ -1561,37 +1560,12 @@ function AiBackendFields({
         </SegmentedControl.Button>
       </SegmentedControl>
       {settings.backend === 'codex' && (
-        <div className={styles.flexGap3_3}>
-          <FormControl className={styles.minWidth}>
-            <FormControl.Label>Codex model</FormControl.Label>
-            <TextInput
-              value={settings.codex.model}
-              placeholder="from ~/.codex/config.toml"
-              onChange={(e) => onChange({ codex: { ...settings.codex, model: e.target.value.trim() } })}
-            />
-            <FormControl.Caption>Blank uses your Codex default. Used for every task.</FormControl.Caption>
-          </FormControl>
-          <FormControl className={styles.minWidth}>
-            <FormControl.Label>Codex reasoning effort</FormControl.Label>
-            <Select
-              value={settings.codex.effort}
-              onChange={(e) =>
-                onChange({
-                  codex: { ...settings.codex, effort: e.target.value as AiConfig['codex']['effort'] },
-                })
-              }
-            >
-              {CODEX_EFFORTS.map((v) => (
-                <Select.Option key={v} value={v}>
-                  {v === 'auto' ? 'auto — each task’s own effort' : v}
-                </Select.Option>
-              ))}
-            </Select>
-            <FormControl.Caption>
-              The per-task <strong>model</strong> choices below apply to Claude only.
-            </FormControl.Caption>
-          </FormControl>
-        </div>
+        <Text as="p" className={styles.fgMutedSmall2}>
+          The per-task model below is picked by type: <code>opus</code> runs the newest Codex
+          Astra model, <code>sonnet</code> the newest Sol, <code>haiku</code> the newest Luna — as
+          listed in Codex’s own model cache, so a new release is used without changing anything
+          here. The reasoning effort passes through as is.
+        </Text>
       )}
     </div>
   );
@@ -1661,7 +1635,7 @@ function McpServersFields({
       )}
       {servers.map((server, index) => {
         const nameOk = MCP_SERVER_NAME_RE.test(server.name);
-        const codexSkips = backend === 'codex' && server.type === 'http';
+        const remoteHttpSkipped = server.type === 'http' && server.url.trim() !== '' && !isLoopbackMcpUrl(server.url.trim());
         const claudeSkipsStdio = backend === 'claude' && server.type === 'stdio';
         return (
           <div key={index} className={styles.roundedP3}>
@@ -1738,9 +1712,11 @@ function McpServersFields({
                   onChange={(e) => update(index, { url: e.target.value.trim() })}
                 />
                 <FormControl.Caption>
-                  {codexSkips
-                    ? 'Skipped with Codex: it cannot sign in to an HTTP MCP endpoint yet — use the stdio entry.'
-                    : 'Claude calls it with curl, allowed for this exact URL only — so only a loopback URL (127.0.0.1 / localhost, no sign-in) is used; a remote Entra-protected one is skipped. The local one is started by `docker compose up -d mcp` in dxvcs-mcp.'}
+                  {remoteHttpSkipped
+                    ? 'Skipped: only a loopback URL (127.0.0.1 / localhost, no sign-in) is used — neither agent can do the Entra sign-in of a remote endpoint.'
+                    : backend === 'codex'
+                      ? 'Codex connects to it natively (streamable HTTP). Only a loopback URL is used. The local one is started by `docker compose up -d mcp` in dxvcs-mcp.'
+                      : 'Claude calls it with curl, allowed for this exact URL only — so only a loopback URL (127.0.0.1 / localhost, no sign-in) is used; a remote Entra-protected one is skipped. The local one is started by `docker compose up -d mcp` in dxvcs-mcp.'}
                 </FormControl.Caption>
               </FormControl>
             )}

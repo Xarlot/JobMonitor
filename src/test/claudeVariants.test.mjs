@@ -8,6 +8,7 @@ import {
   MCP_CURL_PREFIX,
   codexMcpOverrides,
   codexVariants,
+  readCodexModels,
   createCodexStreamParser,
   createStreamParser,
   describeExit,
@@ -814,6 +815,22 @@ describe('normalizeMcpServers', () => {
     expect(skipped.join('\n')).toMatch(/web: only a loopback URL/);
   });
 
+  it('gives Codex stdio and loopback HTTP servers natively, and skips a remote endpoint', () => {
+    const skipped = [];
+    const out = normalizeMcpServers(
+      [
+        DXVCS_LOCAL,
+        { name: 'local', type: 'http', url: 'http://127.0.0.1:8091/mcp' },
+        { name: 'web', type: 'http', url: 'https://h.example/mcp' },
+      ],
+      'codex',
+      (name, why) => skipped.push(`${name}: ${why}`),
+    );
+    expect(out.map((s) => s.name)).toEqual(['dxvcs-local', 'local']);
+    expect(skipped.join('\n')).toMatch(/web: only a loopback URL/);
+    const args = codexVariants('cause', { mcpServers: out })[0].args;
+    expect(args).toContain('mcp_servers.local.url="http://127.0.0.1:8091/mcp"');
+  });
 
   it('treats anything that is not a list as no servers', () => {
     expect(normalizeMcpServers(undefined, 'claude')).toEqual([]);
@@ -822,7 +839,10 @@ describe('normalizeMcpServers', () => {
 
   /** The renderer is untrusted; the payload is re-read in the main process like every other field. */
   it('is applied to the payload in analyze, and only for a tool-using task', () => {
-    expect(BRIDGE_SOURCE).toMatch(/mcpServers: USES_TOOLS\[depth\]\s*\? normalizeMcpServers\(mcpServers, backend,/);
+    expect(BRIDGE_SOURCE).toMatch(/const servers = usesGh\s*\? normalizeMcpServers\(mcpServers, backend,/);
+    expect(BRIDGE_SOURCE).toContain('mcpServers: servers,');
+    // With a server and the app's own job log, the whole-run `gh` download is skipped.
+    expect(BRIDGE_SOURCE).toMatch(/const skipGh = servers\.length > 0 && fallbackLog\.trim\(\)\.length > 0;/);
     expect(BRIDGE_SOURCE).toContain("if (!BACKENDS.has(backend)) return { ok: false, error: 'Invalid backend.' };");
   });
 });
@@ -853,14 +873,60 @@ describe('codexVariants', () => {
     }
   });
 
-  it('maps effort from the task, accepts Codex efforts, and checks the model’s shape', () => {
+  // Shaped like codex-cli 0.167's models_cache.json after readCodexModels: newest first by priority.
+  const CODEX_MODELS = [
+    { slug: 'gpt-6.1-sol', priority: 1, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    { slug: 'gpt-6-astra', priority: 3, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    { slug: 'gpt-6-sol', priority: 4, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    { slug: 'gpt-6-luna', priority: 6, efforts: ['low', 'medium', 'high', 'xhigh'] },
+    { slug: 'gpt-5.6-luna', priority: 9, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  ];
+
+  it('passes the task’s effort straight through — Codex takes the same low…max scale', () => {
     expect(codexVariants('deep')[0].args).toContain('model_reasoning_effort="high"');
-    expect(codexVariants('deep', { effort: 'max' })[0].args).toContain('model_reasoning_effort="xhigh"');
-    expect(codexVariants('deep', { effort: 'minimal' })[0].args).toContain('model_reasoning_effort="minimal"');
+    expect(codexVariants('deep', { effort: 'max' })[0].args).toContain('model_reasoning_effort="max"');
+    expect(codexVariants('deep', { effort: 'minimal' })[0].args).toContain('model_reasoning_effort="high"');
     expect(codexVariants('deep', { effort: 'bogus' })[0].args).toContain('model_reasoning_effort="high"');
-    expect(valueOf(codexVariants('quick', { model: 'gpt-5.1-codex' })[0].args, '-m')).toBe('gpt-5.1-codex');
-    expect(codexVariants('quick', { model: 'bad model; rm' })[0].args).not.toContain('-m');
-    expect(codexVariants('quick', { model: '' })[0].args).not.toContain('-m');
+  });
+
+  it('picks the model by type: the newest Astra for opus, Sol for sonnet, Luna for haiku', () => {
+    const m = (task, o = {}) => valueOf(codexVariants(task, { codexModels: CODEX_MODELS, ...o })[0].args, '-m');
+    expect(m('deep')).toBe('gpt-6-astra');
+    expect(m('blame')).toBe('gpt-6-astra');
+    for (const task of ['quick', 'log', 'cause', 'marks', 'pr', 'reply']) expect(m(task)).toBe('gpt-6.1-sol');
+    expect(m('quick', { model: 'opus' })).toBe('gpt-6-astra');
+    expect(m('deep', { model: 'haiku' })).toBe('gpt-6-luna');
+    expect(m('deep', { model: 'gpt-6-astra; rm' })).toBe('gpt-6-astra');
+  });
+
+  it('leaves -m off without a model list, and on the last resort', () => {
+    expect(codexVariants('deep')[0].args).not.toContain('-m');
+    expect(codexVariants('deep', { codexModels: [{ slug: 'other', priority: 1, efforts: [] }] })[0].args).not.toContain('-m');
+    expect(codexVariants('deep', { codexModels: CODEX_MODELS }).at(-1).args).not.toContain('-m');
+  });
+
+  it('lowers an effort the chosen model does not list', () => {
+    const args = codexVariants('quick', { model: 'haiku', effort: 'max', codexModels: CODEX_MODELS })[0].args;
+    expect(valueOf(args, '-m')).toBe('gpt-6-luna');
+    expect(args).toContain('model_reasoning_effort="xhigh"');
+  });
+
+  it('reads Codex’s model cache, skipping hidden and malformed entries', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-models-'));
+    const file = join(dir, 'models_cache.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        models: [
+          { slug: 'gpt-6-astra', priority: 3, visibility: 'list', supported_reasoning_levels: [{ effort: 'high' }] },
+          { slug: 'gpt-reserve', priority: 5, visibility: 'hide' },
+          { slug: 'bad slug', priority: 1, visibility: 'list' },
+        ],
+      }),
+    );
+    expect(readCodexModels(file)).toEqual([{ slug: 'gpt-6-astra', priority: 3, efforts: ['high'] }]);
+    expect(readCodexModels(join(dir, 'missing.json'))).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('resumes with exec resume <id> -', () => {
@@ -890,7 +956,10 @@ describe('codexVariants', () => {
       '-c',
       'mcp_servers.s.args=["q\\""]',
     ]);
-    expect(codexMcpOverrides([{ name: 'h', type: 'http', url: 'https://x' }])).toEqual([]);
+    expect(codexMcpOverrides([{ name: 'h', type: 'http', url: 'http://127.0.0.1:8091/mcp' }])).toEqual([
+      '-c',
+      'mcp_servers.h.url="http://127.0.0.1:8091/mcp"',
+    ]);
   });
 
   it('ends with a bare exec any Codex understands, and only drops flags on the way', () => {

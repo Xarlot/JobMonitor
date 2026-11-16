@@ -370,8 +370,8 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
  *
  * The command is still the user's own choice from their own settings, run with their own
  * permissions — exactly as if they had registered it with `claude mcp add` or `codex mcp add`.
- * Codex is given stdio servers only: it cannot do the OAuth sign-in the HTTP endpoint needs.
- * Claude is given loopback HTTP servers only, which it reaches with `curl` (see claudeVariants):
+ * Codex is given stdio servers and loopback HTTP ones, both natively; a remote HTTP endpoint is
+ * skipped for it too, since it cannot do the Entra sign-in. Claude is given loopback HTTP servers only, which it reaches with `curl` (see claudeVariants):
  * a stdio server cannot be curled, and a remote one needs a sign-in curl cannot do. What is
  * dropped for that reason is reported through `onSkip`, so the diagnostics log says why.
  */
@@ -396,10 +396,6 @@ function normalizeMcpServers(list, backend, onSkip = () => {}) {
       seen.add(name);
       out.push({ name, type: 'stdio', command, args });
     } else if (raw.type === 'http') {
-      if (backend === 'codex') {
-        onSkip(name, 'codex cannot sign in to an HTTP MCP endpoint');
-        continue;
-      }
       const url = clean(raw.url, 2048);
       let parsed = null;
       try {
@@ -409,7 +405,7 @@ function normalizeMcpServers(list, backend, onSkip = () => {}) {
       }
       if (!parsed) continue;
       if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
-        onSkip(name, 'only a loopback URL is called with curl (a remote one needs a sign-in)');
+        onSkip(name, 'only a loopback URL is used (a remote one needs a sign-in)');
         continue;
       }
       seen.add(name);
@@ -431,20 +427,86 @@ function normalizeMcpServers(list, backend, onSkip = () => {}) {
 function codexMcpOverrides(servers) {
   const out = [];
   for (const s of servers) {
-    if (s.type !== 'stdio') continue;
-    out.push('-c', `mcp_servers.${s.name}.command=${JSON.stringify(s.command)}`);
-    out.push('-c', `mcp_servers.${s.name}.args=${JSON.stringify(s.args)}`);
+    if (s.type === 'stdio') {
+      out.push('-c', `mcp_servers.${s.name}.command=${JSON.stringify(s.command)}`);
+      out.push('-c', `mcp_servers.${s.name}.args=${JSON.stringify(s.args)}`);
+    } else if (s.type === 'http') {
+      // Streamable HTTP, as `codex mcp add --url` registers it. Loopback only (normalizeMcpServers).
+      out.push('-c', `mcp_servers.${s.name}.url=${JSON.stringify(s.url)}`);
+    }
   }
   return out;
 }
 
 /**
- * Codex's reasoning efforts. Claude's `max` has no Codex counterpart and maps to its top.
+ * Codex's reasoning efforts. codex-cli 0.167 lists low…max for its models, the same scale as
+ * `claude --effort`, so a task's effort passes through unchanged. (Its `ultra` — automatic task
+ * delegation — is not one a task here can ask for.)
  */
-const CODEX_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh']);
-const CODEX_EFFORT_FROM_CLAUDE = { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'xhigh' };
-/** A Codex model id: free-form, unlike Claude's aliases, so shape-checked instead of listed. */
+const CODEX_EFFORTS = ALLOWED_EFFORTS;
+/** A Codex model id as `codex -m` takes it: what a cache entry must look like to be passed on. */
 const CODEX_MODEL_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+
+/**
+ * The Codex model *family* for each Claude tier — chosen by type, not by id, so the setting does
+ * not go stale every time Codex ships a new version. Astra is Codex's frontier line, Sol its
+ * workhorse, Luna its fast one: the same roles Opus, Sonnet and Haiku play here.
+ */
+const CODEX_FAMILY_BY_TIER = { opus: 'astra', sonnet: 'sol', haiku: 'luna' };
+
+/** Where Codex keeps the model list it fetched for this account. */
+function codexModelsCachePath() {
+  return path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'models_cache.json');
+}
+
+/**
+ * The models Codex offers this account, from its own cache (`models_cache.json`), as
+ * `{ slug, priority, efforts }` — or `[]` when there is no readable cache, in which case the
+ * run is left on whatever `~/.codex/config.toml` picks. Read per run: it is small, and Codex
+ * refreshes it on its own schedule.
+ */
+function readCodexModels(file = codexModelsCachePath()) {
+  try {
+    const models = JSON.parse(fs.readFileSync(file, 'utf8'))?.models;
+    if (!Array.isArray(models)) return [];
+    return models
+      .filter((m) => m && typeof m.slug === 'string' && CODEX_MODEL_RE.test(m.slug) && m.visibility !== 'hide')
+      .map((m) => ({
+        slug: m.slug,
+        priority: Number.isFinite(m.priority) ? m.priority : Number.MAX_SAFE_INTEGER,
+        efforts: Array.isArray(m.supported_reasoning_levels)
+          ? m.supported_reasoning_levels.map((l) => l?.effort).filter((e) => typeof e === 'string')
+          : [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The newest model of a tier's family: Codex orders its list newest-first by `priority`
+ * (gpt-6.1-sol before gpt-6-sol before gpt-5.6-sol), so the lowest priority wins.
+ */
+function codexModelForTier(tier, models) {
+  const family = CODEX_FAMILY_BY_TIER[tier];
+  if (!family) return null;
+  const suffix = `-${family}`;
+  const match = models
+    .filter((m) => m.slug.toLowerCase().endsWith(suffix))
+    .sort((a, b) => a.priority - b.priority)[0];
+  return match ?? null;
+}
+
+/**
+ * The effort to ask for, lowered to the model's highest supported level not above it when the
+ * model does not list that one — a level the model refuses would fail the whole run.
+ */
+function codexEffortFor(effort, model) {
+  if (!model || !model.efforts.length || model.efforts.includes(effort)) return effort;
+  const order = ['low', 'medium', 'high', 'xhigh', 'max'];
+  for (let i = order.indexOf(effort); i >= 0; i -= 1) if (model.efforts.includes(order[i])) return order[i];
+  return effort;
+}
 
 /**
  * The `codex exec` argv variants, most capable first — the Codex half of {@link claudeVariants}.
@@ -467,10 +529,13 @@ const CODEX_MODEL_RE = /^[A-Za-z0-9._:-]{1,64}$/;
  */
 function codexVariants(task, overrides = {}) {
   const tools = USES_TOOLS[task];
-  const model = CODEX_MODEL_RE.test(String(overrides.model ?? '')) ? ['-m', String(overrides.model)] : [];
-  const effort = CODEX_EFFORTS.has(overrides.effort)
-    ? overrides.effort
-    : CODEX_EFFORT_FROM_CLAUDE[overrides.effort] ?? CODEX_EFFORT_FROM_CLAUDE[CLAUDE_EFFORT[task]];
+  // The task's model is a Claude tier (opus/sonnet/haiku), resolved to the newest Codex model of
+  // the matching family. No match — no cache, or a family this account lacks — leaves `-m` off,
+  // so Codex runs its configured default rather than a guessed id it may not have.
+  const tier = ALLOWED_MODELS.has(overrides.model) ? overrides.model : CLAUDE_MODEL[task];
+  const resolved = codexModelForTier(tier, Array.isArray(overrides.codexModels) ? overrides.codexModels : []);
+  const model = resolved ? ['-m', resolved.slug] : [];
+  const effort = codexEffortFor(CODEX_EFFORTS.has(overrides.effort) ? overrides.effort : CLAUDE_EFFORT[task], resolved);
   const sandbox = tools
     ? ['-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true']
     : ['-c', 'sandbox_mode="read-only"'];
@@ -772,10 +837,21 @@ async function analyze(sender, payload) {
       fallbackLogChars: fallbackLog.length,
       evidenceInPrompt,
     });
+    // Validated once, here, for both the log decision below and the spawn.
+    const servers = usesGh
+      ? normalizeMcpServers(mcpServers, backend, (name, why) => log(`mcp server ${name} not used: ${why}`))
+      : [];
+    // With an MCP server the agent reads any log it still needs through `job_log`, so a log the
+    // app already holds is enough to start from: downloading the whole run's log with `gh` first
+    // took minutes on a large run (and could still end in "unexpected EOF") before the agent
+    // had even started.
+    const skipGh = servers.length > 0 && fallbackLog.trim().length > 0;
     emit('fetching-log');
-    const ghLog = usesGh
-      ? await fetchLog({ owner, repo, runId, track, emit })
-      : { ok: false, error: `skipped for the ${depth} pass` };
+    const ghLog = !usesGh
+      ? { ok: false, error: `skipped for the ${depth} pass` }
+      : skipGh
+        ? { ok: false, error: 'skipped: the MCP server has the logs, and the app’s job log is in hand' }
+        : await fetchLog({ owner, repo, runId, track, emit });
     if (ghLog.cancelled) return { ok: false, cancelled: true, error: 'Stopped.' };
 
     // Fall back to the log the app itself fetched through the GitHub API. `gh` gives
@@ -843,11 +919,7 @@ async function analyze(sender, payload) {
       effort,
       resumeSessionId,
       backend,
-      mcpServers: USES_TOOLS[depth]
-        ? normalizeMcpServers(mcpServers, backend, (name, why) =>
-            log(`mcp server ${name} not used: ${why}`),
-          )
-        : [],
+      mcpServers: servers,
       emit,
       log,
       track,
@@ -880,6 +952,9 @@ async function analyze(sender, payload) {
  * Answers `{ ok: true, answer }` or `{ ok: false, error }`; it never throws, because it is
  * called from IPC handlers that must not.
  */
+/** Environment for every agent spawn — see the `env` note where it is used. */
+const AGENT_ENV = { GODEBUG: 'http2client=0' };
+
 async function runClaudeTask({
   task,
   prompt,
@@ -963,7 +1038,7 @@ async function runClaudeTask({
     let answer = '';
     let attempt = 0;
     const variants = codex
-      ? codexVariants(task, { model, effort, resumeSessionId, mcpServers, lastMessagePath })
+      ? codexVariants(task, { model, effort, resumeSessionId, mcpServers, lastMessagePath, codexModels: readCodexModels() })
       : claudeVariants(task, { model, effort, resumeSessionId, mcpCurlUrls });
     for (const variant of variants) {
       attempt += 1;
@@ -973,7 +1048,10 @@ async function runClaudeTask({
       reply = await run(backend, variant.args, {
         ...baseOptions,
         maxBytes: variant.streaming ? MAX_STREAM_BYTES : MAX_REPLY_BYTES,
-        env: variant.env,
+        // The agent's own `gh` calls hit the same HTTP/2 failure as fetchLog's: `gh run view
+        // --log` stalled for a minute and then died with "stream error … CANCEL". Both CLIs hand
+        // their environment to the shell they run, so HTTP/1.1 reaches every `gh` the agent runs.
+        env: { ...AGENT_ENV, ...variant.env },
         onChunk: variant.streaming
           ? (text) => parser.push(text)
           : (text) => emit('analysing', { chunk: text }),
@@ -1495,6 +1573,7 @@ module.exports = {
   COMPOSE_TASKS,
   claudeVariants,
   codexVariants,
+  readCodexModels,
   createStreamParser,
   createCodexStreamParser,
   normalizeMcpServers,

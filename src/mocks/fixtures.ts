@@ -63,7 +63,6 @@ export const MOCK_CONFIG: MonitorConfig = {
   ai: {
     enabled: true,
     backend: 'claude',
-    codex: { model: '', effort: 'auto' },
     mcpServers: [],
     extraInstructions: '',
     autoStart: true,

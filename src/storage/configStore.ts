@@ -341,12 +341,6 @@ const aiTaskSchema = (model: (typeof AI_MODELS)[number], effort: (typeof AI_EFFO
 export const AI_BACKENDS = ['claude', 'codex'] as const;
 export type AiBackend = (typeof AI_BACKENDS)[number];
 
-/**
- * Codex reasoning efforts (`model_reasoning_effort`). `auto` maps each task's own effort setting
- * onto Codex's scale, so the per-task tuning above still means something on the other backend.
- */
-export const CODEX_EFFORTS = ['auto', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
-
 /** Where the dxvcs MCP server's tool list and setup notes live. */
 export const DXVCS_MCP_README_URL = 'https://github.com/DevExpress/dxvcs-mcp#mcp-tools';
 
@@ -429,8 +423,8 @@ export function isLoopbackMcpUrl(url: string): boolean {
 /**
  * The MCP servers that will actually be handed to `backend`: enabled, complete, uniquely named.
  *
- * - **Codex** connects natively and gets stdio servers only — it cannot sign in to the
- *   Entra-protected HTTP endpoint.
+ * - **Codex** connects natively: stdio servers, and HTTP servers on a loopback URL (streamable
+ *   HTTP, no sign-in). A remote HTTP endpoint is skipped — it cannot do the Entra sign-in.
  * - **Claude** gets loopback HTTP servers only, which it calls with `curl`: native MCP servers are
  *   blocked by enterprise policy in Claude Code here, and a stdio server cannot be reached by curl.
  *
@@ -444,7 +438,7 @@ export function activeMcpServers(
   return (ai.mcpServers ?? []).filter((s) => {
     if (!s.enabled || !MCP_SERVER_NAME_RE.test(s.name) || seen.has(s.name)) return false;
     if (s.type === 'stdio' && (ai.backend !== 'codex' || !s.command.trim())) return false;
-    if (s.type === 'http' && (ai.backend === 'codex' || !isLoopbackMcpUrl(s.url.trim()))) return false;
+    if (s.type === 'http' && !isLoopbackMcpUrl(s.url.trim())) return false;
     seen.add(s.name);
     return true;
   });
@@ -464,21 +458,6 @@ export const aiSchema = z
     enabled: z.boolean().default(true),
     /** Which agent CLI runs the tasks. Claude unless chosen otherwise, so upgrading changes nothing. */
     backend: z.enum(AI_BACKENDS).default('claude'),
-    /**
-     * Codex settings. One model for every task — Codex has no sonnet/opus split to choose between
-     * per task — and an effort that by default follows each task's own setting.
-     */
-    codex: z
-      .object({
-        /** Blank = whatever `~/.codex/config.toml` says. Shape-checked again in the bridge. */
-        model: z
-          .string()
-          .trim()
-          .regex(/^[A-Za-z0-9._:-]{0,64}$/, 'model may only contain letters, digits, . _ : and -')
-          .default(''),
-        effort: z.enum(CODEX_EFFORTS).default('auto'),
-      })
-      .prefault({}),
     /**
      * MCP servers the investigating tasks may use, with the briefs telling them to go there first
      * for metadata. A config that predates this gets the (switched-off) dxvcs entries.
@@ -645,7 +624,6 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   ai: {
     enabled: true,
     backend: 'claude',
-    codex: { model: '', effort: 'auto' },
     mcpServers: DEFAULT_MCP_SERVERS.map((s) => ({ ...s, args: [...s.args] })),
     extraInstructions: '',
     autoStart: true,

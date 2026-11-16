@@ -663,10 +663,16 @@ truncated commit list read as a finished one.
 - **skills**: Codex reads `AGENTS.md` from its cwd, not `.claude/skills`, so `installAgentsMd` writes
   the task's skills there under `# Skill: <name>` headings.
 - **scratch**: suffixed `-codex`, so a Claude session id is never resumed by Codex or vice versa.
+- **model**: the task's tier (`opus`/`sonnet`/`haiku`) maps to a Codex family (`astra`/`sol`/`luna`,
+  `CODEX_FAMILY_BY_TIER`), resolved per run to the lowest-`priority` (newest) visible slug of that
+  family in `$CODEX_HOME/models_cache.json` (`readCodexModels`). No cache or no match: `-m` is left
+  off and `config.toml` decides. Never a pinned id — those go stale with every Codex release.
+- **effort**: passed through (`low`…`max`, verified against 0.167), lowered only when the resolved
+  model's `supported_reasoning_levels` lacks it. There is no `minimal`; `ultra` is not offered.
 
 ### MCP servers
 
-`ai.mcpServers` (settings) → `activeMcpServers` (enabled, complete, unique; stdio only for Codex) →
+`ai.mcpServers` (settings) → `activeMcpServers` (enabled, complete, unique; Codex: stdio + loopback HTTP; Claude: loopback HTTP) →
 `agentRunOptions` puts them on the request **only for a tool-using task**, and `mcpServersForPrompt`
 gives the same servers to `buildClaudePrompt`, so the brief never mentions a server the CLI was not
 given. The bridge re-validates them in `normalizeMcpServers` (closed shape, no NUL/newline, URLs free of

@@ -288,9 +288,14 @@ describe('ai defaults', () => {
 describe('AI backend and MCP servers', () => {
   const base = { version: 1, upstream: { owner: 'o', repo: 'r' }, fork: { owner: 'o' } };
 
-  it('defaults to Claude, with Codex following each task’s effort', () => {
+  it('defaults to Claude', () => {
     expect(DEFAULT_CONFIG.ai.backend).toBe('claude');
-    expect(DEFAULT_CONFIG.ai.codex).toEqual({ model: '', effort: 'auto' });
+  });
+
+  it('drops the single Codex model/effort block of the first Codex build', () => {
+    const parsed = monitorConfigSchema.parse({ ...base, ai: { backend: 'codex', codex: { model: 'x', effort: 'auto' } } });
+    expect(parsed.ai).not.toHaveProperty('codex');
+    expect(parsed.ai.deep).toMatchObject({ model: 'opus', effort: 'high' });
   });
 
   /** Prefilled so it is one click to turn on, but off: the path is one machine's. */
@@ -324,10 +329,9 @@ describe('AI backend and MCP servers', () => {
     expect(
       monitorConfigSchema.safeParse({ ...base, ai: { mcpServers: [{ name: 'a.b', command: 'x' }] } }).success,
     ).toBe(false);
-    expect(monitorConfigSchema.safeParse({ ...base, ai: { codex: { model: 'gpt 5' } } }).success).toBe(false);
   });
 
-  it('hands Codex stdio servers and Claude loopback HTTP ones (curl), enabled and unique', () => {
+  it('hands Codex stdio and loopback HTTP servers, Claude loopback HTTP ones (curl), enabled and unique', () => {
     const servers = [
       { name: 'a', type: 'stdio' as const, command: 'bash', args: ['x'], url: '', enabled: true },
       { name: 'off', type: 'stdio' as const, command: 'bash', args: [], url: '', enabled: false },
@@ -339,14 +343,14 @@ describe('AI backend and MCP servers', () => {
       { name: 'quote', type: 'http' as const, command: '', args: [], url: "http://localhost/x'y", enabled: true },
     ];
     expect(activeMcpServers({ backend: 'claude', mcpServers: servers }).map((s) => s.name)).toEqual(['local']);
-    expect(activeMcpServers({ backend: 'codex', mcpServers: servers }).map((s) => s.name)).toEqual(['a']);
+    expect(activeMcpServers({ backend: 'codex', mcpServers: servers }).map((s) => s.name)).toEqual(['a', 'local']);
   });
 });
 
 describe('agentRunOptions', () => {
   const server = { name: 'dxvcs-local', type: 'stdio' as const, command: 'bash', args: ['/s.sh', '', 'local'], url: '', enabled: true };
   const http = { name: 'dxvcs-local-http', type: 'http' as const, command: '', args: [], url: 'http://127.0.0.1:8091/mcp', enabled: true };
-  const ai = { backend: 'claude' as const, codex: { model: '', effort: 'auto' as const }, mcpServers: [server, http] };
+  const ai = { backend: 'claude' as const, mcpServers: [server, http] };
 
   it('passes Claude the task’s own model and effort, and MCP only to a tool-using task', () => {
     expect(agentRunOptions(ai, { model: 'opus', effort: 'high' }, true)).toEqual({
@@ -362,26 +366,27 @@ describe('agentRunOptions', () => {
     });
   });
 
-  it('maps the task effort onto Codex unless one is chosen, and leaves the model to Codex when blank', () => {
+  it('gives Codex the task’s own tier and effort — the bridge resolves the tier to a model', () => {
     const codex = { ...ai, backend: 'codex' as const };
     expect(agentRunOptions(codex, { model: 'opus', effort: 'max' }, false)).toEqual({
       backend: 'codex',
-      model: undefined,
-      effort: 'xhigh',
+      model: 'opus',
+      effort: 'max',
     });
-    expect(
-      agentRunOptions({ ...codex, codex: { model: 'gpt-5', effort: 'low' } }, { model: 'opus', effort: 'high' }, true),
-    ).toMatchObject({
+    expect(agentRunOptions(codex, { model: 'sonnet', effort: 'low' }, true)).toMatchObject({
       backend: 'codex',
-      model: 'gpt-5',
+      model: 'sonnet',
       effort: 'low',
-      mcpServers: [{ name: 'dxvcs-local', type: 'stdio', command: 'bash', args: ['/s.sh', 'local'] }],
+      mcpServers: [
+        { name: 'dxvcs-local', type: 'stdio', command: 'bash', args: ['/s.sh', 'local'] },
+        { name: 'dxvcs-local-http', type: 'http', url: 'http://127.0.0.1:8091/mcp' },
+      ],
     });
   });
 
   it('describes the same servers to the brief as it hands the CLI — with the curl URL for Claude', () => {
     expect(mcpServersForPrompt(ai)).toEqual([{ name: 'dxvcs-local-http', curlUrl: 'http://127.0.0.1:8091/mcp' }]);
-    expect(mcpServersForPrompt({ ...ai, backend: 'codex' })).toEqual([{ name: 'dxvcs-local' }]);
+    expect(mcpServersForPrompt({ ...ai, backend: 'codex' })).toEqual([{ name: 'dxvcs-local' }, { name: 'dxvcs-local-http' }]);
     expect(mcpServersForPrompt({ ...ai, mcpServers: [] })).toEqual([]);
   });
 
