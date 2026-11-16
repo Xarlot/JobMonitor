@@ -334,6 +334,15 @@ const MATCH_BY_LABELS: Record<FlowMatch['by'], string> = {
   any: 'name or file',
 };
 
+/** Branch list ⇄ the text of the comma-separated branches box. */
+const csv = (arr: string[]) => arr.join(', ');
+const parseCsv = (s: string) =>
+  s
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
 /**
  * Live answer to "what does this regex actually match?" — the repo's workflow list
  * is fetched once (ETag-cached) and re-filtered locally on every keystroke.
@@ -508,12 +517,13 @@ function FlowEditor({
   // state so the fields stay put while the pattern box is still empty.
   const [regexMode, setRegexMode] = useState(() => isPatternFlow(flow));
   const set = <K extends keyof Flow>(key: K, value: Flow[K]) => onChange({ ...flow, [key]: value });
-  const csv = (arr: string[]) => arr.join(', ');
-  const parseCsv = (s: string) =>
-    s
-      .split(/[,\s]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
+  // The branches box keeps the text as typed: re-rendering it from the parsed list on
+  // every keystroke swallowed a trailing comma or space, so a second branch could only
+  // be pasted in, never typed. It re-syncs only when the list changes from outside.
+  const [branchesText, setBranchesText] = useState(() => csv(flow.branches));
+  useEffect(() => {
+    setBranchesText((text) => (sameList(parseCsv(text), flow.branches) ? text : csv(flow.branches)));
+  }, [flow.branches]);
 
   // The browser queries the flow's own coordinates, falling back to upstream.
   const browseOwner = (flow.owner ?? '').trim() || upstream.owner.trim();
@@ -651,12 +661,19 @@ function FlowEditor({
               <FormControl className={styles.fullRow}>
                 <FormControl.Label>Branches</FormControl.Label>
                 <TextInput
-                  value={csv(flow.branches)}
-                  onChange={(e) => set('branches', parseCsv(e.target.value))}
+                  value={branchesText}
+                  onChange={(e) => {
+                    setBranchesText(e.target.value);
+                    const next = parseCsv(e.target.value);
+                    if (!sameList(next, flow.branches)) set('branches', next);
+                  }}
+                  onBlur={() => setBranchesText(csv(flow.branches))}
                   placeholder="main, release/*"
                   block
                 />
-                <FormControl.Caption>Comma-separated</FormControl.Caption>
+                <FormControl.Caption>
+                  Comma-separated. Each branch gets its own card on the board.
+                </FormControl.Caption>
               </FormControl>
               <div className={styles.fullRow}>
                 <EventsField events={flow.events} onChange={(next) => set('events', next)} />

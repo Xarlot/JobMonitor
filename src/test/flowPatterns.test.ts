@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   compileFlowPattern,
+  derivedBranchOf,
   derivedFileOf,
   derivedFlowId,
+  describeFlowId,
   expandFlow,
   expandFlows,
   isDerivedFlowId,
@@ -34,7 +36,7 @@ function flow(over: Partial<Flow> = {}): Flow {
     id: 'f1',
     name: 'Flow',
     workflowFile: 'ci.yml',
-    branches: ['main', 'release'],
+    branches: ['main'],
     events: ['push'],
     maxRuns: 7,
     emptyFilter: { enabled: true, mode: 'hide', by: 'no_runs', minArtifactKB: 0, jobName: '', jobState: 'skipped' },
@@ -134,6 +136,49 @@ describe('expandFlow', () => {
 
   it('contributes nothing while the repo workflow list is unknown', () => {
     expect(expandFlow(flow({ match: match({ pattern: 'nightly' }) }), undefined)).toEqual([]);
+  });
+});
+
+describe('expandFlow — several branches', () => {
+  it('splits a single-workflow flow into one flow per branch', () => {
+    const f = flow({ id: 'f', branches: ['2026.1', 'main'] });
+    const split = expandFlow(f, undefined);
+    expect(split.map((d) => d.id)).toEqual(['f::@@2026.1', 'f::@@main']);
+    expect(split.map((d) => d.branches)).toEqual([['2026.1'], ['main']]);
+    expect(split.map((d) => d.name)).toEqual(['Flow · 2026.1', 'Flow · main']);
+    expect(split[0].workflowFile).toBe('ci.yml');
+    expect(split[0].source).toEqual({ patternFlowId: 'f', patternName: 'Flow', pattern: '', branch: '2026.1' });
+  });
+
+  it('splits every regex match per branch', () => {
+    const f = flow({
+      id: 'p',
+      branches: ['main', '2026.1'],
+      match: match({ pattern: '^nightly', by: 'file' }),
+    });
+    const split = expandFlow(f, WORKFLOWS);
+    expect(split.map((d) => d.id)).toEqual([
+      'p::nightly-linux.yml@@main',
+      'p::nightly-linux.yml@@2026.1',
+      'p::nightly-windows.yml@@main',
+      'p::nightly-windows.yml@@2026.1',
+    ]);
+    expect(split[1].source?.workflow?.file).toBe('nightly-linux.yml');
+    expect(split[1].branches).toEqual(['2026.1']);
+    expect(split.every((d) => !isPatternFlow(d))).toBe(true);
+  });
+
+  it('ignores a branch listed twice', () => {
+    expect(expandFlow(flow({ branches: ['main', 'main'] }), undefined)).toHaveLength(1);
+  });
+
+  it('encodes the branch in the derived id', () => {
+    const id = derivedFlowId('p', 'nightly.yml', 'release/2026.1');
+    expect(patternFlowIdOf(id)).toBe('p');
+    expect(derivedFileOf(id)).toBe('nightly.yml');
+    expect(derivedBranchOf(id)).toBe('release/2026.1');
+    expect(derivedBranchOf(derivedFlowId('p', 'nightly.yml'))).toBe('');
+    expect(describeFlowId(derivedFlowId('f', '', 'main'), () => 'CI')).toBe('main (flow “CI”)');
   });
 });
 

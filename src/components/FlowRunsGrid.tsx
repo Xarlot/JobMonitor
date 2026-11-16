@@ -366,15 +366,15 @@ export function FlowRunsGrid({
         <Text
           className={styles.smallFgMuted}
           title={
-            flow.source
+            flow.source?.workflow
               ? `Matched by the regex /${flow.source.pattern}/ of flow “${flow.source.patternName}”`
               : undefined
           }
         >
           {flow.owner || ''}
           {flow.owner ? '/' : ''}
-          {flow.repo || ''} · {flow.source?.workflow.file ?? flow.workflowFile}
-          {flow.source ? ' · regex' : ''}
+          {flow.repo || ''} · {flow.source?.workflow?.file ?? flow.workflowFile}
+          {flow.source?.workflow ? ' · regex' : ''}
         </Text>
         <div className={styles.grow} />
         {!expanded && runs.length > 0 && (

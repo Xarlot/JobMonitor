@@ -4,6 +4,18 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **A flow watching several branches shows a card per branch.** `2026.1, main` used to give one card
+  mixing both branches' runs; it now gives one card for each, named after the flow and the branch. A
+  regex flow splits the same way, each match once per branch. A group that held the flow holds all
+  of its cards.
+
+### Fixed
+- **Typing a comma in a flow's Branches box.** The comma (and a space) vanished as you typed it, so a
+  second branch could only be pasted in.
+
 ## [3.8.0]
 
 **See how long CI waited for runners.** A pull request's check timeline now shows each Actions job's

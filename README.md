@@ -146,7 +146,8 @@ A *flow* is any workflow you want to track. Give it a **name**, then choose what
   matches live as you type, so you can see what you're about to watch.
 
 Branches, trigger events, owner/repo overrides and max-runs sit under **Additional settings**,
-collapsed by default — a regex flow applies them to every match.
+collapsed by default — a regex flow applies them to every match. A flow listing several branches
+(`main, 2026.1`) shows a separate card for each branch, so their runs never mix.
 
 ![Settings — a flow](docs/screenshots/settings-flow.png)
 

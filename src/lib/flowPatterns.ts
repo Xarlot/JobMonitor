@@ -4,6 +4,10 @@
  * (they never reach the persisted config) but their ids are stable —
  * `<patternFlowId>::<workflow file>` — so group membership, expand state and the
  * run cache stick to them across reloads and re-expansions.
+ *
+ * A flow watching several branches is split the same way: one derived flow per
+ * branch (`<flowId>::<file>@@<branch>`, the file empty for a single-workflow flow),
+ * so `main, 2026.1` gives a card per branch instead of one card mixing both.
  */
 
 import type { Workflow } from '../api/types';
@@ -12,16 +16,21 @@ import { workflowBasename } from './workflow';
 
 /** Separator between a pattern flow's id and the matched workflow's file name. */
 export const DERIVED_ID_SEP = '::';
+/** Separator before the branch of a flow split per branch (never in a workflow file name). */
+export const BRANCH_ID_SEP = '@@';
 
 export interface ResolvedFlow extends Flow {
   /** Set only on flows derived from a pattern flow's match. */
   source?: {
-    /** Id of the configured pattern flow this was expanded from. */
+    /** Id of the configured flow this was expanded from (a regex and/or multi-branch flow). */
     patternFlowId: string;
-    /** That flow's name and regex, for "where does this card come from?" UI. */
+    /** That flow's name and regex ('' when not a regex flow), for "where does this card come from?" UI. */
     patternName: string;
     pattern: string;
-    workflow: { id: number; name: string; file: string };
+    /** The matched workflow — only on a regex match. */
+    workflow?: { id: number; name: string; file: string };
+    /** The one branch this card watches — only when the configured flow lists several. */
+    branch?: string;
   };
 }
 
@@ -29,8 +38,9 @@ export function isPatternFlow(flow: Flow): boolean {
   return flow.match.pattern.trim().length > 0;
 }
 
-export function derivedFlowId(patternFlowId: string, file: string): string {
-  return `${patternFlowId}${DERIVED_ID_SEP}${file}`;
+export function derivedFlowId(patternFlowId: string, file: string, branch?: string): string {
+  const suffix = branch === undefined ? '' : `${BRANCH_ID_SEP}${branch}`;
+  return `${patternFlowId}${DERIVED_ID_SEP}${file}${suffix}`;
 }
 
 export function isDerivedFlowId(id: string): boolean {
@@ -43,10 +53,24 @@ export function patternFlowIdOf(id: string): string {
   return i < 0 ? id : id.slice(0, i);
 }
 
-/** The matched workflow file encoded in a derived id ('' when not derived). */
-export function derivedFileOf(id: string): string {
+/** What follows the parent id in a derived id ('' when not derived). */
+function derivedTail(id: string): string {
   const i = id.indexOf(DERIVED_ID_SEP);
   return i < 0 ? '' : id.slice(i + DERIVED_ID_SEP.length);
+}
+
+/** The matched workflow file encoded in a derived id ('' when not derived or not a regex match). */
+export function derivedFileOf(id: string): string {
+  const tail = derivedTail(id);
+  const j = tail.indexOf(BRANCH_ID_SEP);
+  return j < 0 ? tail : tail.slice(0, j);
+}
+
+/** The branch encoded in a derived id ('' when the flow wasn't split per branch). */
+export function derivedBranchOf(id: string): string {
+  const tail = derivedTail(id);
+  const j = tail.indexOf(BRANCH_ID_SEP);
+  return j < 0 ? '' : tail.slice(j + BRANCH_ID_SEP.length);
 }
 
 /**
@@ -56,9 +80,12 @@ export function derivedFileOf(id: string): string {
  */
 export function describeFlowId(id: string, nameOf: (flowId: string) => string | undefined): string {
   if (!isDerivedFlowId(id)) return nameOf(id) ?? id;
-  const pattern = nameOf(patternFlowIdOf(id));
+  const parent = nameOf(patternFlowIdOf(id));
   const file = derivedFileOf(id);
-  return pattern ? `${file} (regex flow “${pattern}”)` : file;
+  const branch = derivedBranchOf(id);
+  const what = [file, branch].filter(Boolean).join(' @ ') || id;
+  if (!parent) return what;
+  return file ? `${what} (regex flow “${parent}”)` : `${what} (flow “${parent}”)`;
 }
 
 export interface CompiledPattern {
@@ -134,14 +161,40 @@ function derivedFlow(flow: Flow, w: Workflow): ResolvedFlow {
 }
 
 /**
- * A plain flow stays itself; a pattern flow becomes one derived flow per match.
+ * One flow per branch of a flow that lists several, so their runs never share a
+ * card. A single-branch flow is returned as is (same object).
+ */
+function splitByBranch(flow: ResolvedFlow, configured: Flow): ResolvedFlow[] {
+  const branches = [...new Set(flow.branches)];
+  if (branches.length <= 1) return [flow];
+  const file = flow.source?.workflow?.file ?? '';
+  return branches.map((branch) => ({
+    ...flow,
+    id: derivedFlowId(configured.id, file, branch),
+    name: `${flow.name} · ${branch}`,
+    branches: [branch],
+    source: {
+      patternFlowId: configured.id,
+      patternName: configured.name,
+      pattern: flow.source?.pattern ?? '',
+      ...(flow.source?.workflow ? { workflow: flow.source.workflow } : {}),
+      branch,
+    },
+  }));
+}
+
+/**
+ * A plain flow stays itself; a pattern flow becomes one derived flow per match;
+ * either is further split into one flow per branch when it lists several.
  * `workflows === undefined` means the repo's list isn't loaded yet — the pattern
  * contributes nothing rather than a misleading empty card.
  */
 export function expandFlow(flow: Flow, workflows: Workflow[] | undefined): ResolvedFlow[] {
-  if (!isPatternFlow(flow)) return [flow];
+  if (!isPatternFlow(flow)) return splitByBranch(flow, flow);
   if (!workflows) return [];
-  return matchWorkflows(workflows, flow.match).map((w) => derivedFlow(flow, w));
+  return matchWorkflows(workflows, flow.match).flatMap((w) =>
+    splitByBranch(derivedFlow(flow, w), flow),
+  );
 }
 
 /** Expand a whole config's flows, in order. */
