@@ -635,6 +635,12 @@ them between groups.
 
 ![Flows](docs/screenshots/flows.png)
 
+**Big runs and restarts.** A finished run's jobs never change, so once loaded they are kept for a
+week in the browser's storage: after a restart, expanding the run shows them at once without asking
+GitHub. A run with hundreds of jobs — a re-run of a big matrix — is read in smaller pages, several at a
+time, because GitHub gives up on a full page of them. **Refresh** reloads the jobs of open runs too,
+and a job list that failed to load is retried on the next poll.
+
 A failing job carries a 🐛 button that opens **that same failure in the Failures tab** — where its
 log is coloured, its annotations are listed and its report can be copied. It appears only when the
 failure is in that tab's list, so it never lands you somewhere empty.

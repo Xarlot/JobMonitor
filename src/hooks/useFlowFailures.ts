@@ -65,6 +65,16 @@ interface Candidate {
   attemptKey: string;
 }
 
+/** Cache entries (`${runId}:${attempt}` → jobs) as per-run state. */
+function toRunJobs(entries: readonly [string, Job[]][]): Record<number, RunJobs> {
+  const out: Record<number, RunJobs> = {};
+  for (const [key, jobs] of entries) {
+    const runId = Number(key.split(':')[0]);
+    if (Number.isFinite(runId)) out[runId] = { jobs, fetchedFor: key };
+  }
+  return out;
+}
+
 export function useFlowFailures(): FlowFailureSource[] {
   const { flows } = useResolvedFlows();
   const states = useFlowStates();
@@ -73,14 +83,29 @@ export function useFlowFailures(): FlowFailureSource[] {
    * cache is keyed by run *attempt*, so a re-run misses rather than being served the
    * previous attempt. This is what makes returning to the Failures tab free.
    */
-  const [jobsByRun, setJobsByRun] = useState<Record<number, RunJobs>>(() => {
-    const seeded: Record<number, RunJobs> = {};
-    for (const [key, jobs] of flowRunJobsCache.entries()) {
-      const runId = Number(key.split(':')[0]);
-      if (Number.isFinite(runId)) seeded[runId] = { jobs, fetchedFor: key };
-    }
-    return seeded;
-  });
+  const [jobsByRun, setJobsByRun] = useState<Record<number, RunJobs>>(() =>
+    toRunJobs(flowRunJobsCache.peek() ?? []),
+  );
+  /**
+   * The cache lives in IndexedDB, which answers asynchronously; until it has, fetching would
+   * spend requests on exactly the lists it is about to hand over. Once read it stays in
+   * memory, so a later mount starts hydrated.
+   */
+  const [hydrated, setHydrated] = useState(() => flowRunJobsCache.peek() !== null);
+  useEffect(() => {
+    if (hydrated) return;
+    let active = true;
+    void flowRunJobsCache.load().then((entries) => {
+      if (!active) return;
+      const cached = toRunJobs(entries);
+      // A list fetched meanwhile is at least as fresh as the cached one.
+      setJobsByRun((prev) => ({ ...cached, ...prev }));
+      setHydrated(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [hydrated]);
 
   const nameById = useMemo(
     () => new Map(flows.map((f) => [f.id, f.name])),
@@ -171,7 +196,7 @@ export function useFlowFailures(): FlowFailureSource[] {
     if (!mounted.current) return;
     // Only remember runs that actually yielded jobs; an empty list is a failed read,
     // not a fact about the run.
-    flowRunJobsCache.setMany(
+    void flowRunJobsCache.setMany(
       results.filter((r) => r.jobs.length > 0).map((r) => [r.key, r.jobs] as [string, Job[]]),
     );
     setJobsByRun((prev) => {
@@ -182,6 +207,7 @@ export function useFlowFailures(): FlowFailureSource[] {
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     const pending = candidates
       .filter((c) => jobsByRun[c.run.id]?.fetchedFor !== c.attemptKey)
       .slice(0, MAX_FLOW_JOB_FETCH);
@@ -189,7 +215,7 @@ export function useFlowFailures(): FlowFailureSource[] {
     // Keyed by candidateSig; `jobsByRun` is read to skip what's already fetched,
     // and including it as a dep would loop on its own update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateSig, load]);
+  }, [candidateSig, load, hydrated]);
 
   // Forget runs that are no longer any flow's failing latest finished run.
   useEffect(() => {

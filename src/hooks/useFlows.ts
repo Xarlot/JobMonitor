@@ -29,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import { isJobFilterActive, useFlowsFilter } from '../context/FlowsFilterContext';
 import { latestFinishedRun } from '../lib/flowFilter';
 import { loadFlowRuns, saveFlowRuns } from '../storage/flowRunsCache';
+import { readFinishedRunJobs, rememberFinishedRunJobs } from '../storage/failureCaches';
 import { mergeRunResponses, queryKey } from '../lib/flowRunsMerge';
 import { devLog } from '../lib/devLog';
 import { useVisibility } from './useVisibility';
@@ -232,6 +233,16 @@ export function useFlow(flow: Flow): FlowState {
 
   const loadJobs = useCallback(
     async (run: WorkflowRun) => {
+      // A finished run's job list never changes: after a restart, show it from the cache
+      // rather than asking GitHub — for a big matrix run that is tens of seconds.
+      const cached = await readFinishedRunJobs(run);
+      if (cached) {
+        setJobsByRun((prev) => ({
+          ...prev,
+          [run.id]: { jobs: cached, fetchedFp: jobFingerprint(run), loading: false, error: null },
+        }));
+        return;
+      }
       setJobsByRun((prev) => ({
         ...prev,
         [run.id]: {
@@ -244,6 +255,7 @@ export function useFlow(flow: Flow): FlowState {
       }));
       try {
         const jobs = await fetchAllRunJobs(owner, repo, run.id);
+        void rememberFinishedRunJobs(run, jobs);
         setJobsByRun((prev) => ({
           ...prev,
           [run.id]: { jobs, fetchedFp: jobFingerprint(run), loading: false, error: null },

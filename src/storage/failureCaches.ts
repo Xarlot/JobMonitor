@@ -13,6 +13,8 @@
 
 import type { Annotation, Job } from '../api/types';
 import { createTtlCache } from './localTtlCache';
+import { createIdbTtlCache } from './idbTtlCache';
+import { FLOW_RUN_JOBS_STORE } from './db';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -37,13 +39,44 @@ export const failureDetailCache = createTtlCache<CachedFailureDetail>({
   maxBytes: 400_000,
 });
 
-/** Keyed by `${runId}:${run_attempt}` — see the note on attempt-uniqueness above. */
-export const flowRunJobsCache = createTtlCache<Job[]>({
-  storageKey: 'job-monitor.flowRunJobs',
+/**
+ * The job lists of *finished* runs, keyed by `${runId}:${run_attempt}` — see the note on
+ * attempt-uniqueness above. Shared by a flow's runs table and the Failures tab, so a restart shows
+ * either without asking GitHub again.
+ *
+ * In IndexedDB, not localStorage: a big matrix run's job list is megabytes, and in the shared
+ * 300 KB localStorage budget it trimmed the whole cache to nothing, so every restart refetched
+ * every flow's list.
+ */
+export const flowRunJobsCache = createIdbTtlCache<Job[]>({
+  store: FLOW_RUN_JOBS_STORE,
   ttlMs: WEEK_MS,
-  maxEntries: 60,
-  maxBytes: 300_000,
+  maxEntries: 200,
 });
+
+/** Run fields that decide whether — and under which key — its job list is cacheable. */
+type RunIdentity = { id: number; run_attempt: number; status: string };
+
+/** A finished run's cached job list, or undefined (not finished, not cached, or expired). */
+export async function readFinishedRunJobs(run: RunIdentity): Promise<Job[] | undefined> {
+  if (run.status !== 'completed') return undefined;
+  await flowRunJobsCache.load();
+  return flowRunJobsCache.get(flowRunJobsKey(run.id, run.run_attempt));
+}
+
+/** Remembers a finished run's job list; a run still going, or an empty list, is not a fact to keep. */
+export function rememberFinishedRunJobs(run: RunIdentity, jobs: Job[]): Promise<void> {
+  if (run.status !== 'completed' || jobs.length === 0) return Promise.resolve();
+  return flowRunJobsCache.setMany([[flowRunJobsKey(run.id, run.run_attempt), jobs]]);
+}
+
+/** Where `flowRunJobsCache` lived before it moved to IndexedDB — freed, not migrated. */
+const LEGACY_FLOW_RUN_JOBS_KEY = 'job-monitor.flowRunJobs';
+try {
+  localStorage.removeItem(LEGACY_FLOW_RUN_JOBS_KEY);
+} catch {
+  /* unavailable */
+}
 
 export function flowRunJobsKey(runId: number, runAttempt: number): string {
   return `${runId}:${runAttempt}`;

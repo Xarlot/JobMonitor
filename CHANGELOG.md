@@ -6,6 +6,13 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 
 ## [Unreleased]
 
+### Changed
+- **A finished run's jobs are remembered across restarts.** Expanding a finished run on a flow card,
+  or opening the Failures tab, after restarting the app shows its jobs at once instead of asking GitHub
+  again. A finished run's job list never changes, so it is kept for a week; a re-run is a new attempt
+  and is fetched fresh. The lists now live in the browser's IndexedDB rather than localStorage, where
+  one big run could take up the whole budget.
+
 ### Fixed
 - **Jobs of a very large run failed to load.** GitHub answers a 100-job page of a run with hundreds of
   jobs (a re-run of a big matrix) with a gateway error, which showed as “Failed to load jobs: Network
@@ -14,6 +21,8 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 - **Refresh left a failed job list on screen.** A flow's Refresh now reloads the jobs of its open runs
   too, a job list that failed to load is retried on every poll, and reopening the run retries it at
   once.
+- **The Failures tab re-downloaded every flow's job lists after a restart.** A single big run
+  overflowed the cache they shared and emptied it.
 
 ## [3.9.0]
 

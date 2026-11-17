@@ -155,12 +155,21 @@ place rather than trusting each caller to have checked.
   checks are read. Without it a months-red nightly or a long tail of stale PRs would cost requests
   every poll forever.
 - **Week-long failure caches** — a finished job's annotations, log tail and a run's job list are
-  immutable, so they are cached in localStorage for 7 days (`src/storage/failureCaches.ts`) and the
-  tab hydrates from them, making a revisit cost zero requests. Keys are attempt-unique (a re-run
-  mints new check-run/job ids), which is what makes a week safe. The shared
-  `src/storage/localTtlCache.ts` enforces entry *and* byte caps, because `githubClient` reacts to a
-  localStorage quota error by wiping its whole ETag namespace — an unbounded cache here would
-  degrade something unrelated.
+  immutable, so they are cached for 7 days (`src/storage/failureCaches.ts`) and the tab hydrates
+  from them, making a revisit cost zero requests. Keys are attempt-unique (a re-run mints new
+  check-run/job ids), which is what makes a week safe. Annotations and log tails sit in localStorage
+  through `src/storage/localTtlCache.ts`, which enforces entry *and* byte caps, because
+  `githubClient` reacts to a localStorage quota error by wiping its whole ETag namespace — an
+  unbounded cache here would degrade something unrelated.
+- **Finished runs' job lists live in IndexedDB** (`runJobs` store, `src/storage/idbTtlCache.ts`):
+  a big matrix run is megabytes of jobs and steps, which in localStorage's budget emptied the cache
+  on every write. One cache serves a flow card's runs table (`readFinishedRunJobs` in `useFlows`, so a
+  restart expands a finished run without a request) and the Failures tab, which waits for the
+  asynchronous read before fetching anything. Week TTL, 200 entries, expired records deleted on load.
+- **Big runs are paged down** (`src/api/jobs.ts`): GitHub's gateway gives up on a 100-job page of a
+  run with hundreds of jobs and answers 502 without CORS headers, which `fetch` reports as a network
+  failure. A network error, timeout or 5xx drops the page size (100 → 50 → 25) and restarts; the
+  size that worked is remembered per run, and pages after the first load four at a time.
 - **Merged PRs** — a bounded list of recently-merged PRs polled alongside the open ones, so a
   failure that landed anyway stays reviewable. Their checks are terminal, so each is fetched once
   and then skipped by `needsChecks` forever.
@@ -1211,7 +1220,7 @@ run, and a stale one read as authoritative is worse than none.
 
 ```
 src/crypto/webcrypto.ts        PBKDF2 + AES-GCM
-src/storage/                   IndexedDB (secret) + localStorage (config, expand-state, rerun log)
+src/storage/                   IndexedDB (secret, run job lists) + localStorage (config, expand-state, rerun log)
 src/api/                       githubClient (ETag/304 + the one POST), rateLimit,
                                tokenCapability, endpoints, types
 src/hooks/                     usePolling, useVisibility, useGitHubDashboard, useFlows,
