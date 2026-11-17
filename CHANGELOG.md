@@ -4,7 +4,11 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.10.0]
+
+**Big runs load, and finished runs stay loaded.** A run with hundreds of jobs no longer fails with a
+network error, and a finished run's jobs come back from the cache after a restart instead of being
+downloaded again.
 
 ### Changed
 - **A finished run's jobs are remembered across restarts.** Expanding a finished run on a flow card,
