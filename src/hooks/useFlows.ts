@@ -7,8 +7,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ghGet, evictFromCache, GitHubApiError } from '../api/githubClient';
-import { runArtifactsPath, runJobsPath, singleRunPath, workflowRunsPath } from '../api/endpoints';
-import { fetchAllRunJobs } from '../api/jobs';
+import { runArtifactsPath, singleRunPath, workflowRunsPath } from '../api/endpoints';
+import { fetchAllRunJobs, runJobsCachePaths } from '../api/jobs';
 import { fetchWorkflows } from '../api/workflows';
 import type {
   ArtifactsResponse,
@@ -237,7 +237,8 @@ export function useFlow(flow: Flow): FlowState {
         [run.id]: {
           jobs: prev[run.id]?.jobs ?? [],
           fetchedFp: prev[run.id]?.fetchedFp ?? '',
-          loading: !prev[run.id],
+          // A retry after a failure has nothing to show yet — spin, don't claim "No jobs".
+          loading: !prev[run.id] || prev[run.id].jobs.length === 0,
           error: null,
         },
       }));
@@ -276,7 +277,8 @@ export function useFlow(flow: Flow): FlowState {
         (needLatestJobs && r.id === latestId);
       if (!wanted) return false;
       const cache = jobsByRun[r.id];
-      if (!cache || cache.fetchedFp !== jobFingerprint(r)) return true;
+      // A failed fetch is retried every tick; otherwise its error banner would stick until the run changes.
+      if (!cache || cache.error || cache.fetchedFp !== jobFingerprint(r)) return true;
       return isActiveStatus(r.status);
     });
     await Promise.all(targets.map(loadJobs));
@@ -306,7 +308,7 @@ export function useFlow(flow: Flow): FlowState {
         const next = { ...prev };
         for (const id of invalidated) {
           delete next[id];
-          evictFromCache(runJobsPath(owner, repo, id));
+          for (const path of runJobsCachePaths(owner, repo, id)) evictFromCache(path);
         }
         return next;
       });
@@ -319,10 +321,16 @@ export function useFlow(flow: Flow): FlowState {
     (run: WorkflowRun) => {
       const willExpand = !expand.expandedRunIds.includes(run.id);
       expand.toggle(run.id);
-      if (willExpand && !jobsByRun[run.id]) void loadJobs(run);
+      if (willExpand && (!jobsByRun[run.id] || jobsByRun[run.id].error)) void loadJobs(run);
     },
     [expand, jobsByRun, loadJobs],
   );
+
+  // Manual refresh reloads jobs too — refreshing runs alone left a failed jobs fetch on screen.
+  const refresh = useCallback(() => {
+    runsPoll.refresh();
+    jobsPoll.refresh();
+  }, [runsPoll.refresh, jobsPoll.refresh]);
 
   // The last run that *finished*, not an aggregate and not the newest run — see
   // `latestFinalStatus`. A flow mid-build still reports its last verdict; that a run is in flight is
@@ -391,7 +399,7 @@ export function useFlow(flow: Flow): FlowState {
     isFetchingRuns: runsPoll.isFetching,
     runsError: runsPoll.lastError,
     runsUpdatedAt: runsPoll.lastUpdated,
-    refresh: runsPoll.refresh,
+    refresh,
     workflowRef: resolveWorkflowRef,
     latestArtifactBytes,
   };

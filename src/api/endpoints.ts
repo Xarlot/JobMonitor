@@ -219,8 +219,14 @@ export function singleRunPath(owner: string, repo: string, runId: number): strin
   return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}`;
 }
 
-export function runJobsPath(owner: string, repo: string, runId: number, page = 1): string {
-  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/jobs?per_page=100&page=${page}`;
+export function runJobsPath(
+  owner: string,
+  repo: string,
+  runId: number,
+  page = 1,
+  perPage = 100,
+): string {
+  return `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${runId}/jobs?per_page=${perPage}&page=${page}`;
 }
 
 export function runArtifactsPath(owner: string, repo: string, runId: number): string {

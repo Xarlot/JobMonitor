@@ -4,6 +4,17 @@ All notable changes to **Job Monitor** are documented here. The format loosely f
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Jobs of a very large run failed to load.** GitHub answers a 100-job page of a run with hundreds of
+  jobs (a re-run of a big matrix) with a gateway error, which showed as “Failed to load jobs: Network
+  request to GitHub failed.” on every try. Such a run's jobs are now read in smaller pages, several at
+  a time, and the size that worked is remembered for the run.
+- **Refresh left a failed job list on screen.** A flow's Refresh now reloads the jobs of its open runs
+  too, a job list that failed to load is retried on every poll, and reopening the run retries it at
+  once.
+
 ## [3.9.0]
 
 **One card per branch.** A flow watching several branches now shows each on its own card instead of
